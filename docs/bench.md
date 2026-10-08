@@ -9,8 +9,13 @@ production — only three values differ, and §5 is the checklist for moving the
 
 ```bash
 ./tools/bench-cert.sh                 # → ./mydata/bench-{cert,key}.pem
-                                       #   SAN: this PC's LAN IP, 127.0.0.1,
-                                       #   localhost, imaliguzve-bench
+                                       #   SAN: this PC's LAN IP as IP: *and*
+                                       #   DNS: (mbedtls 2.26 ignores iPAddress
+                                       #   SANs — Go/OpenSSL check only those),
+                                       #   127.0.0.1, localhost,
+                                       #   imaliguzve-bench; validity backdated
+                                       #   1970…2099 (the camera has no RTC —
+                                       #   full rationale in the script header)
                                        #   (prints the PEM to paste into the
                                        #    firmware — see §2)
 
@@ -76,6 +81,13 @@ On the camera's serial console (115200):
 The browser flags the self-signed cert once — expected on the bench.
 
 ## 5. Transfer to the VPS
+
+> **Date-verification blocker (found on the bench, 2026-10-08):** the camera's
+> clock is epoch-based (≈1970 — no NTP, PLAN §5), so it rejects any cert whose
+> `notBefore` is a real issue date, including Caddy/Let's Encrypt leaves. Before
+> the transfer, pick a time story: a private CA with backdated validity (the
+> bench model — `tools/bench-cert.sh`) or a device time source. Details in
+> `docs/ops-log.md` (2026-10-08).
 
 1. **Firmware:** `BENCH_TLS 0`, set `INGEST_HOST` to the domain, re-flash.
    (Port and CA come from that branch automatically; ISRG Root X1 is already

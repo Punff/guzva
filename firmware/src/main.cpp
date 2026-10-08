@@ -88,6 +88,8 @@ static const uint32_t WIFI_RETRY_MAX_MS   = 60000;
 static const uint32_t TLS_HANDSHAKE_S     = 8;       // PLAN: 8 s connect
 static const uint32_t TLS_CONNECT_MS      = 8000;
 static const uint32_t POST_TIMEOUT_MS     = 25000;   // PLAN: 25 s POST
+static const uint8_t  POST_ATTEMPTS       = 3;       // transport retries/tick
+static const uint32_t POST_RETRY_GAP_MS   = 1500;    // beat between attempts
 static const uint32_t KEEPALIVE_IDLE_MS   = 45000;   // well under Caddy 60 s+ idle
 static const uint32_t JPG_RATE_MS         = 3000;    // /jpg: 1 per 3 s
 static const size_t   UPLOAD_CHUNK        = 6144;    // 6 KiB chunks (spec 4-8 KiB)
@@ -616,7 +618,8 @@ static void buildMeta() {
 // One multipart POST: request head + meta part [+ frame part in 6 KiB
 // chunks] + closing boundary, then read and parse the small JSON response.
 // Returns the HTTP status; 0 = transport failure (counted here: tls_fail on
-// connect failure, post_fail on any failed upload).
+// connect failure, post_fail on any failed upload).  The caller retries a
+// transport failure up to POST_ATTEMPTS times within the same tick.
 static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   buildMeta();
   const size_t metaLen = strlen(metaBuf);
@@ -648,7 +651,7 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   if (!tlsEnsureConnected(&reused, &connectMs)) {
     tlsFail++;
     postFail++;
-    Serial.printf("[TLS ] connect failed after %lu ms (heap %u) -> frame dropped\n",
+    Serial.printf("[TLS ] connect failed after %lu ms (heap %u)\n",
                   (unsigned long)connectMs, (unsigned)ESP.getFreeHeap());
     return 0;
   }
@@ -834,16 +837,27 @@ static void runTick() {
                 haveFrame ? "frame" : "health-only",
                 reason[0] ? reason : "-", (unsigned)ESP.getFreeHeap());
 
-  int status = ingestPost(haveFrame, frameCopy, frameLen);
+  // Transport failures get fresh chances inside the same tick: the link can
+  // drop packets for seconds at a time (marginal 2.4 GHz), and one shot per
+  // 60 s tick would waste the frame.  Still drop it when every attempt fails
+  // (PLAN: no frame queue).
+  int status = 0;
+  for (uint8_t attempt = 1; attempt <= POST_ATTEMPTS && status == 0; attempt++) {
+    if (attempt > 1) {
+      Serial.printf("[HTTP] retry attempt %u/%u\n", attempt, POST_ATTEMPTS);
+      delay(POST_RETRY_GAP_MS);
+    }
+    status = ingestPost(haveFrame, frameCopy, frameLen);
+  }
   if (frameCopy) free(frameCopy);
 
   // --- response contract (docs/proto-v1.md) -------------------------------
   uint32_t sleepS = intervalS;
-  if (status == 0) {                        // transport failure: drop + retry
+  if (status == 0) {               // every attempt failed: drop, retry tick
     lastHttp = 0;
     sleepS = intervalS;
-    Serial.printf("[HTTP] transport failure -> frame dropped (post_fail=%lu)\n",
-                  (unsigned long)postFail);
+    Serial.printf("[HTTP] transport failure after %u attempts -> frame dropped "
+                  "(post_fail=%lu)\n", POST_ATTEMPTS, (unsigned long)postFail);
   } else {
     lastHttp = status;
     applyCfgFromBody();

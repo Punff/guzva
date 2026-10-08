@@ -124,7 +124,11 @@ func serveMain(args []string) int {
 		Handler: mux,
 		// Slow clients must not tie up resources (§6.1). ReadTimeout
 		// exceeds the device's 25 s POST budget on purpose.
-		ReadHeaderTimeout: 5 * time.Second,
+		// ReadHeaderTimeout also bounds the TLS handshake: it must
+		// outlast the camera's 8 s connect budget (ClientHello
+		// retransmits on a marginal link) or we hang up first and
+		// turn a slow handshake into a guaranteed failure.
+		ReadHeaderTimeout: 15 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,

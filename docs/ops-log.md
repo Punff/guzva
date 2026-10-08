@@ -16,6 +16,50 @@ copying detail.
 
 ## 2026-10-08
 
+- **Bench TLS bring-up — first real camera → server 201 (LAN bench):**
+  ufw rule for 8443/tcp added (user-run), and the camera's TCP connections
+  reached the server, but every TLS handshake failed. Four fixes, in order
+  found:
+  1. **Epoch clock vs certificate validity** — the camera has no RTC and no
+     NTP (PLAN §5), so its system time ≈ 1970; a normal cert (`notBefore` =
+     issue date) fails the X.509 date check (mbedtls -9984, server logs
+     `remote error: tls: bad certificate`). `tools/bench-cert.sh` now issues
+     `not_before 19700101000000Z … not_after 20991231235959Z` so the cert is
+     valid for any device clock in that window.
+  2. **mbedtls 2.26 does not match iPAddress SANs** (`x509_crt_check_san()`
+     string-matches dNSName only) while Go/OpenSSL verify an IP host against
+     the iPAddress SAN only — connecting by IP therefore always hit
+     CN_MISMATCH on the camera side. The bench cert now carries the IP
+     **twice**, `IP:x.x.x.x` (curl/Go) and `DNS:x.x.x.x` (mbedtls); reason
+     documented in the script header.
+  3. **Server gave up before the camera** — Go's `ReadHeaderTimeout`
+     (5 s) bounds the TLS handshake too, i.e. it hung up before the
+     camera's 8 s ClientHello-retransmit budget could run out. Raised to
+     15 s in `cmd/imaliguzve` (`main.go`).
+  4. **One shot per 60 s tick** wasted frames on the marginal link —
+     firmware now retries transport failures up to `POST_ATTEMPTS=3` in
+     the same tick (1.5 s gap); the frame is still dropped when all three
+     fail (PLAN: no frame queue).
+- **Result:** real camera frames flow end-to-end — `C142-72`, `C142-73`
+  stored `status=ok` (640×480, poster preset, rendered into
+  `venues/1/stills/`), plus `C144-76`, `C144-77`, `C145-79` stored and
+  quarantined `dark` (low light at the time — the quarantine/privacy path
+  ran on real hardware frames). Camera-side response reads remain flaky
+  (frame lands server-side, reply lost in flight); the retries absorb it.
+- **Link quality is the limiting factor:** `***REMOVED***` rssi −74…−79,
+  handshakes 0.9–5.7 s, occasional whole-tick misses (server logs
+  `i/o timeout` / `EOF`). Reposition camera/AP before trusting the cadence.
+  **VPS phase inherits the date problem** — Caddy/Let's Encrypt certs
+  (`notBefore` = issue date) fail on a 1970 clock too: use a private
+  backdated CA (the bench model) or give the device a time source; see
+  `tools/bench-cert.sh` comments and `docs/bench.md` §5.
+- **Serial-reader gotcha (bench tooling, not firmware):** opening
+  `/dev/ttyUSB0` via pyserial glitches DTR/RTS and drops the board into the
+  ROM download mode (silent); closing the port resets it back to run mode.
+  Every "silent hang" and unexplained boot-count jump was this. Always
+  drive the explicit DTR/RTS reset sequence before reading (as the bench
+  scripts do), and expect the boot counter to tick up when a capture
+  window closes.
 - Repo reworked from the POC (Phase 0) to the v3 layout per PLAN.md:
   `cmd/imaliguzve` + `internal/` packages, `firmware/` as a PlatformIO
   project, `deploy/` and `docs/` added, POC web console superseded.
