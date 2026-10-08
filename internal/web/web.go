@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"time"
 
+	"imaliguzve/internal/proto"
 	"imaliguzve/internal/store"
 	"imaliguzve/internal/venue"
 )
@@ -66,9 +67,17 @@ func (s *Server) Register(mux *http.ServeMux) {
 }
 
 // notFoundHint answers the root and any unknown path. It exposes no venue
-// data — just the one thing a lost visitor needs to know.
+// data — just the one thing a lost visitor needs to know. One known path
+// lands here too: GET /v1/ingest (the route is POST-scoped), and it gets
+// the same 405 the ingest handler itself would answer.
 func (s *Server) notFoundHint(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if r.URL.Path == proto.PathIngest {
+		w.Header().Set("Allow", "POST")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprint(w, "405 — method not allowed (POST only)\n")
+		return
+	}
 	w.WriteHeader(http.StatusNotFound)
 	fmt.Fprint(w, "404 — there is no page here.\n\n"+
 		"Venue pages live at /v/<slug> — one URL per venue, never a list.\n")

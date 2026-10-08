@@ -38,6 +38,20 @@ var version = "dev"
 // 1 slow + 19 fast).
 const renderConcurrency = 4
 
+// newMux wires ingest + public routes. Kept out of serveMain so a test can
+// pin the composition: conflicting ServeMux patterns panic at registration,
+// and route behaviour only changes when both halves are assembled together.
+// The ingest route is POST-scoped so it cannot conflict with web's GET "/"
+// fallback (Go 1.22: method sets must be disjoint or paths comparable);
+// every other method on /v1/ingest still lands on 405 Allow: POST —
+// either via the web hint or ServeMux's own method-mismatch answer.
+func newMux(ing *frames.Server, pub *web.Server) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST "+proto.PathIngest, ing.HandleIngest)
+	pub.Register(mux)
+	return mux
+}
+
 func main() {
 	args := os.Args[1:]
 	if len(args) > 0 {
@@ -56,9 +70,16 @@ func serveMain(args []string) int {
 	listen := fs.String("listen", "127.0.0.1:8080", "loopback listen address (only Caddy reaches it)")
 	dataDir := fs.String("data", "/var/lib/imaliguzve", "data dir: SQLite + venue renders")
 	retainHours := fs.Int("retain-hours", 48, "public render ring size in hours (§6.3)")
+	tlsCert := fs.String("tls-cert", "", "PEM certificate — enables TLS (LAN bench; production TLS is Caddy's, runbook)")
+	tlsKey := fs.String("tls-key", "", "PEM key (must pair with -tls-cert)")
 	fs.Parse(args)
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	if (*tlsCert == "") != (*tlsKey == "") {
+		log.Error("tls flags", "err", "-tls-cert and -tls-key must be set together")
+		return 1
+	}
 
 	if err := os.MkdirAll(*dataDir, 0o750); err != nil {
 		log.Error("create data dir", "err", err.Error())
@@ -96,9 +117,7 @@ func serveMain(args []string) int {
 		return b.String()
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc(proto.PathIngest, ing.HandleIngest)
-	pub.Register(mux)
+	mux := newMux(ing, pub)
 
 	srv := &http.Server{
 		Addr:    *listen,
@@ -127,8 +146,13 @@ func serveMain(args []string) int {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", *listen, "data", *dataDir, "version", version)
-		errCh <- srv.ListenAndServe()
+		log.Info("listening", "addr", *listen, "tls", *tlsCert != "",
+			"data", *dataDir, "version", version)
+		if *tlsCert != "" {
+			errCh <- srv.ListenAndServeTLS(*tlsCert, *tlsKey)
+		} else {
+			errCh <- srv.ListenAndServe()
+		}
 	}()
 
 	select {

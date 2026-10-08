@@ -22,6 +22,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -61,8 +63,24 @@ func main() {
 		flappy   = flag.Int("flappy", 0, "flappy clients")
 		dup      = flag.Int("dup", 0, "dup clients")
 		partial  = flag.Int("partial", 0, "partial (health-only) clients")
+		cacert   = flag.String("cacert", "", "PEM cert to trust — for https -addr with a self-signed bench cert (tools/bench-cert.sh)")
 	)
 	flag.Parse()
+	if *cacert != "" {
+		pem, err := os.ReadFile(*cacert)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "fakecam: -cacert: %v\n", err)
+			os.Exit(2)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			fmt.Fprintln(os.Stderr, "fakecam: -cacert: no certificates in file")
+			os.Exit(2)
+		}
+		http.DefaultTransport = &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
+		}
+	}
 	toks := splitTokens(*tokens)
 	if len(toks) == 0 && *token != "" {
 		toks = []string{*token}
