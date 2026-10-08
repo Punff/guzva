@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Venue.Name}} — ima li gužve?</title>
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#10141a;color:#e8edf3}
+main{max-width:720px;margin:auto;padding:16px}
+img{width:100%;background:#000;border-radius:12px;display:block}
+.hint{color:#9eabb9;font-size:13px}
+a{color:#8ab4ff}
+</style>
+</head>
+<body>
+<main>
+<h1>{{.Venue.Name}}</h1>
+<div hx-get="/frag/still" hx-trigger="load, every {{.Interval}}s" hx-swap="innerHTML">
+<p class="hint">loading still…</p>
+</div>
+<p class="hint" hx-get="/frag/fresh" hx-trigger="load, every 5s">loading…</p>
+<p class="hint">Stylised still, refreshed ~1/min. <a href="/admin">admin</a></p>
+</main>
+</body>
+</html>
