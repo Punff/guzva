@@ -34,10 +34,10 @@
 <body>
 <header>
   <h1>{{.Name}}</h1>
-  <span id="badge" hx-get="/v/{{.Slug}}/status" hx-trigger="load, every 15s" hx-swap="innerHTML">{{template "badge.html" .}}</span>
+  <span id="badge" hx-get="/v/{{.Slug}}/status" hx-trigger="load, every 10s" hx-swap="innerHTML">{{template "badge.html" .}}</span>
 </header>
 <main>
-  <div class="still" id="still" hx-get="/v/{{.Slug}}/still" hx-trigger="every 30s" hx-swap="innerHTML">
+  <div class="still" id="still" hx-get="/v/{{.Slug}}/still" hx-trigger="every 10s" hx-swap="innerHTML">
     {{if .HasFrame}}<img src="{{.FrameURL}}?v={{.StillVer}}" alt="stylised still" width="640">{{else}}<div class="still-empty">No frame yet — waiting for the venue camera…</div>{{end}}
   </div>
 </main>

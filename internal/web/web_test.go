@@ -283,6 +283,20 @@ func TestMethodNotAllowed(t *testing.T) {
 	}
 }
 
+// The page polls badge + still every 10 s (operator-set cadence).
+func TestAutoRefreshCadence(t *testing.T) {
+	f := newWebFixture(t)
+	body := get(t, f.mux, "/v/jadro").Body.String()
+	for _, want := range []string{
+		`hx-get="/v/jadro/status" hx-trigger="load, every 10s"`,
+		`hx-get="/v/jadro/still" hx-trigger="every 10s"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("refresh trigger missing: %s\npage:\n%s", want, body)
+		}
+	}
+}
+
 // The root has no index on purpose (no venue enumeration, §6.4) — but the
 // 404 must say where a lost visitor should go instead.
 func TestRootAndUnknownPathsHint(t *testing.T) {
