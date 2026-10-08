@@ -93,6 +93,31 @@ copying detail.
   `INGEST_HOST` still the placeholder — ticks run, `TLS connect failed →
   frame dropped`, expected until a real HTTPS endpoint (VPS or bench TLS)
   is configured.
+- **2026-10-08 ~23:15 — TLS budget fix after a total transport collapse
+  (camera→server 0% for ~15 min):** from ~22:59 every handshake failed
+  (server: `EOF` / `i/o timeout`; camera: `connect failed after 8.2 s /
+  11.6 s`). The timings decoded exactly: lwIP RTO ≈ **3 s** on this link, so
+  SYN retransmits land at 0/3/9 s and the ClientHello retransmit at 9 s —
+  but the camera's budget was **8 s**, cutting the connection off *before*
+  the retransmit that had a chance to succeed (3.6 s TCP + 8 s HS = the
+  11.6 s attempts). Fix in `firmware/src/main.cpp`: `TLS_HANDSHAKE_S`
+  8→**12** (covers the 9 s CH retransmit; server `ReadHeaderTimeout`=15 s
+  still outlasts it), `TLS_CONNECT_MS` 8000→**12000** (TCP phase covers
+  SYN at 0/3/9 s), `POST_RETRY_GAP_MS` 1.5→**6 s** (decorrelate
+  interference bursts). **PLAN §5 "8 s connect" deviated** — justified by
+  bench data; the handshake now completes (5/6 attempts reached TLS) and
+  frames land again: `C148-96` 23:19:41, `C148-98` 23:24:23 (2/3 ticks vs
+  0/9 before), rssi −74. Post-flash the join itself flaked once
+  (`reason=8/201`, `join_fail` 1–2, backoff to 40 s) — same weak link.
+  **Open observations:** (a) a POST can consume the whole 25 s
+  `response FAILED` deadline even though the server *stored* the frame
+  (server also logged `load venue: context canceled` on one attempt) —
+  either the downlink response is lost across the camera's 3/9/27 s
+  retransmit schedule (its deadline hits first) or a server-side stall in
+  `load venue`; capture_id dedup makes the retry safe either way; (b) heap
+  loses ~1–2 KB per *failed* attempt (188.9k→180.7k over 6 fails) — watch
+  for exhaustion during a sustained outage, reset recovers. Both frames
+  quarantined **`dark`** — the site picture still needs a lit scene.
 - **TODO (mandatory, pre-pilot): first restore-drill with a timer.** Restore
   `imaliguzve.db` from Litestream on a scratch box, time the whole drill
   (runbook §6), and log the duration here **before the pilot starts**; then

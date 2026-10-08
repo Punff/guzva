@@ -85,11 +85,17 @@
 // ============================ LIMITS & TUNABLES ============================
 static const uint32_t WIFI_RETRY_MIN_MS   = 10000;   // join backoff 10 s .. 60 s
 static const uint32_t WIFI_RETRY_MAX_MS   = 60000;
-static const uint32_t TLS_HANDSHAKE_S     = 8;       // PLAN: 8 s connect
-static const uint32_t TLS_CONNECT_MS      = 8000;
+// Bench-bench measured: lwIP RTO ≈ 3 s on the weak link, so SYN retransmits at
+// 0/3/9 s and the ClientHello retransmit at 9 s. The old 8 s budget cut the
+// connection off BEFORE the 9 s retransmit could go out — server logs matched
+// exactly (accepts at ~3 s TCP + 8 s HS, all ending 8.2 s / 11.6 s). 12 s
+// covers the 9 s retransmit; server ReadHeaderTimeout=15 s still outlasts it
+// (PLAN §5 8 s deviated — justified by 2026-10-08 bench data, ops-log).
+static const uint32_t TLS_HANDSHAKE_S     = 12;      // cover the 9 s CH retransmit
+static const uint32_t TLS_CONNECT_MS      = 12000;   // TCP phase: SYN at 0/3/9 s
 static const uint32_t POST_TIMEOUT_MS     = 25000;   // PLAN: 25 s POST
 static const uint8_t  POST_ATTEMPTS       = 3;       // transport retries/tick
-static const uint32_t POST_RETRY_GAP_MS   = 1500;    // beat between attempts
+static const uint32_t POST_RETRY_GAP_MS   = 6000;    // decorrelate interference bursts
 static const uint32_t KEEPALIVE_IDLE_MS   = 45000;   // well under Caddy 60 s+ idle
 static const uint32_t JPG_RATE_MS         = 3000;    // /jpg: 1 per 3 s
 static const size_t   UPLOAD_CHUNK        = 6144;    // 6 KiB chunks (spec 4-8 KiB)
@@ -1065,7 +1071,7 @@ void setup() {
     camEnterDegraded();
   }
 
-  tlsClient.setHandshakeTimeout(TLS_HANDSHAKE_S);   // 8 s connect budget
+  tlsClient.setHandshakeTimeout(TLS_HANDSHAKE_S);   // connect budget (see TLS_HANDSHAKE_S)
 #if INSECURE_TLS
   tlsClient.setInsecure();  // DEV ONLY — prod grep-gates INSECURE_TLS=0
 #endif
