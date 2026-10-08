@@ -1,0 +1,29 @@
+# deploy/Caddyfile — installed to /etc/caddy/Caddyfile by deploy/provision.sh
+# (the script rewrites `example.com` → $DOMAIN for you).
+#
+# PLAN §8: "TLS: Caddy, three-line Caddyfile, TLS only. Rate limits live in Go."
+#   - TLS only: Caddy obtains and renews certificates itself; nothing else in
+#     this repo manages certs.
+#   - Rate limits (per-IP + per-device), body limits and request-body hygiene
+#     are the Go binary's job — Caddy and the app never log request bodies
+#     (PLAN §1 privacy contract).
+#
+# Replace example.com with the real venue/VPS domain if you install by hand,
+# and make sure the DNS A record points at this box first (Caddy needs it to
+# pass the ACME challenge).
+
+example.com {
+	# /metrics is deliberately NOT proxied. The empty handle swallows the
+	# path; as the first matching handle it prevents the fallback handle
+	# below from running, so /metrics never reaches the Go binary and is
+	# never exposed to the internet — metrics stay private to the box
+	# (PLAN §6.6). Prometheus, if used, scrapes over SSH tunnel / localhost.
+	handle /metrics* {
+	}
+
+	# Everything else — /v1/ingest, /healthz, /v/{slug}, /owner/…, /admin/… —
+	# goes to the Go binary on loopback; only Caddy can reach it (PLAN §2).
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+}

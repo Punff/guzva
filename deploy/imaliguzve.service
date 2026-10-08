@@ -1,0 +1,33 @@
+# imaliguzve.service — systemd unit for the venue-stills service (PLAN §8).
+# Installed to /etc/systemd/system/imaliguzve.service by deploy/provision.sh.
+#
+# The binary listens on loopback only: Caddy is the sole caller (PLAN §2).
+# Static binary, no container, no Docker.
+
+[Unit]
+Description=imaliguzve venue-stills service
+Documentation=file:///usr/local/bin/imaliguzve
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=imaliguzve
+Group=imaliguzve
+ExecStart=/usr/local/bin/imaliguzve serve -listen 127.0.0.1:8080 -data /var/lib/imaliguzve -retain-hours 48
+
+# Restart always, after a short pause: the <2 s restart gap is absorbed by
+# idempotent ingest (a duplicate capture_id gets 409 with the same body as a
+# 201) and by the device retrying on its next tick (PLAN §8, deploy section).
+Restart=always
+RestartSec=2
+
+# Hardening: no privilege escalation, private /tmp, read-only system dirs
+# except the data dir (SQLite WAL + venues/ live there).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/imaliguzve
+
+[Install]
+WantedBy=multi-user.target
