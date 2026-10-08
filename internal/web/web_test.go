@@ -282,3 +282,28 @@ func TestMethodNotAllowed(t *testing.T) {
 		t.Fatalf("status = %d", w.Code)
 	}
 }
+
+// The root has no index on purpose (no venue enumeration, §6.4) — but the
+// 404 must say where a lost visitor should go instead.
+func TestRootAndUnknownPathsHint(t *testing.T) {
+	f := newWebFixture(t)
+	for _, p := range []string{"/", "/unknown", "/v/jadro/extra"} {
+		w := get(t, f.mux, p)
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", p, w.Code)
+		}
+		if body := w.Body.String(); !strings.Contains(body, "/v/<slug>") {
+			t.Errorf("%s: hint missing: %q", p, body)
+		}
+		if body := w.Body.String(); strings.Contains(body, "jadro") && p == "/" {
+			t.Errorf("root hint leaked a venue name: %q", body)
+		}
+	}
+	// Specific routes keep winning over the fallback.
+	if w := get(t, f.mux, "/healthz"); w.Code != http.StatusOK {
+		t.Errorf("healthz shadowed by fallback: %d", w.Code)
+	}
+	if w := get(t, f.mux, "/v/jadro"); w.Code != http.StatusOK {
+		t.Errorf("venue page shadowed by fallback: %d", w.Code)
+	}
+}

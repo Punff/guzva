@@ -60,6 +60,18 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /static/{file}", s.static)
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /metrics", s.metrics)
+	// Fallback for anything unmatched, including the root: still a 404
+	// (there is no index or venue list, §6.4) but one that says where to go.
+	mux.HandleFunc("GET /", s.notFoundHint)
+}
+
+// notFoundHint answers the root and any unknown path. It exposes no venue
+// data — just the one thing a lost visitor needs to know.
+func (s *Server) notFoundHint(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	fmt.Fprint(w, "404 — there is no page here.\n\n"+
+		"Venue pages live at /v/<slug> — one URL per venue, never a list.\n")
 }
 
 // --- shared view model ----------------------------------------------------
