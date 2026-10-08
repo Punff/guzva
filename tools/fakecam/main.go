@@ -47,10 +47,13 @@ type modeSpec struct {
 
 func main() {
 	var (
-		addr     = flag.String("addr", "http://127.0.0.1:8080", "base URL of the server")
-		token    = flag.String("token", "", "device bearer token (ikv1_…)")
-		tokens   = flag.String("tokens", "", "comma-separated tokens, round-robined across clients (one per device; beats the per-device limiter)")
-		interval = flag.Duration("interval", time.Second, "per-client tick interval")
+		addr   = flag.String("addr", "http://127.0.0.1:8080", "base URL of the server")
+		token  = flag.String("token", "", "device bearer token (ikv1_…)")
+		tokens = flag.String("tokens", "", "comma-separated tokens, round-robined across clients (one per device; beats the per-device limiter)")
+		// The per-device bucket admits 0.2 req/s with burst 4 (§6.1). A
+		// client must tick slower than that or it earns 429s — default 6 s
+		// leaves headroom; pair more -tokens with faster intervals.
+		interval = flag.Duration("interval", 6*time.Second, "per-client tick interval (keep ≥ 5 s per token)")
 		dur      = flag.Duration("dur", 10*time.Second, "how long to run")
 		timeout  = flag.Duration("timeout", 40*time.Second, "per-request timeout (slow needs > 30 s)")
 		fast     = flag.Int("fast", 0, "fast clients")

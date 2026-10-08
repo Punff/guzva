@@ -24,6 +24,13 @@ copying detail.
   `/metrics` kept private), `deploy/imaliguzve.service` (hardened systemd
   unit, loopback only), `deploy/litestream.yml` (DB → S3, nightly snapshots);
   ops docs `docs/runbook.md` (leads with power, PLAN §8) and this log.
+- **PLAN §6.1 gate PASSED (bench, local):** fakecam with 19 fast + 1 slow
+  clients, one token per device, 10 s ticks. Fast p95 **319 ms with the slow
+  client** vs **345 ms without** (p50 108/102 ms, p99 428/454 ms) — the slow
+  client does not affect fast latency; it was cut by the 30 s ReadTimeout on
+  both attempts (`killed-by-server`). 95/95 fast posts answered 201, zero
+  429s. Harness: `tools/fakecam` (fast/slow/flappy/dup/partial), devices via
+  `imaliguzve provision -devices N`.
 - **TODO (mandatory, pre-pilot): first restore-drill with a timer.** Restore
   `imaliguzve.db` from Litestream on a scratch box, time the whole drill
   (runbook §6), and log the duration here **before the pilot starts**; then
