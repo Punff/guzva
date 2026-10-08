@@ -336,7 +336,44 @@ static void camEnterDegraded() {
 // WiFi.begin exactly once; reconnects are retried from loop() with backoff.
 // There is never a delay() waiting for WiFi — a due ingest tick simply waits
 // at the gate until the link is back (no queue, no stale frames).
+// WiFi events: exact join diagnosis on serial. Reason codes (§wifi_err_reason):
+// 200/201 = AP not found (RF/position), 202 = auth failed (password),
+// 203 = assoc rejected, 15 = 4-way handshake timeout.
+static bool wifiScanOnce = false;  // one visibility scan per boot (retry path)
+static bool wifiEverUp = false;    // "dropped" vs "never connected" in logs
+
+static void wifiEvent(arduino_event_id_t id, arduino_event_info_t info) {
+  switch (id) {
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      Serial.printf("[WiFi] disconnected reason=%u\n",
+                    info.wifi_sta_disconnected.reason);
+      break;
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      Serial.printf("[WiFi] got IP %s rssi=%d\n",
+                    WiFi.localIP().toString().c_str(),
+                    (int)WiFi.RSSI());
+      break;
+    default:
+      break;
+  }
+}
+
+// Visibility scan: what does the board hear? Runs once per boot, from the
+// retry path (radio idle after disconnect — scanning mid-join fails: -2).
+static void wifiScanReport() {
+  int n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
+  Serial.printf("[WiFi] scan: %d networks%s\n", n,
+                n == 0 ? " (board hears NONE)" : "");
+  for (int i = 0; i < n && i < 15; i++) {
+    Serial.printf("  \"%s\" ch=%d rssi=%d %s\n", WiFi.SSID(i).c_str(),
+                  (int)WiFi.channel(i), (int)WiFi.RSSI(i),
+                  WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "open" : "sec");
+  }
+  WiFi.scanDelete();
+}
+
 static void startWiFi() {
+  WiFi.onEvent(wifiEvent);
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(mdnsName);
   WiFi.setSleep(false);                    // reliability over power saving
@@ -350,13 +387,15 @@ static void serviceWiFi() {
   if (WiFi.status() == WL_CONNECTED) {
     wifiRetryMs = WIFI_RETRY_MIN_MS;
     wifiWasDown = false;
+    wifiEverUp = true;
     return;
   }
   if (!wifiWasDown) {                      // link just dropped: note it
     wifiWasDown = true;
     wifiLastAttempt = millis();
     tlsClient.stop();                      // stale TLS session is useless
-    Serial.println("[WiFi] link lost, retry with backoff");
+    if (wifiEverUp)                        // first boot has no "link" to lose
+      Serial.println("[WiFi] link lost, retry with backoff");
     return;
   }
   if (millis() - wifiLastAttempt < wifiRetryMs) return;
@@ -365,9 +404,11 @@ static void serviceWiFi() {
   wifiRetryMs = wifiRetryMs * 2 > WIFI_RETRY_MAX_MS ? WIFI_RETRY_MAX_MS
                                                     : wifiRetryMs * 2;
   WiFi.disconnect();
+  if (!wifiScanOnce) { wifiScanOnce = true; wifiScanReport(); }
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.printf("[WiFi] retry (join_fail=%lu, backoff %lu ms)\n",
-                (unsigned long)joinFail, (unsigned long)wifiRetryMs);
+  Serial.printf("[WiFi] retry (join_fail=%lu, status=%d, backoff %lu ms)\n",
+                (unsigned long)joinFail, (int)WiFi.status(),
+                (unsigned long)wifiRetryMs);
 }
 
 // ============================ TLS TRANSPORT ================================
@@ -982,7 +1023,10 @@ static void serialPoll() {
 
 // ============================ SETUP / LOOP =================================
 // Order: serial -> LED -> identity (efuse MAC) -> NVS -> camera (never
-// fatal) -> TLS budget -> LAN cage -> WiFi (begin once) -> mDNS -> schedule.
+// fatal) -> TLS budget -> WiFi (begin once) -> LAN cage -> mDNS -> schedule.
+// WiFi MUST precede the LAN cage: WiFi.mode()/begin() is what starts the
+// lwIP tcpip thread, and WebServer.begin() creates a socket — doing that
+// first trips `assert(sys_mbox_valid)` ("Invalid mbox") and reboot-loops.
 // No NTP anywhere: capture never waits for time.
 void setup() {
   Serial.begin(115200);
@@ -1012,8 +1056,8 @@ void setup() {
   tlsClient.setInsecure();  // DEV ONLY — prod grep-gates INSECURE_TLS=0
 #endif
 
-  startWebServer();
-  startWiFi();
+  startWiFi();      // first: brings up the lwIP tcpip thread
+  startWebServer(); // LAN cage — needs sockets, so after WiFi
   startMdns();
 
   nextTickAt = millis() + 5000;                     // first beat after 5 s

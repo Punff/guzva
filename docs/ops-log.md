@@ -31,6 +31,24 @@ copying detail.
   both attempts (`killed-by-server`). 95/95 fast posts answered 201, zero
   429s. Harness: `tools/fakecam` (fast/slow/flappy/dup/partial), devices via
   `imaliguzve provision -devices N`.
+- **ESP32-CAM hardware bring-up (bench, first flash):** flashed with
+  `pio run -t upload` from `firmware/` (a stray generated root
+  `platformio.ini` from a failed init was removed — the project lives in
+  `firmware/`). First boot **crash-looped** in lwIP:
+  `assert(sys_mbox_valid) "Invalid mbox"` every ~1 s — `setup()` started the
+  LAN cage (`WebServer.begin()` → `socket()`) **before**
+  `WiFi.mode()/begin()`, i.e. before the lwIP tcpip thread existed; decoded
+  with `xtensa-esp32-elf-addr2line` straight to `main.cpp:943`. Fix: start
+  WiFi first (order documented in the `setup()` comment). After the fix:
+  board joins `***REMOVED***` (a few `reason=201` no-AP attempts, then
+  `got IP 192.168.1.8 rssi≈-78` — **weakish**, worth improving), camera OK
+  (`[CAP]` 10–13 KB JPEGs), PSRAM present, mDNS
+  `imaliguzve-bd2a58.local`, token_len 48. Added serial diagnostics: WiFi
+  disconnect reason codes, one-shot AP visibility scan on first retry,
+  `status=` on join retries, GOT_IP+RSSI. **Remaining blocker:**
+  `INGEST_HOST` still the placeholder — ticks run, `TLS connect failed →
+  frame dropped`, expected until a real HTTPS endpoint (VPS or bench TLS)
+  is configured.
 - **TODO (mandatory, pre-pilot): first restore-drill with a timer.** Restore
   `imaliguzve.db` from Litestream on a scratch box, time the whole drill
   (runbook §6), and log the duration here **before the pilot starts**; then

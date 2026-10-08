@@ -9,6 +9,7 @@ firmware/.pio/
 dist/
 
 # Local test data
+mydata/
 *.db
 *.db-shm
 *.db-wal
