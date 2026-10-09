@@ -1,25 +1,30 @@
 /*
  * ============================================================================
- *  imaliguzve — lean ESP32-CAM capture firmware
- *  PLAN §5 "dumb sensor, smart about survival" · Phase 1 · proto-v1.md
- *  AI-Thinker ESP32-CAM / OV2640 · PlatformIO + arduino-esp32
+ *  imaliguzve — ESP32-CAM capture firmware (fresh build, PLAN §5)
+ *  AI-Thinker ESP32-CAM / OV2640 · PlatformIO + arduino-esp32 + esp32-camera
+ *  https://github.com/espressif/esp32-camera
  * ----------------------------------------------------------------------------
- *  Does (build steps 1-7 of PLAN §5):
- *    - capture a JPEG on a timer (interval driven by server desired_cfg)
+ *  Does:
+ *    - capture a JPEG on a timer (cadence driven by server desired_cfg)
  *    - hand-built multipart POST to https://<INGEST_HOST>/v1/ingest
- *      (part "meta" JSON + optional part "frame", per docs/proto-v1.md)
- *    - apply desired_cfg (interval_s 30-300 / quality / ver), echo
- *      cfg_ver_applied on the next POST, sleep next_s from the response
+ *      (part "meta" JSON + optional part "frame", per proto-v1)
+ *    - apply desired_cfg with read-back echo (cfg_ver_applied on every POST):
+ *      cadence (interval_s) + the FULL OV2640 feature set — framesize,
+ *      JPEG quality, brightness, contrast, saturation, sharpness, denoise,
+ *      special effects, white-balance mode/AWB, exposure (AEC/ae_level),
+ *      gain (AGC/agc_gain), hmirror, vflip, dcw, lens correction, colorbar
+ *      test pattern and the flash LED PWM — any subset, server-driven
  *    - no frame queue: upload failure = drop frame, post_fail++, fresh
  *      capture on the next tick
  *    - TLS: WiFiClientSecure + embedded CA (setCACert); keep-alive reuse of
- *      one client across ticks; 8 s connect / 25 s POST budgets
+ *      one client across ticks; 12 s handshake / 12 s connect / 25 s POST
+ *      budgets (bench-proven: covers lwIP 0/3/9 s SYN + 9 s CH retransmit)
  *    - non-blocking WiFi manager (WiFi.begin once, backoff retries from
  *      loop(); capture never waits for WiFi, there is no NTP in v1)
  *    - camera failure => exponential backoff + health-only beats, never a
- *      hot-reboot loop
- *    - NVS identity in "prov", camera config in "cam", factory reset over
- *      USB serial ("reset") and the caged LAN endpoint
+ *      hot-reboot loop; XCLK 20 MHz → 16 MHz fallback
+ *    - NVS identity in "prov", sensor/device config in "cam", factory reset
+ *      over USB serial ("reset") and the caged LAN endpoint
  *    - LAN cage on port 80: GET /api/status, GET /jpg (1 per 3 s),
  *      GET /ping, POST /api/factory-reset?confirm=1 — nothing else
  *    - mDNS imaliguzve-<serial>.local, serial from efuse MAC
@@ -30,8 +35,7 @@
  *  OTA upload form, RGB/grayscale endpoints, the big web dashboard, NTP.
  *
  *  Counters: boot + brownout persist in NVS ("prov"); join_fail / post_fail /
- *  tls_fail / capture_fail live in RAM and reset each boot — intentional
- *  (PLAN §5 item 7: RAM is fine, documented here).
+ *  tls_fail / capture_fail live in RAM and reset each boot — intentional.
  * ============================================================================
  */
 
@@ -47,7 +51,7 @@
 #include <esp_random.h>
 #include <esp_heap_caps.h>
 
-#include "wifiSettings.h"
+#include "settings.h"
 
 // TLS escape hatch — the production value (-DINSECURE_TLS=0) lives in
 // platformio.ini build_flags and is grep-gated: prod builds must show
@@ -56,12 +60,12 @@
 #define INSECURE_TLS 0
 #endif
 
-// Firmware semver — reported in every meta "fw" field (proto-v1.md).
+// Firmware semver — reported in every meta "fw" field (proto-v1).
 #define FW_VERSION "1.0.0"
 
 // ============================ HARDWARE PINS ================================
-// AI-Thinker ESP32-CAM camera wiring. These GPIOs are fixed by the board —
-// not general-purpose pins. (Copied from the reference sketch src/main.cpp.)
+// AI-Thinker ESP32-CAM camera wiring (classic mapping: Y2..Y9 =
+// 5,18,19,21,36,39,34,35) — fixed by the board, proven on this hardware.
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -79,24 +83,24 @@
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-#define FLASH_GPIO_NUM     4        // white flash LED (unused in v1)
+#define FLASH_GPIO_NUM     4        // white flash LED (PWM via LEDC ch 1)
 #define INDICATOR_LED_PIN  33       // status LED, active LOW
+#define FLASH_LEDC_CH      1        // ch 0 / timer 0 = camera XCLK
+#define FLASH_LEDC_FREQ    5000
+#define FLASH_LEDC_BITS    8
 
 // ============================ LIMITS & TUNABLES ============================
 static const uint32_t WIFI_RETRY_MIN_MS   = 10000;   // join backoff 10 s .. 60 s
 static const uint32_t WIFI_RETRY_MAX_MS   = 60000;
-// Bench-bench measured: lwIP RTO ≈ 3 s on the weak link, so SYN retransmits at
-// 0/3/9 s and the ClientHello retransmit at 9 s. The old 8 s budget cut the
-// connection off BEFORE the 9 s retransmit could go out — server logs matched
-// exactly (accepts at ~3 s TCP + 8 s HS, all ending 8.2 s / 11.6 s). 12 s
-// covers the 9 s retransmit; server ReadHeaderTimeout=15 s still outlasts it
-// (PLAN §5 8 s deviated — justified by 2026-10-08 bench data, ops-log).
-static const uint32_t TLS_HANDSHAKE_S     = 12;      // cover the 9 s CH retransmit
+// Bench-measured (2026-10-08): lwIP RTO ≈ 3 s on the weak link → SYN at
+// 0/3/9 s, ClientHello retransmit at 9 s. An 8 s budget cut the connection
+// off BEFORE the retransmit; 12 s covers it (ops-log).
+static const uint32_t TLS_HANDSHAKE_S     = 12;
 static const uint32_t TLS_CONNECT_MS      = 12000;   // TCP phase: SYN at 0/3/9 s
-static const uint32_t POST_TIMEOUT_MS     = 25000;   // PLAN: 25 s POST
+static const uint32_t POST_TIMEOUT_MS     = 25000;   // 25 s POST (write+response)
 static const uint8_t  POST_ATTEMPTS       = 3;       // transport retries/tick
-static const uint32_t POST_RETRY_GAP_MS   = 6000;    // decorrelate interference bursts
-static const uint32_t KEEPALIVE_IDLE_MS   = 45000;   // well under Caddy 60 s+ idle
+static const uint32_t POST_RETRY_GAP_MS   = 6000;    // decorrelate bursts
+static const uint32_t KEEPALIVE_IDLE_MS   = 45000;   // reuse well under 60 s idle
 static const uint32_t JPG_RATE_MS         = 3000;    // /jpg: 1 per 3 s
 static const size_t   UPLOAD_CHUNK        = 6144;    // 6 KiB chunks (spec 4-8 KiB)
 static const uint32_t INTERVAL_MIN_S      = 30;      // proto-v1 range
@@ -105,11 +109,10 @@ static const uint32_t REVOKED_BACKOFF_MIN = 60;      // 401: 60 -> 600 s (proto)
 static const uint32_t REVOKED_BACKOFF_MAX = 600;
 static const uint32_t CAM_BACKOFF_MIN_S   = 10;      // camera probe backoff
 static const uint32_t CAM_BACKOFF_MAX_S   = 1800;
-static const uint8_t  CAM_FAIL_LIMIT      = 5;       // degraded after 5 (PLAN §5)
+static const uint8_t  CAM_FAIL_LIMIT      = 5;       // degraded after 5
+static const uint8_t  FRAMESIZE_MAX_OV2640 = 10;     // FRAMESIZE_UXGA
 
 // ============================ MULTIPART (proto-v1) =========================
-// Hand-built multipart: meta part first, optional frame part, closing
-// boundary. Built at compile time — no String concatenation on the hot path.
 #define MP_BOUNDARY "imaliguzve-v1-9f3a"
 static const char PART_META_HDR[] =
     "--" MP_BOUNDARY "\r\n"
@@ -121,61 +124,104 @@ static const char PART_FRAME_HDR[] =
     "Content-Type: image/jpeg\r\n\r\n";
 static const char PART_TAIL[] = "--" MP_BOUNDARY "--\r\n";
 
+// ============================ SENSOR CONFIG (OV2640) =======================
+// The full device feature set (esp32-camera sensor_t). Any subset arrives in
+// desired_cfg, gets applied to the sensor, persisted in NVS and echoed via
+// cfg_ver_applied. Values are clamped to what the OV2640 accepts.
+struct SensorCfg {
+  uint8_t framesize;    // FRAMESIZE_* (0..UXGA)  — OV2640 max 10
+  uint8_t quality;      // JPEG 4..63, lower = better
+  int8_t  brightness;   // -2..2
+  int8_t  contrast;     // -2..2
+  int8_t  saturation;   // -2..2
+  int8_t  sharpness;    // -2..2 (NULL-guarded: not on all sensors)
+  uint8_t denoise;      // 0/1
+  uint8_t special_fx;   // 0 normal .. 6 sepia
+  uint8_t wb_mode;      // 0 auto .. 4 home
+  uint8_t awb;          // 0/1 white balance
+  uint8_t aec;          // 0/1 exposure control
+  uint8_t agc;          // 0/1 gain control
+  int8_t  ae_level;     // -2..2
+  uint8_t agc_gain;     // 0..30
+  uint8_t hmirror;      // 0/1
+  uint8_t vflip;        // 0/1
+  uint8_t dcw;          // 0/1 downsize
+  uint8_t lenc;         // 0/1 lens correction
+  uint8_t colorbar;     // 0/1 test pattern
+  uint8_t led_pwm;      // 0..255 flash LED
+};
+static SensorCfg scDefault = {
+  /* framesize  */ 4,       // FRAMESIZE_VGA
+  /* quality    */ 14,
+  /* brightness */ 0, /* contrast */ 0, /* saturation */ 0, /* sharpness */ 0,
+  /* denoise    */ 0,
+  /* special_fx */ 0, /* wb_mode */ 0,
+  /* awb        */ 1, /* aec */ 1, /* agc */ 1,
+  /* ae_level   */ 0, /* agc_gain */ 0,
+  /* hmirror    */ 0, /* vflip */ 0, /* dcw */ 1,
+  /* lenc       */ 1, /* colorbar */ 0,
+  /* led_pwm    */ 0,
+};
+static SensorCfg sc = scDefault;
+
 // ============================ STATE ========================================
 // --- NVS-backed -------------------------------------------------------------
 //   namespace "prov": boot, brownout, capture (id counter), cfgver, token
-//   namespace "cam" : interval (s), quality
+//   namespace "cam" : interval (s), scfg (SensorCfg blob)
 Preferences provPrefs, camPrefs;
 
-uint32_t bootCount      = 0;        // prov "boot"     (persisted, ++ per boot)
-uint32_t brownoutCount  = 0;        // prov "brownout" (persisted)
-uint32_t captureSeq     = 0;        // prov "capture"  (persisted, monotonic)
-uint32_t cfgVerApplied  = 0;        // prov "cfgver"   (read-back per proto)
-char     deviceToken[80] = {0};     // prov "token", fallback wifiSettings.h
-uint32_t intervalS      = 60;       // cam "interval"  (server desired_cfg)
-uint8_t  jpegQuality    = 14;       // cam "quality"   (server desired_cfg)
+uint32_t bootCount      = 0;
+uint32_t brownoutCount  = 0;
+uint32_t captureSeq     = 0;
+uint32_t cfgVerApplied  = 0;
+char     deviceToken[80] = {0};
+uint32_t intervalS      = 30;
 
-// --- RAM counters (reset on boot; documented in file header) ----------------
+// --- RAM counters (reset on boot) -------------------------------------------
 uint32_t joinFail = 0, postFail = 0, tlsFail = 0, captureFail = 0;
 
 // --- runtime ----------------------------------------------------------------
-char     serialNo[8]     = {0};     // efuse MAC low 3 bytes, "a1b2c3"
-char     mdnsName[40]    = {0};     // imaliguzve-<serial>
-char     captureId[40]   = {0};     // C<boot>-<ctr>-<rand4>
-char     metaBuf[1024]   = {0};     // meta JSON, built per tick
-char     reqHead[640]    = {0};     // HTTP request head (fixed buffers only)
-char     respHdr[1024]   = {0};     // HTTP response headers
-char     respBody[1024]  = {0};     // HTTP response body (small JSON)
+char     serialNo[8]     = {0};
+char     mdnsName[40]    = {0};
+char     captureId[40]   = {0};
+char     metaBuf[1024]   = {0};
+char     reqHead[640]    = {0};
+char     respHdr[1024]   = {0};
+char     respBody[2048]  = {0};   // room for a full sensor desired_cfg
 
-WiFiClientSecure tlsClient;         // ONE client, reused across ticks
-WebServer server(80);               // LAN cage (installer-facing only)
+WiFiClientSecure tlsClient;
+WebServer server(80);
 
-uint32_t tlsLastUseMs    = 0;       // keep-alive bookkeeping
-bool     camInited       = false;   // esp_camera_init succeeded at least now
-bool     camEverOk       = false;   // a frame was captured at least once
-bool     camDegraded     = false;   // health-only beats, camera in backoff
+uint32_t tlsLastUseMs    = 0;
+bool     camInited       = false;
+bool     camEverOk       = false;
+bool     camDegraded     = false;
 uint8_t  camFailStreak   = 0;
-uint32_t camBackoffS     = 0;       // current camera retry backoff
-uint32_t camRetryAt      = 0;       // millis() when camera may be retried
+uint32_t camBackoffS     = 0;
+uint32_t camRetryAt      = 0;
 
-bool     revoked401      = false;   // server said 401: slow health-only beats
+bool     revoked401      = false;
 uint32_t revokedBackoffS = REVOKED_BACKOFF_MIN;
 
-uint32_t nextTickAt      = 0;       // millis() of the next ingest tick
-int      lastHttp        = 0;       // last HTTP status (0 = transport fail)
-uint32_t ledOkFlashUntil = 0;       // brief LED flash after a good POST
-uint32_t pendingFactoryAt = 0;      // scheduled factory reset (0 = none)
+uint32_t nextTickAt      = 0;
+int      lastHttp        = 0;
+uint32_t ledOkFlashUntil = 0;
+uint32_t pendingFactoryAt = 0;
 uint32_t wifiLastAttempt = 0;
 uint32_t wifiRetryMs     = WIFI_RETRY_MIN_MS;
 bool     wifiWasDown     = true;
 
 // ============================ SMALL HELPERS ================================
-// millis() comparison that survives the 49-day wrap.
 static bool due(uint32_t at) { return (int32_t)(millis() - at) >= 0; }
 
-// Tiny JSON reader: find `"key":` and parse the unsigned decimal that
-// follows (whitespace tolerated). No JSON library — proto responses are
-// tiny and only these few fields matter.
+static int32_t clampi(int32_t v, int32_t lo, int32_t hi) {
+  return v < lo ? lo : (v > hi ? hi : v);
+}
+static uint32_t clampu(uint32_t v, uint32_t lo, uint32_t hi) {
+  return v < lo ? lo : (v > hi ? hi : v);
+}
+
+// Tiny JSON reader: find `"key":` and parse the unsigned decimal after it.
 static bool jsonU32(const char *body, const char *key, uint32_t *out) {
   const char *p = strstr(body, key);
   if (!p) return false;
@@ -189,7 +235,23 @@ static bool jsonU32(const char *body, const char *key, uint32_t *out) {
   return true;
 }
 
-// Tiny JSON string reader: find `"key":"` and copy until the closing quote.
+// Signed variant for the -2..2 sensor fields.
+static bool jsonS32(const char *body, const char *key, int32_t *out) {
+  const char *p = strstr(body, key);
+  if (!p) return false;
+  p += strlen(key);
+  while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+  bool neg = (*p == '-');
+  if (neg) p++;
+  if (*p < '0' || *p > '9') return false;
+  char *end = nullptr;
+  long v = strtol(p, &end, 10);
+  if (end == p) return false;
+  *out = neg ? -(int32_t)v : (int32_t)v;
+  return true;
+}
+
+// Tiny JSON string reader: `"key":"` → copy until the closing quote.
 static bool jsonStr(const char *body, const char *key, char *out, size_t cap) {
   const char *p = strstr(body, key);
   if (!p) { out[0] = 0; return false; }
@@ -204,7 +266,6 @@ static bool jsonStr(const char *body, const char *key, char *out, size_t cap) {
 }
 
 // ============================ LED (GPIO33, active LOW) ======================
-// Patterns are millis()-based state, never delay():
 //   connecting = 2 Hz blink · ok = short flash after a good POST
 //   revoked401 = double-blink per 1.2 s · camera-degraded = slow 0.5 Hz pulse
 static void ledWrite(bool on) { digitalWrite(INDICATOR_LED_PIN, on ? LOW : HIGH); }
@@ -213,28 +274,56 @@ static void ledOkFlash()      { ledOkFlashUntil = millis() + 150; }
 static void ledService() {
   uint32_t now = millis();
   if (ledOkFlashUntil != 0 && !due(ledOkFlashUntil)) { ledWrite(true); return; }
-  if (revoked401) {                       // revoked: amber-style double blink
+  if (revoked401) {
     uint32_t ph = now % 1200;
     ledWrite(ph < 90 || (ph >= 200 && ph < 290));
-  } else if (camDegraded) {               // camera degraded: slow pulse
+  } else if (camDegraded) {
     ledWrite((now % 2000) < 1000);
-  } else if (WiFi.status() != WL_CONNECTED) {  // connecting: 2 Hz blink
+  } else if (WiFi.status() != WL_CONNECTED) {
     ledWrite((now % 500) < 250);
   } else {
     ledWrite(false);
   }
 }
 
+// ============================ SENSOR APPLY =================================
+// Apply the whole SensorCfg to the running sensor (called after init and
+// whenever desired_cfg changes something). Function-pointer guarded: the
+// OV2640 driver does not implement every sensor_t hook.
+static void applySensorCfg() {
+  ledcWrite(FLASH_LEDC_CH, sc.led_pwm);
+  sensor_t *s = esp_camera_sensor_get();
+  if (!s) return;
+  s->set_framesize(s, (framesize_t)sc.framesize);
+  s->set_quality(s, sc.quality);
+  if (s->set_brightness)  s->set_brightness(s, sc.brightness);
+  if (s->set_contrast)    s->set_contrast(s, sc.contrast);
+  if (s->set_saturation)  s->set_saturation(s, sc.saturation);
+  if (s->set_sharpness)   s->set_sharpness(s, sc.sharpness);
+  if (s->set_denoise)     s->set_denoise(s, sc.denoise);
+  if (s->set_special_effect) s->set_special_effect(s, sc.special_fx);
+  if (s->set_wb_mode)     s->set_wb_mode(s, sc.wb_mode);
+  if (s->set_whitebal)    s->set_whitebal(s, sc.awb);
+  if (s->set_exposure_ctrl) s->set_exposure_ctrl(s, sc.aec);
+  if (s->set_gain_ctrl)   s->set_gain_ctrl(s, sc.agc);
+  if (s->set_ae_level)    s->set_ae_level(s, sc.ae_level);
+  if (s->set_agc_gain)    s->set_agc_gain(s, sc.agc_gain);
+  if (s->set_hmirror)     s->set_hmirror(s, sc.hmirror);
+  if (s->set_vflip)       s->set_vflip(s, sc.vflip);
+  if (s->set_dcw)         s->set_dcw(s, sc.dcw);
+  if (s->set_lenc)        s->set_lenc(s, sc.lenc);
+  if (s->set_colorbar)    s->set_colorbar(s, sc.colorbar);
+}
+
+static void saveSensorCfg() { camPrefs.putBytes("scfg", &sc, sizeof sc); }
+
 // ============================ NVS / IDENTITY ===============================
-// Load (and roll forward) everything that must survive a reboot. Namespace
-// "prov" = identity + monotonic counters; namespace "cam" = device-plane
-// config. Called once from setup(); the Preferences handles stay open.
 static void loadNvs() {
   provPrefs.begin("prov", false);
   camPrefs.begin("cam", false);
 
   bootCount = provPrefs.getULong("boot", 0) + 1;
-  provPrefs.putULong("boot", bootCount);            // monotonic boot counter
+  provPrefs.putULong("boot", bootCount);
 
   brownoutCount = provPrefs.getULong("brownout", 0);
   if (esp_reset_reason() == ESP_RST_BROWNOUT) {
@@ -248,27 +337,26 @@ static void loadNvs() {
   String tok = provPrefs.getString("token", DEVICE_TOKEN);
   snprintf(deviceToken, sizeof deviceToken, "%s", tok.c_str());
 
-  uint32_t iv = camPrefs.getULong("interval", 60);
-  intervalS   = (uint32_t)constrain(iv, INTERVAL_MIN_S, INTERVAL_MAX_S);
-  uint32_t q  = camPrefs.getUChar("quality", 14);
-  jpegQuality = (uint8_t)constrain(q, (uint32_t)5, (uint32_t)63);
+  uint32_t iv = camPrefs.getULong("interval", 30);
+  intervalS = (uint32_t)clampu(iv, INTERVAL_MIN_S, INTERVAL_MAX_S);
+
+  sc = scDefault;
+  size_t n = camPrefs.getBytes("scfg", &sc, sizeof sc);
+  if (n != sizeof sc) sc = scDefault;   // first boot or schema change
 }
 
-// Factory reset: clears identity ("prov") and config ("cam"), then restarts.
-// Entry points: serial command "reset" and POST /api/factory-reset?confirm=1.
 static void factoryReset() {
   Serial.println("[NVS] factory reset: clearing 'prov' + 'cam'");
   provPrefs.clear();
   camPrefs.clear();
   Serial.println("[NVS] cleared, restarting");
-  delay(100);                                        // let Serial drain
+  delay(100);
   ESP.restart();
 }
 
 // capture_id = "C<boot>-<ctr>-<rand4>" — matches proto
-// ^C[0-9]{1,10}-[0-9]{1,10}-[0-9a-f]{4}$ ; counter monotonic in NVS,
-// rand4 = 4 lowercase hex from esp_random. Issued on every tick (frames and
-// health-only beats alike) so it doubles as the idempotency key.
+// ^C[0-9]{1,10}-[0-9]{1,10}-[0-9a-f]{4}$ ; monotonic counter in NVS,
+// issued every tick (frames and health-only beats alike): idempotency key.
 static void nextCaptureId() {
   captureSeq++;
   provPrefs.putULong("capture", captureSeq);
@@ -279,11 +367,9 @@ static void nextCaptureId() {
 }
 
 // ============================ CAMERA =======================================
-// Build the driver config for the fixed AI-Thinker wiring. PSRAM-aware:
-// frames live in PSRAM, latest-frame grab, 2 frame buffers.
 static bool cameraTryInit(uint32_t xclkHz) {
   camera_config_t c = {};
-  c.ledc_channel = LEDC_CHANNEL_0;
+  c.ledc_channel = LEDC_CHANNEL_0;    // XCLK owns LEDC ch0/timer0 (flash: ch1)
   c.ledc_timer   = LEDC_TIMER_0;
   c.pin_d0       = Y2_GPIO_NUM;
   c.pin_d1       = Y3_GPIO_NUM;
@@ -303,8 +389,8 @@ static bool cameraTryInit(uint32_t xclkHz) {
   c.pin_reset    = RESET_GPIO_NUM;
   c.xclk_freq_hz = xclkHz;
   c.pixel_format = PIXFORMAT_JPEG;
-  c.frame_size   = psramFound() ? FRAMESIZE_VGA : FRAMESIZE_QVGA;
-  c.jpeg_quality = jpegQuality;
+  c.frame_size   = psramFound() ? (framesize_t)sc.framesize : FRAMESIZE_QVGA;
+  c.jpeg_quality = sc.quality;
   c.fb_location  = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
   c.grab_mode    = CAMERA_GRAB_LATEST;
   c.fb_count     = psramFound() ? 2 : 1;
@@ -315,22 +401,17 @@ static bool cameraTryInit(uint32_t xclkHz) {
                   (unsigned long)(xclkHz / 1000000UL));
     return false;
   }
-  // Re-apply device-plane quality (NVS) — init only set the boot default.
-  sensor_t *s = esp_camera_sensor_get();
-  if (s) s->set_quality(s, jpegQuality);
+  applySensorCfg();     // NVS sensor config (not just the boot defaults)
   return true;
 }
 
-// 20 MHz XCLK first, 16 MHz fallback on failure (PLAN §5 keeps the fallback).
+// 20 MHz XCLK first, 16 MHz fallback (bench: thin supply kills 20 MHz).
 static bool initCamera() {
   if (cameraTryInit(20000000)) return true;
   Serial.println("[CAM] 20 MHz XCLK failed -> 16 MHz fallback");
   return cameraTryInit(16000000);
 }
 
-// Enter (or refresh) camera-degraded mode: health-only beats keep the server
-// liveness signal, the camera gets an exponentially growing retry backoff.
-// Never a hot-reboot loop.
 static void camEnterDegraded() {
   camDegraded = true;
   camBackoffS = camBackoffS ? camBackoffS * 2 : CAM_BACKOFF_MIN_S;
@@ -341,14 +422,11 @@ static void camEnterDegraded() {
 }
 
 // ============================ WIFI MANAGER =================================
-// WiFi.begin exactly once; reconnects are retried from loop() with backoff.
-// There is never a delay() waiting for WiFi — a due ingest tick simply waits
-// at the gate until the link is back (no queue, no stale frames).
-// WiFi events: exact join diagnosis on serial. Reason codes (§wifi_err_reason):
-// 200/201 = AP not found (RF/position), 202 = auth failed (password),
-// 203 = assoc rejected, 15 = 4-way handshake timeout.
-static bool wifiScanOnce = false;  // one visibility scan per boot (retry path)
-static bool wifiEverUp = false;    // "dropped" vs "never connected" in logs
+// WiFi.begin exactly once; reconnects retried from loop() with backoff.
+// There is never a delay() waiting for WiFi — a due ingest tick waits at the
+// gate until the link is back (no queue, no stale frames).
+static bool wifiScanOnce = false;
+static bool wifiEverUp = false;
 
 static void wifiEvent(arduino_event_id_t id, arduino_event_info_t info) {
   switch (id) {
@@ -358,16 +436,15 @@ static void wifiEvent(arduino_event_id_t id, arduino_event_info_t info) {
       break;
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       Serial.printf("[WiFi] got IP %s rssi=%d\n",
-                    WiFi.localIP().toString().c_str(),
-                    (int)WiFi.RSSI());
+                    WiFi.localIP().toString().c_str(), (int)WiFi.RSSI());
       break;
     default:
       break;
   }
 }
 
-// Visibility scan: what does the board hear? Runs once per boot, from the
-// retry path (radio idle after disconnect — scanning mid-join fails: -2).
+// One visibility scan per boot, from the retry path (radio idle — scanning
+// mid-join fails).
 static void wifiScanReport() {
   int n = WiFi.scanNetworks(/*async=*/false, /*show_hidden=*/true);
   Serial.printf("[WiFi] scan: %d networks%s\n", n,
@@ -382,10 +459,10 @@ static void wifiScanReport() {
 
 static void startWiFi() {
   WiFi.onEvent(wifiEvent);
-  WiFi.mode(WIFI_STA);
-  WiFi.setHostname(mdnsName);
-  WiFi.setSleep(false);                    // reliability over power saving
-  WiFi.setTxPower(WIFI_POWER_19_5dBm);     // bench: weak-link headroom
+  WiFi.mode(WIFI_STA);              // starts the lwIP tcpip thread — MUST run
+  WiFi.setHostname(mdnsName);       // before any socket (WebServer) is created
+  WiFi.setSleep(false);
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   wifiLastAttempt = millis();
   wifiWasDown = false;
@@ -398,16 +475,15 @@ static void serviceWiFi() {
     wifiEverUp = true;
     return;
   }
-  if (!wifiWasDown) {                      // link just dropped: note it
+  if (!wifiWasDown) {
     wifiWasDown = true;
     wifiLastAttempt = millis();
-    tlsClient.stop();                      // stale TLS session is useless
-    if (wifiEverUp)                        // first boot has no "link" to lose
-      Serial.println("[WiFi] link lost, retry with backoff");
+    tlsClient.stop();               // stale TLS session is useless
+    if (wifiEverUp) Serial.println("[WiFi] link lost, retry with backoff");
     return;
   }
   if (millis() - wifiLastAttempt < wifiRetryMs) return;
-  joinFail++;                              // previous join attempt failed
+  joinFail++;
   wifiLastAttempt = millis();
   wifiRetryMs = wifiRetryMs * 2 > WIFI_RETRY_MAX_MS ? WIFI_RETRY_MAX_MS
                                                     : wifiRetryMs * 2;
@@ -421,8 +497,7 @@ static void serviceWiFi() {
 
 // ============================ TLS TRANSPORT ================================
 // Reuse the single WiFiClientSecure across ticks while it is still up and
-// its idle window is comfortably under Caddy's 60 s+ idle timeout; otherwise
-// reconnect (measured — the number feeds the PLAN §5 "early spike").
+// its idle window is under the keep-alive budget; otherwise fresh handshake.
 static bool tlsEnsureConnected(bool *reused, uint32_t *connectMs) {
   *reused = false;
   *connectMs = 0;
@@ -431,11 +506,10 @@ static bool tlsEnsureConnected(bool *reused, uint32_t *connectMs) {
     *reused = true;
     return true;
   }
-  if (tlsClient.connected()) tlsClient.stop();   // idle too long: fresh TLS
+  if (tlsClient.connected()) tlsClient.stop();
 
 #if INSECURE_TLS
-  tlsClient.setInsecure();  // DEV ONLY — prod builds grep-gate this behind
-                            // INSECURE_TLS=0 (see platformio.ini build_flags)
+  tlsClient.setInsecure();  // DEV ONLY — prod grep-gates INSECURE_TLS=0
 #else
   tlsClient.setCACert(CA_ROOT_PEM);
 #endif
@@ -451,7 +525,6 @@ static bool tlsEnsureConnected(bool *reused, uint32_t *connectMs) {
   return true;
 }
 
-// Write exactly len bytes before the (25 s) POST deadline.
 static bool tlsWriteAll(const uint8_t *p, size_t len, uint32_t deadline) {
   size_t off = 0;
   while (off < len) {
@@ -463,8 +536,8 @@ static bool tlsWriteAll(const uint8_t *p, size_t len, uint32_t deadline) {
   return true;
 }
 
-// Core reader: exactly n bytes; stored into buf[*stored .. cap-2] while they
-// fit, the rest drained so the keep-alive connection stays usable.
+// Read exactly n bytes; stored into buf[*stored .. cap-2] while they fit,
+// the rest drained so keep-alive stays usable.
 static bool tlsReadInto(size_t n, char *buf, size_t cap, size_t *stored,
                         uint32_t deadline) {
   size_t got = 0;
@@ -483,14 +556,13 @@ static bool tlsReadInto(size_t n, char *buf, size_t cap, size_t *stored,
       got += (size_t)rd;
     } else {
       if (!tlsClient.connected()) return false;
-      delay(1);                                // poll yield, not a wait
+      delay(1);                      // poll yield, not a wait
     }
   }
   buf[*stored] = '\0';
   return true;
 }
 
-// Read into a small local scratch buffer (excess drained).
 static bool tlsReadRaw(size_t n, char *scratch, size_t cap, uint32_t deadline) {
   size_t stored = 0;
   bool ok = tlsReadInto(n, scratch, cap, &stored, deadline);
@@ -512,7 +584,7 @@ static bool tlsReadUntil(const char *needle, char *dst, size_t cap,
       int rd = tlsClient.read(tmp, want);
       if (rd <= 0) return false;
       for (int i = 0; i < rd; i++) {
-        if (len + 1 >= cap) return false;       // header too large: give up
+        if (len + 1 >= cap) return false;
         dst[len++] = (char)tmp[i];
       }
       dst[len] = '\0';
@@ -526,8 +598,6 @@ static bool tlsReadUntil(const char *needle, char *dst, size_t cap,
   return false;
 }
 
-// Read a chunked body (defensive: Go usually sets Content-Length for our
-// small responses). Chunks are appended to dst up to cap-1.
 static bool tlsReadChunked(char *dst, size_t cap, size_t *outLen,
                            uint32_t deadline) {
   size_t total = 0;
@@ -540,20 +610,19 @@ static bool tlsReadChunked(char *dst, size_t cap, size_t *outLen,
     if (end == sizeLine) return false;
     if (sz == 0) {
       char crlf[4];
-      if (!tlsReadRaw(2, crlf, sizeof crlf, deadline)) return false; // final CRLF
-      if (crlf[0] != '\r') return false;        // trailer headers: not ours
+      if (!tlsReadRaw(2, crlf, sizeof crlf, deadline)) return false;
+      if (crlf[0] != '\r') return false;
       *outLen = total;
       return true;
     }
     if (!tlsReadInto(sz, dst, cap, &total, deadline)) return false;
     char skip[4];
-    if (!tlsReadRaw(2, skip, sizeof skip, deadline)) return false;  // chunk CRLF
+    if (!tlsReadRaw(2, skip, sizeof skip, deadline)) return false;
   }
 }
 
-// Read one HTTP response: headers, then body (Content-Length / chunked /
-// read-to-close). Returns the HTTP status (0 = transport failure). When the
-// message is fully consumed the connection may stay up (keep-alive reuse).
+// One HTTP response: headers, then body (Content-Length / chunked /
+// read-to-close). Returns the HTTP status (0 = transport failure).
 static int tlsReadResponse(uint32_t deadline, bool *reusable) {
   *reusable = false;
   if (!tlsReadUntil("\r\n\r\n", respHdr, sizeof respHdr, deadline)) return 0;
@@ -574,10 +643,7 @@ static int tlsReadResponse(uint32_t deadline, bool *reusable) {
     ok = tlsReadChunked(respBody, sizeof respBody, &stored, deadline);
     if (ok) *reusable = true;
   } else {
-    // No length framing: read until the server closes. Go always sets
-    // Content-Length for our small JSON bodies, so this is a rare fallback
-    // and the connection is never reused afterwards.
-    ok = true;
+    ok = true;                       // read until close; never reused
     while (tlsClient.connected() || tlsClient.available() > 0) {
       if (due(deadline)) { ok = false; break; }
       int avail = tlsClient.available();
@@ -588,7 +654,6 @@ static int tlsReadResponse(uint32_t deadline, bool *reusable) {
         delay(1);
       }
     }
-    *reusable = false;                          // close-delimited = not reusable
   }
   if (!ok) return 0;
   respBody[stored] = '\0';
@@ -597,14 +662,12 @@ static int tlsReadResponse(uint32_t deadline, bool *reusable) {
 }
 
 // ============================ INGEST POST ==================================
-// meta reason: what the server should know about this beat (proto-v1.md).
 static const char *metaReason() {
   if (camDegraded) return "camera-degraded";
   if (revoked401)  return "401-hold";
   return "";
 }
 
-// Build the meta part JSON into metaBuf (fixed buffer, snprintf only).
 static void buildMeta() {
   snprintf(metaBuf, sizeof metaBuf,
            "{\"capture_id\":\"%s\",\"fw\":\"%s\",\"rssi\":%d,"
@@ -621,11 +684,8 @@ static void buildMeta() {
            metaReason());
 }
 
-// One multipart POST: request head + meta part [+ frame part in 6 KiB
-// chunks] + closing boundary, then read and parse the small JSON response.
-// Returns the HTTP status; 0 = transport failure (counted here: tls_fail on
-// connect failure, post_fail on any failed upload).  The caller retries a
-// transport failure up to POST_ATTEMPTS times within the same tick.
+// One multipart POST: head + meta [+ frame in 6 KiB chunks] + tail, then the
+// small JSON response. Returns HTTP status; 0 = transport failure.
 static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   buildMeta();
   const size_t metaLen = strlen(metaBuf);
@@ -651,7 +711,6 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
     return 0;
   }
 
-  // --- connect (or keep-alive reuse) + TLS spike measurement ---------------
   bool reused = false;
   uint32_t connectMs = 0;
   if (!tlsEnsureConnected(&reused, &connectMs)) {
@@ -662,9 +721,8 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
     return 0;
   }
   uint32_t t0 = millis();
-  uint32_t deadline = t0 + POST_TIMEOUT_MS;      // 25 s for write + response
+  uint32_t deadline = t0 + POST_TIMEOUT_MS;
 
-  // --- write the multipart request in chunks ------------------------------
   uint32_t tw = millis();
   bool ok = tlsWriteAll((const uint8_t *)reqHead, strlen(reqHead), deadline) &&
             tlsWriteAll((const uint8_t *)PART_META_HDR,
@@ -687,14 +745,13 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   if (!ok) {
     postFail++;
     tlsClient.stop();
-    Serial.printf("[TLS ] handshake/connect %lu ms (reuse=%d) | write FAILED "
-                  "after %lu ms (heap %u)\n",
+    Serial.printf("[TLS ] connect %lu ms (reuse=%d) | write FAILED after %lu ms "
+                  "(heap %u)\n",
                   (unsigned long)(reused ? 0 : connectMs), (int)reused,
                   (unsigned long)writeMs, (unsigned)ESP.getFreeHeap());
     return 0;
   }
 
-  // --- read the response ---------------------------------------------------
   uint32_t tr = millis();
   bool reusable = false;
   int status = tlsReadResponse(deadline, &reusable);
@@ -702,8 +759,8 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   if (status == 0) {
     postFail++;
     tlsClient.stop();
-    Serial.printf("[TLS ] handshake/connect %lu ms (reuse=%d) | write %lu ms | "
-                  "response FAILED after %lu ms (heap %u)\n",
+    Serial.printf("[TLS ] connect %lu ms (reuse=%d) | write %lu ms | response "
+                  "FAILED after %lu ms (heap %u)\n",
                   (unsigned long)(reused ? 0 : connectMs), (int)reused,
                   (unsigned long)writeMs, (unsigned long)respMs,
                   (unsigned)ESP.getFreeHeap());
@@ -713,8 +770,8 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   else tlsClient.stop();
 
   // TLS spike print (PLAN §5): handshake/connect ms + free heap every tick.
-  Serial.printf("[TLS ] handshake/connect %lu ms (reuse=%d) | write %lu ms | "
-                "resp %lu ms | total %lu ms | free heap %u\n",
+  Serial.printf("[TLS ] connect %lu ms (reuse=%d) | write %lu ms | resp %lu ms "
+                "| total %lu ms | free heap %u\n",
                 (unsigned long)(reused ? 0 : connectMs), (int)reused,
                 (unsigned long)writeMs, (unsigned long)respMs,
                 (unsigned long)(millis() - t0), (unsigned)ESP.getFreeHeap());
@@ -722,53 +779,153 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
 }
 
 // ============================ RESPONSE HANDLING ============================
-// Apply desired_cfg from the response body (apply-if-found: 201/409/422/
-// 429 carry it; 401 may not). Ver is echoed as cfg_ver_applied next POST.
+// Apply desired_cfg (apply-if-found: 201/409/422/429 carry it). Cadence keys
+// live in "cam"/interval, sensor keys in the scfg blob. Ver is echoed as
+// cfg_ver_applied on the next POST (read-back contract).
 static void applyCfgFromBody() {
-  uint32_t v;
   bool any = false;
-  if (jsonU32(respBody, "\"interval_s\":", &v)) {
-    v = (uint32_t)constrain(v, INTERVAL_MIN_S, INTERVAL_MAX_S);
-    if (v != intervalS) {
-      intervalS = v;
-      camPrefs.putULong("interval", v);
+  bool sensorChanged = false;
+  uint32_t uv;
+  int32_t sv;
+
+  if (jsonU32(respBody, "\"interval_s\":", &uv)) {
+    uv = clampu(uv, INTERVAL_MIN_S, INTERVAL_MAX_S);
+    if (uv != intervalS) {
+      intervalS = uv;
+      camPrefs.putULong("interval", uv);
     }
     any = true;
   }
-  if (jsonU32(respBody, "\"quality\":", &v)) {
-    v = (uint32_t)constrain(v, (uint32_t)5, (uint32_t)63);
-    if (v != jpegQuality) {
-      jpegQuality = (uint8_t)v;
-      camPrefs.putUChar("quality", (uint8_t)v);
-      if (camInited) {
-        sensor_t *s = esp_camera_sensor_get();
-        if (s) s->set_quality(s, jpegQuality);
-      }
+  if (jsonU32(respBody, "\"ver\":", &uv)) {
+    if (uv != cfgVerApplied) {
+      cfgVerApplied = uv;
+      provPrefs.putULong("cfgver", uv);
     }
     any = true;
   }
-  if (jsonU32(respBody, "\"ver\":", &v)) {
-    if (v != cfgVerApplied) {
-      cfgVerApplied = v;
-      provPrefs.putULong("cfgver", v);
-    }
+
+  // --- sensor plane: any subset of the OV2640 feature set -------------------
+  if (jsonU32(respBody, "\"quality\":", &uv)) {
+    uv = clampu(uv, 4, 63);
+    if (uv != sc.quality) { sc.quality = (uint8_t)uv; sensorChanged = true; }
     any = true;
+  }
+  if (jsonU32(respBody, "\"framesize\":", &uv)) {
+    uv = clampu(uv, 0, FRAMESIZE_MAX_OV2640);
+    if (uv != sc.framesize) { sc.framesize = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonS32(respBody, "\"brightness\":", &sv)) {
+    sv = clampi(sv, -2, 2);
+    if (sv != sc.brightness) { sc.brightness = (int8_t)sv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonS32(respBody, "\"contrast\":", &sv)) {
+    sv = clampi(sv, -2, 2);
+    if (sv != sc.contrast) { sc.contrast = (int8_t)sv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonS32(respBody, "\"saturation\":", &sv)) {
+    sv = clampi(sv, -2, 2);
+    if (sv != sc.saturation) { sc.saturation = (int8_t)sv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonS32(respBody, "\"sharpness\":", &sv)) {
+    sv = clampi(sv, -2, 2);
+    if (sv != sc.sharpness) { sc.sharpness = (int8_t)sv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonS32(respBody, "\"ae_level\":", &sv)) {
+    sv = clampi(sv, -2, 2);
+    if (sv != sc.ae_level) { sc.ae_level = (int8_t)sv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"denoise\":", &uv)) {
+    uv = clampu(uv, 0, 1);
+    if (uv != sc.denoise) { sc.denoise = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"special_fx\":", &uv)) {
+    uv = clampu(uv, 0, 6);
+    if (uv != sc.special_fx) { sc.special_fx = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"wb_mode\":", &uv)) {
+    uv = clampu(uv, 0, 4);
+    if (uv != sc.wb_mode) { sc.wb_mode = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"awb\":", &uv)) {
+    uv = clampu(uv, 0, 1);
+    if (uv != sc.awb) { sc.awb = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"aec\":", &uv)) {
+    uv = clampu(uv, 0, 1);
+    if (uv != sc.aec) { sc.aec = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"agc\":", &uv)) {
+    uv = clampu(uv, 0, 1);
+    if (uv != sc.agc) { sc.agc = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"agc_gain\":", &uv)) {
+    uv = clampu(uv, 0, 30);
+    if (uv != sc.agc_gain) { sc.agc_gain = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"hmirror\":", &uv)) {
+    uv = clampu(uv, 0, 1);
+    if (uv != sc.hmirror) { sc.hmirror = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"vflip\":", &uv)) {
+    uv = clampu(uv, 0, 1);
+    if (uv != sc.vflip) { sc.vflip = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"dcw\":", &uv)) {
+    uv = clampu(uv, 0, 1);
+    if (uv != sc.dcw) { sc.dcw = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"lenc\":", &uv)) {
+    uv = clampu(uv, 0, 1);
+    if (uv != sc.lenc) { sc.lenc = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"colorbar\":", &uv)) {
+    uv = clampu(uv, 0, 1);
+    if (uv != sc.colorbar) { sc.colorbar = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+  if (jsonU32(respBody, "\"led_pwm\":", &uv)) {
+    uv = clampu(uv, 0, 255);
+    if (uv != sc.led_pwm) { sc.led_pwm = (uint8_t)uv; sensorChanged = true; }
+    any = true;
+  }
+
+  if (sensorChanged) {
+    saveSensorCfg();
+    applySensorCfg();
   }
   if (any)
-    Serial.printf("[CFG ] applied ver=%lu interval_s=%lu quality=%u\n",
+    Serial.printf("[CFG ] applied ver=%lu interval_s=%lu quality=%u fs=%u "
+                  "br=%d ct=%d sat=%d fx=%u wb=%u hm=%u vf=%u led=%u\n",
                   (unsigned long)cfgVerApplied, (unsigned long)intervalS,
-                  jpegQuality);
+                  sc.quality, sc.framesize, sc.brightness, sc.contrast,
+                  sc.saturation, sc.special_fx, sc.wb_mode, sc.hmirror,
+                  sc.vflip, sc.led_pwm);
 }
 
-// next_s from the response body, else the configured interval.
 static uint32_t respNextS() {
   uint32_t v;
   if (jsonU32(respBody, "\"next_s\":", &v) && v > 0)
-    return (uint32_t)constrain(v, (uint32_t)5, (uint32_t)3600);
+    return clampu(v, 5, 3600);
   return intervalS;
 }
 
-// Retry-After from response headers (429), default 10 s per proto.
 static uint32_t retryAfterS() {
   const char *ra = strstr(respHdr, "Retry-After:");
   long v = ra ? strtol(ra + 12, nullptr, 10) : 0;
@@ -778,9 +935,8 @@ static uint32_t retryAfterS() {
 }
 
 // ============================ TICK =========================================
-// One full tick: capture (unless revoked/degraded) -> POST -> handle
-// response -> schedule the next tick. No queue: whatever happens, the next
-// tick captures a fresh frame.
+// One full tick: capture (unless revoked/degraded) → POST → handle response →
+// schedule the next tick. No queue: the next tick always captures fresh.
 static void runTick() {
   nextCaptureId();
   const char *reason = metaReason();
@@ -789,14 +945,12 @@ static void runTick() {
   uint8_t *frameCopy = nullptr;
   size_t frameLen = 0;
 
-  if (!revoked401) {                       // 401 => health-only beats
+  if (!revoked401) {
     bool attempt = false;
     if (!camDegraded && camInited) {
-      attempt = true;                      // normal path
+      attempt = true;
     } else if (camDegraded && due(camRetryAt)) {
-      // Camera retry due: full deinit + probe (covers a dead probe and a
-      // hung sensor alike). esp_camera_deinit() is safe when not inited.
-      esp_camera_deinit();
+      esp_camera_deinit();           // safe when not inited; covers hung sensor
       camInited = initCamera();
       if (camInited) attempt = true;
       else { captureFail++; camFailStreak++; camEnterDegraded(); }
@@ -808,7 +962,7 @@ static void runTick() {
       for (int i = 0; i < 2 && !fb; i++) fb = esp_camera_fb_get();
       if (fb) {
         // Copy into PSRAM, return the frame buffer immediately (spec 5),
-        // then the upload streams from our copy in 6 KiB chunks.
+        // upload streams from our copy in 6 KiB chunks.
         frameCopy = (uint8_t *)heap_caps_malloc(fb->len, MALLOC_CAP_SPIRAM);
         if (frameCopy) {
           memcpy(frameCopy, fb->buf, fb->len);
@@ -835,7 +989,7 @@ static void runTick() {
         if (camFailStreak >= CAM_FAIL_LIMIT) camEnterDegraded();
       }
     }
-    if (camDegraded) reason = metaReason();   // degraded may have just changed
+    if (camDegraded) reason = metaReason();
   }
 
   Serial.printf("[TICK] #%lu id=%s %s reason=%s heap=%u\n",
@@ -843,10 +997,8 @@ static void runTick() {
                 haveFrame ? "frame" : "health-only",
                 reason[0] ? reason : "-", (unsigned)ESP.getFreeHeap());
 
-  // Transport failures get fresh chances inside the same tick: the link can
-  // drop packets for seconds at a time (marginal 2.4 GHz), and one shot per
-  // 60 s tick would waste the frame.  Still drop it when every attempt fails
-  // (PLAN: no frame queue).
+  // Transport failures get fresh chances inside the same tick (marginal
+  // 2.4 GHz drops packets for seconds); drop the frame when all fail.
   int status = 0;
   for (uint8_t attempt = 1; attempt <= POST_ATTEMPTS && status == 0; attempt++) {
     if (attempt > 1) {
@@ -857,9 +1009,9 @@ static void runTick() {
   }
   if (frameCopy) free(frameCopy);
 
-  // --- response contract (docs/proto-v1.md) -------------------------------
+  // --- response contract (proto-v1) ----------------------------------------
   uint32_t sleepS = intervalS;
-  if (status == 0) {               // every attempt failed: drop, retry tick
+  if (status == 0) {
     lastHttp = 0;
     sleepS = intervalS;
     Serial.printf("[HTTP] transport failure after %u attempts -> frame dropped "
@@ -867,7 +1019,7 @@ static void runTick() {
   } else {
     lastHttp = status;
     applyCfgFromBody();
-    if (status == 201 || status == 409) {   // 409 duplicate = same body
+    if (status == 201 || status == 409) {
       if (revoked401) {
         revoked401 = false;
         revokedBackoffS = REVOKED_BACKOFF_MIN;
@@ -877,7 +1029,7 @@ static void runTick() {
       sleepS = respNextS();
       Serial.printf("[HTTP] %d ok -> sleep %lu s\n", status,
                     (unsigned long)sleepS);
-    } else if (status == 401) {             // revoked: keep identity, back off
+    } else if (status == 401) {
       if (!revoked401) {
         revoked401 = true;
         revokedBackoffS = REVOKED_BACKOFF_MIN;
@@ -889,17 +1041,17 @@ static void runTick() {
       sleepS = revokedBackoffS;
       Serial.printf("[HTTP] 401 revoked -> health-only beats every %lu s, "
                     "identity kept\n", (unsigned long)sleepS);
-    } else if (status == 429) {             // rate-limited: sleep retry_after
+    } else if (status == 429) {
       sleepS = retryAfterS();
       Serial.printf("[HTTP] 429 rate-limited -> sleep %lu s\n",
                     (unsigned long)sleepS);
-    } else if (status == 422 || status == 413) {  // rejected: log, not fatal
+    } else if (status == 422 || status == 413) {
       char why[48] = {0};
       jsonStr(respBody, "\"reason\":", why, sizeof why);
       sleepS = respNextS();
       Serial.printf("[HTTP] %d rejected (%s) -> not fatal, sleep %lu s\n",
                     status, why[0] ? why : "?", (unsigned long)sleepS);
-    } else {                                // 507 / 5xx: retry next tick
+    } else {                           // 507 / 5xx: retry next tick
       postFail++;
       sleepS = intervalS;
       Serial.printf("[HTTP] %d server-side failure -> retry next tick "
@@ -913,8 +1065,7 @@ static void runTick() {
                 (unsigned long)cfgVerApplied, (unsigned)ESP.getFreeHeap());
 }
 
-// Gate: run a tick only when one is due AND the link is up. A due tick
-// waits (without blocking) for WiFi — capture never happens into the void.
+// Gate: run a tick only when due AND the link is up (never capture into void).
 static void tickService() {
   if (!due(nextTickAt)) return;
   if (WiFi.status() != WL_CONNECTED) return;
@@ -924,20 +1075,25 @@ static void tickService() {
 // ============================ LAN CAGE (port 80) ===========================
 // Installer-facing only: /api/status, /jpg (rate-limited), /ping and the
 // caged factory reset. No stream, no settings form, no files, no OTA page.
-static void handleStatus() {
-  char j[1024];
+static void buildStatusJson(char *j, size_t cap) {
   const char *camState = camDegraded ? (camEverOk ? "degraded" : "init-failed")
                                      : "ok";
   uint32_t nextIn = due(nextTickAt) ? 0 : (nextTickAt - millis()) / 1000;
-  snprintf(j, sizeof j,
+  snprintf(j, cap,
            "{\"hostname\":\"%s\",\"ip\":\"%s\",\"rssi\":%d,\"wifi\":%s,"
            "\"free_heap\":%u,\"free_psram\":%u,\"uptime_s\":%lu,"
            "\"fw\":\"%s\",\"serial\":\"%s\","
            "\"boot\":%lu,\"brownout\":%lu,\"join_fail\":%lu,\"post_fail\":%lu,"
            "\"tls_fail\":%lu,\"capture_fail\":%lu,\"capture_seq\":%lu,"
-           "\"cfg_ver_applied\":%lu,\"interval_s\":%lu,\"quality\":%u,"
+           "\"cfg_ver_applied\":%lu,\"interval_s\":%lu,"
            "\"next_tick_in_s\":%lu,\"camera\":\"%s\",\"mode\":\"%s\","
-           "\"last_http\":%d}",
+           "\"last_http\":%d,"
+           "\"cfg\":{\"quality\":%u,\"framesize\":%u,\"brightness\":%d,"
+           "\"contrast\":%d,\"saturation\":%d,\"sharpness\":%d,"
+           "\"denoise\":%u,\"special_fx\":%u,\"wb_mode\":%u,\"awb\":%u,"
+           "\"aec\":%u,\"agc\":%u,\"ae_level\":%d,\"agc_gain\":%u,"
+           "\"hmirror\":%u,\"vflip\":%u,\"dcw\":%u,\"lenc\":%u,"
+           "\"colorbar\":%u,\"led_pwm\":%u}}",
            mdnsName, WiFi.localIP().toString().c_str(), WiFi.RSSI(),
            WiFi.status() == WL_CONNECTED ? "true" : "false",
            (unsigned)ESP.getFreeHeap(),
@@ -947,13 +1103,21 @@ static void handleStatus() {
            (unsigned long)joinFail, (unsigned long)postFail,
            (unsigned long)tlsFail, (unsigned long)captureFail,
            (unsigned long)captureSeq, (unsigned long)cfgVerApplied,
-           (unsigned long)intervalS, jpegQuality, (unsigned long)nextIn,
-           camState, revoked401 ? "revoked-401" : "normal", lastHttp);
+           (unsigned long)intervalS, (unsigned long)nextIn,
+           camState, revoked401 ? "revoked-401" : "normal", lastHttp,
+           sc.quality, sc.framesize, sc.brightness, sc.contrast,
+           sc.saturation, sc.sharpness, sc.denoise, sc.special_fx,
+           sc.wb_mode, sc.awb, sc.aec, sc.agc, sc.ae_level, sc.agc_gain,
+           sc.hmirror, sc.vflip, sc.dcw, sc.lenc, sc.colorbar, sc.led_pwm);
+}
+
+static void handleStatus() {
+  static char j[2048];
+  buildStatusJson(j, sizeof j);
   server.send(200, "application/json", j);
 }
 
-// One still per 3 s max; 503 while the camera is not inited. Counters are
-// ingest-path only — an installer pull does not move them.
+// One still per 3 s max; 503 while the camera is not inited.
 static void handleJpg() {
   static uint32_t lastJpgAt = 0;
   uint32_t now = millis();
@@ -981,8 +1145,6 @@ static void handleJpg() {
 
 static void handlePing() { server.send(200, "text/plain", "ok"); }
 
-// Caged factory reset — requires the explicit ?confirm=1; the response goes
-// out first, the reset follows shortly after so the client sees it.
 static void handleFactoryReset() {
   if (server.arg("confirm") != "1") {
     server.send(400, "text/plain", "confirm=1 required");
@@ -1015,12 +1177,63 @@ static void startMdns() {
 }
 
 // ============================ SERIAL CONSOLE ===============================
-// USB provisioning path: "reset" clears 'prov' + 'cam' and restarts.
+// Reachability probe (PLAN install gate: ping <200 ms, RSSI ≥ −65). Tests
+// the LAN leg (this PC), the gateway and two WAN targets — answers "can the
+// board reach the internet at all" without guessing.
+static void netProbe(const char *label, const char *host, uint16_t port,
+                     uint32_t toMs) {
+  WiFiClient c;
+  uint32_t t = millis();
+  bool ok = c.connect(host, port, (int32_t)toMs) != 0;
+  uint32_t ms = millis() - t;
+  if (ok) c.stop();
+  Serial.printf("[NET ] %-11s %s:%u -> %s (%lu ms)\n", label, host,
+                (unsigned)port, ok ? "OK" : "FAIL", (unsigned long)ms);
+}
+
+static void cmdNet() {
+  Serial.printf("[NET ] ip=%s gw=%s mask=%s dns=%s rssi=%d status=%d\n",
+                WiFi.localIP().toString().c_str(),
+                WiFi.gatewayIP().toString().c_str(),
+                WiFi.subnetMask().toString().c_str(),
+                WiFi.dnsIP().toString().c_str(),
+                (int)WiFi.RSSI(), (int)WiFi.status());
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[NET ] wifi not connected");
+    return;
+  }
+  netProbe("lan-pc", "192.168.1.11", 8080, 3000);
+  netProbe("gw-http", WiFi.gatewayIP().toString().c_str(), 80, 3000);
+  netProbe("wan-ingest", INGEST_HOST, INGEST_PORT, 6000);
+  netProbe("wan-cf", "1.1.1.1", 443, 6000);
+}
+
+// USB provisioning path: "reset" clears 'prov' + 'cam' and restarts;
+// "status" prints the LAN-cage JSON, "cfg" the sensor config, "net" the
+// reachability probe.
 static void handleSerialCmd(char *cmd) {
   if (strcmp(cmd, "reset") == 0) {
     factoryReset();
+  } else if (strcmp(cmd, "net") == 0) {
+    cmdNet();
+  } else if (strcmp(cmd, "status") == 0) {
+    static char j[2048];
+    buildStatusJson(j, sizeof j);
+    Serial.println(j);
+  } else if (strcmp(cmd, "cfg") == 0) {
+    Serial.printf("[CFG ] ver=%lu interval_s=%lu quality=%u framesize=%u "
+                  "brightness=%d contrast=%d saturation=%d sharpness=%d "
+                  "denoise=%u special_fx=%u wb_mode=%u awb=%u aec=%u agc=%u "
+                  "ae_level=%d agc_gain=%u hmirror=%u vflip=%u dcw=%u "
+                  "lenc=%u colorbar=%u led_pwm=%u\n",
+                  (unsigned long)cfgVerApplied, (unsigned long)intervalS,
+                  sc.quality, sc.framesize, sc.brightness, sc.contrast,
+                  sc.saturation, sc.sharpness, sc.denoise, sc.special_fx,
+                  sc.wb_mode, sc.awb, sc.aec, sc.agc, sc.ae_level,
+                  sc.agc_gain, sc.hmirror, sc.vflip, sc.dcw, sc.lenc,
+                  sc.colorbar, sc.led_pwm);
   } else {
-    Serial.printf("[CLI] unknown command '%s' (try: reset)\n", cmd);
+    Serial.printf("[CLI] unknown command '%s' (try: reset, status, cfg)\n", cmd);
   }
 }
 
@@ -1042,11 +1255,11 @@ static void serialPoll() {
 }
 
 // ============================ SETUP / LOOP =================================
-// Order: serial -> LED -> identity (efuse MAC) -> NVS -> camera (never
-// fatal) -> TLS budget -> WiFi (begin once) -> LAN cage -> mDNS -> schedule.
-// WiFi MUST precede the LAN cage: WiFi.mode()/begin() is what starts the
-// lwIP tcpip thread, and WebServer.begin() creates a socket — doing that
-// first trips `assert(sys_mbox_valid)` ("Invalid mbox") and reboot-loops.
+// Order: serial → LED → identity (efuse MAC) → NVS → camera (never fatal)
+// → flash LEDC → TLS budget → WiFi (begin once) → LAN cage → mDNS → schedule.
+// WiFi MUST precede the LAN cage: WiFi.mode()/begin() starts the lwIP tcpip
+// thread, and WebServer.begin() creates a socket — doing that first trips
+// `assert(sys_mbox_valid)` ("Invalid mbox") and reboot-loops.
 // No NTP anywhere: capture never waits for time.
 void setup() {
   Serial.begin(115200);
@@ -1063,15 +1276,20 @@ void setup() {
 
   loadNvs();
 
+  // Flash LED PWM BEFORE the camera: initCamera() → applySensorCfg() writes
+  // the LED duty, and LEDC must be set up by then (ch1; XCLK owns ch0).
+  ledcSetup(FLASH_LEDC_CH, FLASH_LEDC_FREQ, FLASH_LEDC_BITS);
+  ledcAttachPin(FLASH_GPIO_NUM, FLASH_LEDC_CH);
+  ledcWrite(FLASH_LEDC_CH, sc.led_pwm);
+
   camInited = initCamera();
   if (camInited) {
     camEverOk = true;
   } else {
-    // Camera failure is NOT fatal (PLAN §5): degraded mode, no reboot loop.
-    camEnterDegraded();
+    camEnterDegraded();              // camera failure is NOT fatal
   }
 
-  tlsClient.setHandshakeTimeout(TLS_HANDSHAKE_S);   // connect budget (see TLS_HANDSHAKE_S)
+  tlsClient.setHandshakeTimeout(TLS_HANDSHAKE_S);
 #if INSECURE_TLS
   tlsClient.setInsecure();  // DEV ONLY — prod grep-gates INSECURE_TLS=0
 #endif
@@ -1080,13 +1298,13 @@ void setup() {
   startWebServer(); // LAN cage — needs sockets, so after WiFi
   startMdns();
 
-  nextTickAt = millis() + 5000;                     // first beat after 5 s
+  nextTickAt = millis() + 5000;      // first beat after 5 s
 
   Serial.printf("[BOOT] serial=%s boot=%lu brownout=%lu cfg_ver=%lu "
-                "interval_s=%lu quality=%u\n",
-                serialNo, (unsigned long)bootCount, (unsigned long)brownoutCount,
-                (unsigned long)cfgVerApplied, (unsigned long)intervalS,
-                jpegQuality);
+                "interval_s=%lu\n",
+                serialNo, (unsigned long)bootCount,
+                (unsigned long)brownoutCount, (unsigned long)cfgVerApplied,
+                (unsigned long)intervalS);
   // Never print the token itself — only its presence/length (secret).
   Serial.printf("[BOOT] PSRAM=%s free_heap=%u camera=%s token_len=%u\n",
                 psramFound() ? "yes" : "no", (unsigned)ESP.getFreeHeap(),
@@ -1098,7 +1316,7 @@ void loop() {
   serviceWiFi();                 // non-blocking reconnect with backoff
   server.handleClient();         // LAN cage
   tickService();                 // capture + HTTPS ingest when due
-  serialPoll();                  // "reset" over USB
+  serialPoll();                  // "reset" / "status" / "cfg" over USB
   ledService();                  // millis()-based LED patterns
   if (pendingFactoryAt != 0 && due(pendingFactoryAt)) factoryReset();
   delay(2);                      // yield — not a wait for anything

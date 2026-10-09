@@ -13,3 +13,7 @@ mydata/
 *.db
 *.db-shm
 *.db-wal
+
+# Python bytecode
+__pycache__/
+*.pyc

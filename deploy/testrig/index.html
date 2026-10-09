@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>camtest — ESP32-CAM ingest</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1.2rem; background: #0d1117; color: #e6edf3;
+    font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  header { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap;
+           border-bottom: 1px solid #21262d; padding-bottom: .8rem; margin-bottom: 1rem; }
+  h1 { font-size: 1.05rem; margin: 0; font-weight: 600; letter-spacing: .04em; }
+  .badge { padding: .15rem .6rem; border-radius: 999px; font-size: .78rem;
+           font-weight: 700; letter-spacing: .06em; }
+  .fresh { background: #1f6f3f; color: #d8ffe7; }
+  .stale { background: #7a5300; color: #fff1cc; }
+  .none   { background: #3a2c2c; color: #ffd7d7; }
+  .dim { color: #8b949e; }
+  main { display: grid; gap: 1rem; grid-template-columns: minmax(0,2fr) minmax(260px,1fr); }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .card { background: #10161d; border: 1px solid #21262d; border-radius: 8px; padding: .9rem; }
+  .frame { display: block; width: 100%; background: #000; border-radius: 6px;
+           min-height: 200px; object-fit: contain; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: .22rem .3rem; border-bottom: 1px solid #161b22; vertical-align: top; }
+  td:first-child { color: #8b949e; width: 42%; }
+  #history { display: flex; gap: .45rem; overflow-x: auto; padding-top: .5rem; }
+  #history a { flex: 0 0 auto; }
+  #history img { width: 96px; height: 64px; object-fit: cover; border-radius: 4px;
+                 border: 1px solid #30363d; background: #000; }
+  #history .ts { font-size: .68rem; color: #8b949e; text-align: center; }
+  .err { color: #ff7b72; }
+</style>
+</head>
+<body>
+<header>
+  <h1>camtest · ESP32-CAM → VPS</h1>
+  <span id="badge" class="badge none">NO FRAME</span>
+  <span class="dim" id="updated">waiting…</span>
+  <span class="dim" id="srvtime" style="margin-left:auto"></span>
+</header>
+<main>
+  <section class="card">
+    <img id="still" class="frame" alt="no frame yet">
+    <div id="histwrap">
+      <div class="dim" style="margin-top:.6rem">history (newest first)</div>
+      <div id="history"></div>
+    </div>
+  </section>
+  <aside class="card">
+    <table id="meta">
+      <tr><td>capture_id</td><td id="m_cid" class="dim">—</td></tr>
+      <tr><td>received_at</td><td id="m_ts" class="dim">—</td></tr>
+      <tr><td>size</td><td id="m_size" class="dim">—</td></tr>
+      <tr><td>fw</td><td id="m_fw" class="dim">—</td></tr>
+      <tr><td>rssi</td><td id="m_rssi" class="dim">—</td></tr>
+      <tr><td>free_heap</td><td id="m_heap" class="dim">—</td></tr>
+      <tr><td>reason</td><td id="m_reason" class="dim">—</td></tr>
+      <tr><td>counters</td><td id="m_cnt" class="dim">—</td></tr>
+      <tr><td>desired_cfg</td><td id="m_cfg" class="dim">—</td></tr>
+      <tr><td>frames_total</td><td id="m_total" class="dim">—</td></tr>
+      <tr><td>rejected</td><td id="m_rej" class="dim">—</td></tr>
+      <tr><td>health_beats</td><td id="m_beats" class="dim">—</td></tr>
+      <tr><td>disk_free</td><td id="m_disk" class="dim">—</td></tr>
+    </table>
+    <div class="err" id="err"></div>
+  </aside>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let health = null;
+
+async function tick() {
+  try {
+    const [st, hz] = await Promise.all([
+      fetch('/status.json', {cache: 'no-store'}).then(r => r.json()),
+      fetch('/healthz', {cache: 'no-store'}).then(r => r.json()).catch(() => null),
+    ]);
+    health = hz;
+    $('err').textContent = '';
+    render(st);
+  } catch (e) {
+    $('err').textContent = 'poll failed: ' + e;
+  }
+}
+
+function render(st) {
+  const b = $('badge');
+  if (!st.last) {
+    b.className = 'badge none'; b.textContent = 'NO FRAME';
+    $('updated').textContent = 'waiting for first POST /v1/ingest …';
+  } else {
+    b.className = 'badge ' + (st.fresh ? 'fresh' : 'stale');
+    b.textContent = st.fresh ? 'FRESH' : 'STALE';
+    $('updated').textContent = 'updated ' + st.last.received_at + 'Z';
+    $('still').src = '/latest.jpg?ts=' + encodeURIComponent(st.last.received_at);
+    const l = st.last;
+    $('m_cid').textContent = l.capture_id || '—';
+    $('m_ts').textContent  = l.received_at + 'Z';
+    $('m_size').textContent = l.size ? (l.size / 1024).toFixed(1) + ' KiB' : '—';
+    $('m_fw').textContent  = l.fw || '—';
+    $('m_rssi').textContent = l.rssi == null ? '—' : l.rssi + ' dBm';
+    $('m_heap').textContent = l.free_heap == null ? '—' : l.free_heap + ' B';
+    $('m_reason').textContent = l.reason || '—';
+    $('m_cnt').textContent = l.counters && Object.keys(l.counters).length
+      ? Object.entries(l.counters).map(([k,v]) => k + '=' + v).join(' ')
+      : '—';
+  }
+  $('m_cfg').textContent = st.cfg
+    ? 'ver=' + st.cfg.ver + ' interval=' + st.cfg.interval_s + 's quality=' + st.cfg.quality
+    : '—';
+  $('m_total').textContent = st.frames_total;
+  $('m_rej').textContent = st.rejected;
+  $('m_beats').textContent = st.health_beats;
+  $('m_disk').textContent = health ? health.disk_free_pct + ' %' : '—';
+  $('srvtime').textContent = 'server ' + st.server_time;
+
+  const h = $('history');
+  h.innerHTML = '';
+  (st.history || []).forEach(f => {
+    const a = document.createElement('a');
+    a.href = f.url; a.target = '_blank'; a.title = f.capture_id + ' ' + f.received_at;
+    const img = document.createElement('img');
+    img.src = f.url; img.loading = 'lazy';
+    const ts = document.createElement('div');
+    ts.className = 'ts';
+    ts.textContent = f.received_at.slice(11, 19);
+    a.appendChild(img); h.appendChild(a); h.appendChild(ts);
+  });
+}
+tick();
+setInterval(tick, 5000);
+</script>
+</body>
+</html>
