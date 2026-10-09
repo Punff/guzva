@@ -1,0 +1,56 @@
+{{define "owner_dash.html"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>guzva — {{.Venue.Name}}</title>
+<script src="/admin/static/htmx.min.js" defer></script>
+{{template "styles.html" .}}
+</head>
+<body>
+<header style="display:flex;justify-content:space-between;align-items:baseline">
+  <h1>{{.Venue.Name}}</h1>
+  <form method="post" action="/owner/logout" class="inline">
+    <button type="submit">Sign out</button>
+  </form>
+</header>
+
+<div id="flash">{{if .Saved}}<span class="ok">Saved.</span>{{end}}</div>
+
+<p><a href="/{{.Venue.Slug}}/" target="_blank">Public page ↗</a>
+<span class="muted">· open/closed badge now: <strong>{{.OpenState}}</strong></span></p>
+
+<h2>Venue details</h2>
+<form class="formgrid" hx-post="/owner/venue" hx-target="#flash" hx-swap="innerHTML">
+  <label for="v-name">Name</label>
+  <input id="v-name" name="name" value="{{.Venue.Name}}" required>
+  <label for="v-tz">Timezone</label>
+  <input id="v-tz" name="tz" value="{{.Venue.TZ}}">
+  <label for="v-style">Style</label>
+  <select id="v-style" name="style">
+    <option value="poster"{{if eq .Venue.Style "poster"}} selected{{end}}>poster (4-level)</option>
+    <option value="mono"{{if eq .Venue.Style "mono"}} selected{{end}}>mono (B&amp;W)</option>
+  </select>
+  <label for="v-hours">Hours</label>
+  <input id="v-hours" name="hours" value="{{.HoursSpec}}" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (empty = no badge)">
+  <span></span><button type="submit">Save details</button>
+</form>
+
+<h2>Devices (health only)</h2>
+{{if .Devices}}
+<table>
+  <tr><th>Serial</th><th>Status</th><th>Last seen</th><th>RSSI</th><th>Config</th></tr>
+  {{range .Devices}}
+  <tr>
+    <td><code>{{.Serial}}</code></td>
+    <td>{{.Status}}</td>
+    <td>{{.SeenAge}}</td>
+    <td>{{.RSSI}} dBm</td>
+    <td {{if .Amber}}class="amber" title="a new configuration is on its way to the device"{{end}}>{{.CfgVer}}/{{.CfgApplied}}</td>
+  </tr>
+  {{end}}
+</table>
+<p class="muted">Camera settings are managed by your guzva administrator — ask them if the picture needs changing.</p>
+{{else}}<p class="muted">No devices yet — your administrator will add one.</p>{{end}}
+</body>
+</html>{{end}}

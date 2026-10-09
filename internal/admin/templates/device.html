@@ -1,0 +1,43 @@
+{{define "device.html"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>guzva — device {{.Device.Serial}}</title>
+<script src="/admin/static/htmx.min.js" defer></script>
+{{template "styles.html" .}}
+</head>
+<body>
+<header style="display:flex;justify-content:space-between;align-items:baseline">
+  <h1><a href="/admin/">fleet</a> / <code>{{.Device.Serial}}</code></h1>
+  <form method="post" action="/admin/logout" class="inline">
+    <button type="submit">Sign out</button>
+  </form>
+</header>
+
+<div id="flash">{{if .Saved}}<span class="ok">Config saved as ver {{.Cfg.Ver}} — the device applies it on its next POST.</span>{{end}}</div>
+
+<p>Status <strong>{{.Device.Status}}</strong> · FW <code>{{.Device.FW}}</code> · RSSI {{.Device.RSSI}} dBm ·
+config wanted/applied
+<span {{if .Amber}}class="amber" title="read-back mismatch — device has not applied the latest config"{{end}}>{{.Cfg.Ver}}/{{.Device.CfgAppliedVer}}</span></p>
+
+<h2>desired_cfg</h2>
+<p class="muted">Every key is validated against the proto table before saving
+(unknown keys rejected, out-of-range rejected). Saving bumps <code>ver</code>;
+the board fetches it on its next POST — same gate as <code>guzva cfg -set</code>.</p>
+<form method="post" action="/admin/devices/{{.Device.ID}}/cfg">
+<table>
+  <tr><th>Key</th><th>Value</th><th>Range</th><th>Plane</th></tr>
+  {{range .Fields}}
+  <tr>
+    <td><code>{{.Key}}</code></td>
+    <td><input type="number" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}" style="width:6em"></td>
+    <td class="muted">{{.Min}}…{{.Max}}</td>
+    <td class="muted">{{if .Cadence}}cadence{{else}}sensor{{end}}</td>
+  </tr>
+  {{end}}
+</table>
+<p><button type="submit">Save config (bumps ver)</button></p>
+</form>
+</body>
+</html>{{end}}

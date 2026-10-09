@@ -25,6 +25,7 @@
     <code>/{{.Slug}}/</code>
     <span class="badge {{.FreshClass}}">{{.FreshText}}</span>
     <span class="age">last frame {{.LastAge}}</span>
+    <span class="age"><a href="/admin/venues/{{.ID}}">edit</a></span>
   </h3>
   {{if .Devices}}
   <table>
@@ -33,7 +34,7 @@
         <th>cfg (wanted/applied)</th><th></th></tr>
     {{range .Devices}}
     <tr>
-      <td><code>{{.Serial}}</code></td>
+      <td><code><a href="/admin/devices/{{.ID}}">{{.Serial}}</a></code></td>
       <td>{{.Status}}</td>
       <td>{{.FW}}</td>
       <td>{{.RSSI}} dBm</td>

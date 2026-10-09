@@ -101,3 +101,41 @@ func TestClassifyFreshness(t *testing.T) {
 		}
 	}
 }
+
+// Spec round-trips the canonical forms: parse → render → identical string.
+func TestSpecRoundtrip(t *testing.T) {
+	for _, spec := range []string{
+		"",
+		"Mo-Fr 09:00-17:00",
+		"Mo-Fr 09:00-17:00;Sa 10:00-14:00",
+		"Sa 10:00-14:00",
+		"Mo-Su 00:00-24:00",
+		"Tu-Th 10:00-12:00;Sa-Su 10:00-14:00",
+	} {
+		h, err := ParseSpec(spec)
+		if err != nil {
+			t.Fatalf("parse %q: %v", spec, err)
+		}
+		if got := h.Spec(); got != spec {
+			t.Errorf("Spec() = %q, want %q", got, spec)
+		}
+	}
+}
+
+// Spec output always re-parses, even for hand-built multi-range days that
+// the grammar would not accept in one group.
+func TestSpecMultiRangeReparses(t *testing.T) {
+	var h Hours
+	h[1] = []Range{{OpenMin: 9 * 60, CloseMin: 12 * 60}, {OpenMin: 13 * 60, CloseMin: 17 * 60}} // Mo
+	spec := h.Spec()
+	if spec != "Mo 09:00-12:00;Mo 13:00-17:00" {
+		t.Fatalf("Spec() = %q", spec)
+	}
+	h2, err := ParseSpec(spec)
+	if err != nil {
+		t.Fatalf("re-parse %q: %v", spec, err)
+	}
+	if h2.Spec() != spec {
+		t.Fatalf("unstable: %q → %q", spec, h2.Spec())
+	}
+}

@@ -1,0 +1,21 @@
+{{define "owner_login.html"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>guzva — owner sign in</title>
+{{template "styles.html" .}}
+</head>
+<body>
+<h1>guzva — venue owner</h1>
+{{if .Err}}<div class="err" style="background:#ffe0e0;color:#7a1414;padding:.4em .7em;border-radius:6px;">{{.Err}}</div>{{end}}
+<form method="post" action="/owner/login" class="formgrid" style="margin-top:1rem">
+  <label for="slug">Venue slug</label>
+  <input id="slug" name="slug" placeholder="jadro" autofocus autocomplete="username">
+  <label for="password">Password</label>
+  <input type="password" id="password" name="password" autocomplete="current-password">
+  <span></span><button type="submit">Sign in</button>
+</form>
+<p class="muted">Your venue login is issued by your guzva administrator. Device tokens and camera settings stay with them — this panel covers your venue's public details.</p>
+</body>
+</html>{{end}}

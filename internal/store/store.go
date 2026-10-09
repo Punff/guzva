@@ -151,6 +151,13 @@ const schemaV2 = `
 ALTER TABLE devices ADD COLUMN cfg_json TEXT NOT NULL DEFAULT '';
 `
 
+// schemaV3 adds the owner-panel credential: one bcrypt hash per venue,
+// empty = no owner login yet (super-admin sets it). The password itself is
+// never stored — verification is bcrypt against this hash.
+const schemaV3 = `
+ALTER TABLE venues ADD COLUMN owner_hash TEXT NOT NULL DEFAULT '';
+`
+
 func (s *Store) migrate(ctx context.Context) error {
 	var ver int
 	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&ver); err != nil {
@@ -173,8 +180,15 @@ func (s *Store) migrate(ctx context.Context) error {
 		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 2"); err != nil {
 			return fmt.Errorf("store: set user_version: %w", err)
 		}
+		ver = 2 // ... and v3 as well
+		fallthrough
 	case 2:
-		// current
+		if _, err := s.db.ExecContext(ctx, schemaV3); err != nil {
+			return fmt.Errorf("store: migration v3: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 3"); err != nil {
+			return fmt.Errorf("store: set user_version: %w", err)
+		}
 	default:
 		return fmt.Errorf("store: unknown schema version %d (binary older than db?)", ver)
 	}
@@ -202,16 +216,6 @@ func fromTS(sec int64) time.Time {
 // --- venues ---------------------------------------------------------------
 
 // Venue is the site-plane entity (§1: settings planes).
-type Venue struct {
-	ID          int64
-	Slug        string
-	Name        string
-	TZ          string // IANA name; public pages render venue-local time (§6.4)
-	Style       string // preset name applied to new frames (site-plane)
-	LastFrameAt time.Time
-	CreatedAt   time.Time
-}
-
 // DefaultTZ is used when a venue is created without one.
 const DefaultTZ = "Europe/Sarajevo"
 
@@ -235,12 +239,12 @@ func (s *Store) CreateVenue(ctx context.Context, v Venue) (int64, error) {
 	return res.LastInsertId()
 }
 
-const venueCols = `id, slug, name, tz, style, last_frame_at, created_at`
+const venueCols = `id, slug, name, tz, style, owner_hash, last_frame_at, created_at`
 
 func scanVenue(row interface{ Scan(...any) error }) (*Venue, error) {
 	var v Venue
 	var last, created int64
-	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &last, &created)
+	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &v.OwnerHash, &last, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -333,6 +337,58 @@ func (s *Store) Hours(ctx context.Context, venueID int64) (venue.Hours, error) {
 
 // --- devices --------------------------------------------------------------
 
+// Venue is the site-plane entity. OwnerHash is the bcrypt hash of the
+// venue owner's panel password ("" = no owner login; super-admin sets it).
+// It is selected so the owner login can verify — it is never rendered.
+type Venue struct {
+	ID          int64
+	Slug        string
+	Name        string
+	TZ          string // IANA name; public pages render venue-local time (§6.4)
+	Style       string // preset name applied to new frames (site-plane)
+	OwnerHash   string
+	LastFrameAt time.Time
+	CreatedAt   time.Time
+}
+
+// UpdateVenue replaces the editable site-plane details (owner panel +
+// super-admin). Slug is identity and never changes; hours go through
+// SetHours so the two writers cannot disagree on the format.
+func (s *Store) UpdateVenue(ctx context.Context, id int64, name, style, tz string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE venues SET name = ?, style = ?, tz = ? WHERE id = ?`,
+		name, style, tz, id)
+	return err
+}
+
+// SetOwnerHash stores the bcrypt hash of the owner's panel password
+// (super-admin only; the password itself never reaches the store).
+func (s *Store) SetOwnerHash(ctx context.Context, id int64, hash string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE venues SET owner_hash = ? WHERE id = ?`, hash, id)
+	return err
+}
+
+// DevicesByVenue lists one venue's devices for the owner health view (and
+// the super-admin device page) — same row scan as ListDevices, scoped.
+func (s *Store) DevicesByVenue(ctx context.Context, venueID int64) ([]Device, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+deviceCols+` FROM devices WHERE venue_id = ? ORDER BY serial`, venueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Device
+	for rows.Next() {
+		d, err := scanDevice(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *d)
+	}
+	return out, rows.Err()
+}
+
 // Device is the device-plane entity.
 type Device struct {
 	ID            int64
@@ -421,6 +477,14 @@ func (s *Store) CreateDevice(ctx context.Context, d Device, tokenHash string) (i
 func (s *Store) DeviceBySerial(ctx context.Context, serial string) (*Device, error) {
 	return scanDevice(s.db.QueryRowContext(ctx,
 		`SELECT `+deviceCols+` FROM devices WHERE serial = ?`, serial))
+}
+
+// DeviceByID resolves a device by row id (admin console URLs; the id is
+// meaningless off-box so it carries no authority — every admin route
+// re-checks the session).
+func (s *Store) DeviceByID(ctx context.Context, id int64) (*Device, error) {
+	return scanDevice(s.db.QueryRowContext(ctx,
+		`SELECT `+deviceCols+` FROM devices WHERE id = ?`, id))
 }
 
 // DeviceByTokenHash resolves a bearer token by its sha256. Returns

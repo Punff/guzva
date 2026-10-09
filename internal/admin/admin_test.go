@@ -227,3 +227,220 @@ func extractToken(t *testing.T, body string) string {
 	}
 	return body[i:end]
 }
+
+// Owner panel: scoped login, own-venue edits, and the walls around them.
+func TestOwnerPanel(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	ck := f.login(t)
+	ctx := t.Context()
+
+	// Two venues; only jadro gets an owner password.
+	for _, vs := range []struct{ slug, name string }{{"jadro", "Jadro"}, {"other", "Other"}} {
+		w := f.do(t, http.MethodPost, "/admin/venues", url.Values{
+			"slug": {vs.slug}, "name": {vs.name}, "tz": {"Europe/Sarajevo"},
+			"style": {"poster"}, "hours": {"Mo-Fr 09:00-17:00"},
+		}, ck, true)
+		if w.Header().Get("HX-Redirect") == "" {
+			t.Fatalf("create %s: %q", vs.slug, w.Body.String())
+		}
+	}
+	jadro, _ := f.st.VenueBySlug(ctx, "jadro")
+	if err := f.st.SetOwnerHash(ctx, jadro.ID, mustHash(t, "owner-sekret-1")); err != nil {
+		t.Fatal(err)
+	}
+
+	ownerLogin := func(slug, pw string) *httptest.ResponseRecorder {
+		return f.do(t, http.MethodPost, "/owner/login",
+			url.Values{"slug": {slug}, "password": {pw}}, nil, false)
+	}
+	ownerCookie := func(w *httptest.ResponseRecorder) *http.Cookie {
+		t.Helper()
+		for _, c := range w.Result().Cookies() {
+			if c.Name == auth.OwnerSessionCookieName {
+				return c
+			}
+		}
+		t.Fatal("no owner cookie")
+		return nil
+	}
+
+	// Unknown venue, unset password, wrong password: one generic message.
+	for _, tc := range [][2]string{{"nope", "x"}, {"other", "x"}, {"jadro", "wrong"}} {
+		w := ownerLogin(tc[0], tc[1])
+		if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "Wrong venue or password") {
+			t.Fatalf("login %v = %d %q", tc, w.Code, w.Body.String())
+		}
+	}
+
+	// Right password: 303 → /owner/, dash shows own venue only.
+	w := ownerLogin("jadro", "owner-sekret-1")
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("owner login = %d %q", w.Code, w.Body.String())
+	}
+	ock := ownerCookie(w)
+	w = f.do(t, http.MethodGet, "/owner/", nil, ock, false)
+	body := w.Body.String()
+	if w.Code != http.StatusOK || !strings.Contains(body, "Jadro") {
+		t.Fatalf("dash = %d", w.Code)
+	}
+	if strings.Contains(body, "Other") {
+		t.Fatalf("owner sees another venue: %q", body[:200])
+	}
+	if strings.Contains(body, "Revoke") || strings.Contains(body, "cfg_") {
+		t.Fatal("owner dash leaks super-admin controls")
+	}
+
+	// Owner edits own venue details (incl. hours).
+	w = f.do(t, http.MethodPost, "/owner/venue", url.Values{
+		"name": {"Jadro Grad"}, "style": {"mono"}, "tz": {"Europe/Zagreb"},
+		"hours": {"Sa-Su 10:00-14:00"},
+	}, ock, true)
+	if w.Header().Get("HX-Redirect") == "" {
+		t.Fatalf("owner update = %q", w.Body.String())
+	}
+	v, _ := f.st.VenueByID(ctx, jadro.ID)
+	if v.Name != "Jadro Grad" || v.Style != "mono" || v.TZ != "Europe/Zagreb" {
+		t.Fatalf("venue = %+v", v)
+	}
+	if h, _ := f.st.Hours(ctx, jadro.ID); h.Spec() != "Sa-Su 10:00-14:00" {
+		t.Fatalf("hours spec = %q", h.Spec())
+	}
+
+	// Owner validation: same gate as super-admin (empty name, bad hours).
+	w = f.do(t, http.MethodPost, "/owner/venue", url.Values{
+		"name": {""}, "style": {"poster"},
+	}, ock, true)
+	if !strings.Contains(w.Body.String(), "Name is required") {
+		t.Fatalf("empty name = %q", w.Body.String())
+	}
+	w = f.do(t, http.MethodPost, "/owner/venue", url.Values{
+		"name": {"Jadro"}, "style": {"poster"}, "hours": {"nonsense"},
+	}, ock, true)
+	if !strings.Contains(w.Body.String(), "Bad hours") {
+		t.Fatalf("bad hours = %q", w.Body.String())
+	}
+
+	// Walls: owner cookie grants nothing under /admin; admin cookie grants
+	// nothing under /owner; logged-out owner routes bounce to owner login.
+	w = f.do(t, http.MethodGet, "/admin/", nil, ock, false)
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/admin/login" {
+		t.Fatalf("owner→admin = %d loc %q", w.Code, w.Header().Get("Location"))
+	}
+	w = f.do(t, http.MethodGet, "/owner/", nil, ck, false)
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/owner/login" {
+		t.Fatalf("admin→owner = %d loc %q", w.Code, w.Header().Get("Location"))
+	}
+	w = f.do(t, http.MethodGet, "/owner/", nil, nil, false)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("logged-out owner dash = %d", w.Code)
+	}
+
+	// Logout clears the cookie.
+	w = f.do(t, http.MethodPost, "/owner/logout", nil, ock, false)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("owner logout = %d", w.Code)
+	}
+}
+
+// Super-admin edits: venue details, owner password, device config.
+func TestSuperAdminEdits(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	ck := f.login(t)
+	ctx := t.Context()
+
+	w := f.do(t, http.MethodPost, "/admin/venues", url.Values{
+		"slug": {"jadro"}, "name": {"Jadro"}, "tz": {"Europe/Sarajevo"},
+		"style": {"poster"}, "hours": {""},
+	}, ck, true)
+	if w.Header().Get("HX-Redirect") == "" {
+		t.Fatalf("create: %q", w.Body.String())
+	}
+	v, _ := f.st.VenueBySlug(ctx, "jadro")
+
+	// Venue page renders with prefilled hours (empty = no badge).
+	w = f.do(t, http.MethodGet, "/admin/venues/1", nil, ck, false)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Jadro") {
+		t.Fatalf("venue page = %d", w.Code)
+	}
+	// Unknown venue id → 404, not 500.
+	if w := f.do(t, http.MethodGet, "/admin/venues/999", nil, ck, false); w.Code != http.StatusNotFound {
+		t.Fatalf("missing venue = %d", w.Code)
+	}
+
+	// Update details.
+	w = f.do(t, http.MethodPost, "/admin/venues/1", url.Values{
+		"name": {"Jadro Grad"}, "style": {"mono"}, "tz": {"Europe/Zagreb"},
+		"hours": {"Mo-Fr 09:00-17:00"},
+	}, ck, true)
+	if w.Header().Get("HX-Redirect") == "" {
+		t.Fatalf("update venue = %q", w.Body.String())
+	}
+	v, _ = f.st.VenueByID(ctx, v.ID)
+	if v.Name != "Jadro Grad" || v.Style != "mono" {
+		t.Fatalf("venue = %+v", v)
+	}
+
+	// Owner password: too short rejected, good one stored as hash only.
+	w = f.do(t, http.MethodPost, "/admin/venues/1/ownerpw",
+		url.Values{"password": {"short"}}, ck, true)
+	if !strings.Contains(w.Body.String(), "at least 10") {
+		t.Fatalf("short pw = %q", w.Body.String())
+	}
+	w = f.do(t, http.MethodPost, "/admin/venues/1/ownerpw",
+		url.Values{"password": {"owner-sekret-1"}}, ck, true)
+	if w.Header().Get("HX-Redirect") == "" {
+		t.Fatalf("set ownerpw = %q", w.Body.String())
+	}
+	v, _ = f.st.VenueByID(ctx, v.ID)
+	if v.OwnerHash == "" || v.OwnerHash == "owner-sekret-1" {
+		t.Fatal("owner password stored raw or not at all")
+	}
+	if !auth.CheckAdminPassword(v.OwnerHash, "owner-sekret-1") {
+		t.Fatal("stored hash does not verify")
+	}
+
+	// Device page + config edit via the web (same gate as `guzva cfg`).
+	w = f.do(t, http.MethodPost, "/admin/devices", url.Values{
+		"venue_id": {"1"}, "serial": {"cam1"},
+	}, ck, true)
+	if !strings.Contains(w.Body.String(), "gkv1_") {
+		t.Fatalf("mint: %q", w.Body.String())
+	}
+	w = f.do(t, http.MethodGet, "/admin/devices/1", nil, ck, false)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "cfg_interval_s") {
+		t.Fatalf("device page = %d", w.Code)
+	}
+	w = f.do(t, http.MethodPost, "/admin/devices/1/cfg", url.Values{
+		"cfg_interval_s": {"45"}, "cfg_quality": {"12"},
+		"cfg_framesize": {"5"}, "cfg_led_pwm": {"80"},
+	}, ck, true)
+	if w.Header().Get("HX-Redirect") == "" {
+		t.Fatalf("set cfg = %q", w.Body.String())
+	}
+	d, _ := f.st.DeviceBySerial(ctx, "cam1")
+	if d.CfgVer != 2 || d.CfgIntervalS != 45 || d.CfgQuality != 12 ||
+		d.CfgExtra["framesize"] != 5 || d.CfgExtra["led_pwm"] != 80 {
+		t.Fatalf("cfg = %+v extra=%v", d, d.CfgExtra)
+	}
+
+	// Out-of-range and non-integer values are rejected, nothing saved.
+	w = f.do(t, http.MethodPost, "/admin/devices/1/cfg", url.Values{
+		"cfg_interval_s": {"45"}, "cfg_led_pwm": {"999"},
+	}, ck, true)
+	if !strings.Contains(w.Body.String(), "out of range") {
+		t.Fatalf("range = %q", w.Body.String())
+	}
+	w = f.do(t, http.MethodPost, "/admin/devices/1/cfg", url.Values{
+		"cfg_quality": {"high"},
+	}, ck, true)
+	if !strings.Contains(w.Body.String(), "must be an integer") {
+		t.Fatalf("integer = %q", w.Body.String())
+	}
+	d, _ = f.st.DeviceBySerial(ctx, "cam1")
+	if d.CfgVer != 2 {
+		t.Fatalf("rejected edit bumped ver: %+v", d)
+	}
+	if w := f.do(t, http.MethodGet, "/admin/devices/999", nil, ck, false); w.Code != http.StatusNotFound {
+		t.Fatalf("missing device = %d", w.Code)
+	}
+}

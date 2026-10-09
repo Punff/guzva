@@ -1,0 +1,51 @@
+{{define "venue.html"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>guzva — venue {{.Venue.Slug}}</title>
+<script src="/admin/static/htmx.min.js" defer></script>
+{{template "styles.html" .}}
+</head>
+<body>
+<header style="display:flex;justify-content:space-between;align-items:baseline">
+  <h1><a href="/admin/">fleet</a> / {{.Venue.Name}}</h1>
+  <form method="post" action="/admin/logout" class="inline">
+    <button type="submit">Sign out</button>
+  </form>
+</header>
+
+<div id="flash">{{if .Saved}}<span class="ok">Saved — live on the next device POST where applicable.</span>{{end}}{{if .OwnerSet}}<span class="ok">Owner password set.</span>{{end}}</div>
+
+<h2>Details</h2>
+<p class="muted">Slug <code>/{{.Venue.Slug}}/</code> is identity and never changes.
+<a href="/{{.Venue.Slug}}/" target="_blank">Public page ↗</a></p>
+<form class="formgrid" hx-post="/admin/venues/{{.Venue.ID}}" hx-target="#flash" hx-swap="innerHTML">
+  <label for="v-name">Name</label>
+  <input id="v-name" name="name" value="{{.Venue.Name}}" required>
+  <label for="v-tz">Timezone</label>
+  <input id="v-tz" name="tz" value="{{.Venue.TZ}}">
+  <label for="v-style">Style</label>
+  <select id="v-style" name="style">
+    <option value="poster"{{if eq .Venue.Style "poster"}} selected{{end}}>poster (4-level)</option>
+    <option value="mono"{{if eq .Venue.Style "mono"}} selected{{end}}>mono (B&amp;W)</option>
+  </select>
+  <label for="v-hours">Hours</label>
+  <input id="v-hours" name="hours" value="{{.HoursSpec}}" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (empty = no badge)">
+  <span></span><button type="submit">Save details</button>
+</form>
+
+<h2>Owner login</h2>
+{{if .HasOwner}}
+<p class="muted">Owner login is enabled for this venue. Setting a new password replaces it (the old one stops working at next login).</p>
+{{else}}
+<p class="muted">No owner login yet — set one to give the venue owner their own panel.</p>
+{{end}}
+<form class="formgrid" method="post" action="/admin/venues/{{.Venue.ID}}/ownerpw">
+  <label for="o-pw">New owner password</label>
+  <input type="password" id="o-pw" name="password" autocomplete="new-password" minlength="10" required>
+  <span></span><button type="submit">Set owner password (≥10 chars)</button>
+</form>
+<p class="muted">Hand the password to the owner out-of-band. It is hashed on save and never shown again.</p>
+</body>
+</html>{{end}}

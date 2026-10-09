@@ -178,8 +178,8 @@ func TestMigrationV1ToV2(t *testing.T) {
 	defer s.Close()
 
 	var ver int
-	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 2 {
-		t.Fatalf("user_version = %d err=%v, want 2", ver, err)
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 3 {
+		t.Fatalf("user_version = %d err=%v, want 3", ver, err)
 	}
 	d, err := s.DeviceBySerial(context.Background(), "esp32-old")
 	if err != nil {
@@ -353,5 +353,88 @@ func TestStaleFramesKeepsLastGoodPerVenue(t *testing.T) {
 	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frames WHERE status = 'quarantined'`).Scan(&q)
 	if q != 0 {
 		t.Fatalf("old quarantine survived: %d", q)
+	}
+}
+
+// Migration v3 adds owner_hash; old databases gain the column with existing
+// venues intact and no owner login until the super-admin sets one.
+func TestMigrationToV3(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	if _, err := db.Exec(schemaV1); err != nil {
+		t.Fatalf("seed v1 schema: %v", err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO venues (slug, name, style, tz, created_at)
+		VALUES ('old', 'Old', 'poster', 'UTC', 0)`); err != nil {
+		t.Fatalf("seed venue: %v", err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("open migrated: %v", err)
+	}
+	defer s.Close()
+	var ver int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 3 {
+		t.Fatalf("user_version = %d err=%v, want 3", ver, err)
+	}
+	v, err := s.VenueBySlug(context.Background(), "old")
+	if err != nil {
+		t.Fatalf("venue after migration: %v", err)
+	}
+	if v.Name != "Old" || v.OwnerHash != "" {
+		t.Fatalf("v1 venue not intact: %+v", v)
+	}
+}
+
+// UpdateVenue + SetOwnerHash + DevicesByVenue: the owner panel's data plane.
+func TestVenueDetailsAndOwner(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	vid := mustVenue(t, s, "jadro")
+
+	if err := s.UpdateVenue(ctx, vid, "Jadro Grad", "mono", "Europe/Zagreb"); err != nil {
+		t.Fatalf("update venue: %v", err)
+	}
+	v, err := s.VenueByID(ctx, vid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Name != "Jadro Grad" || v.Style != "mono" || v.TZ != "Europe/Zagreb" || v.Slug != "jadro" {
+		t.Fatalf("venue = %+v (slug must be immutable)", v)
+	}
+
+	if err := s.SetOwnerHash(ctx, vid, "bcrypt-hash-here"); err != nil {
+		t.Fatalf("set owner hash: %v", err)
+	}
+	v, _ = s.VenueByID(ctx, vid)
+	if v.OwnerHash != "bcrypt-hash-here" {
+		t.Fatalf("owner hash not stored: %+v", v)
+	}
+
+	did, err := s.CreateDevice(ctx, Device{
+		VenueID: vid, Serial: "esp32-aa",
+		CfgVer: 1, CfgIntervalS: 60, CfgQuality: 18,
+	}, "hash1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := mustVenue(t, s, "other")
+	if _, err := s.CreateDevice(ctx, Device{VenueID: other, Serial: "esp32-bb"}, "hash2"); err != nil {
+		t.Fatal(err)
+	}
+	devs, err := s.DevicesByVenue(ctx, vid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(devs) != 1 || devs[0].ID != did {
+		t.Fatalf("devices by venue = %+v", devs)
 	}
 }

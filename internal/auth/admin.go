@@ -136,3 +136,100 @@ func (s *Session) Clear(w http.ResponseWriter, secure bool) {
 		SameSite: http.SameSiteStrictMode,
 	})
 }
+
+// --- owner sessions --------------------------------------------------------
+//
+// The owner panel (one login per venue) rides a second, scoped cookie:
+// o1.<venueID>.<exp>.<mac> on Path /owner. Same HMAC construction as the
+// admin session, different name/version/path so the two credentials can
+// never be confused: an owner cookie verifies nothing under /admin and
+// vice versa. The scope comes from the signed payload — handlers must take
+// the venue id from Verify, never from a form field or URL.
+//
+// An owner session ends client-side (Clear) or when the super-admin resets
+// the venue's owner password — the old password then fails at next login,
+// and there is nothing server-side to revoke because nothing server-side is
+// stored (§6.2: no sessions table, same discipline as admin).
+
+// OwnerSessionCookieName is the owner session cookie.
+const OwnerSessionCookieName = "guzva_owner"
+
+// ownerSessionVersion prefixes owner cookie values.
+const ownerSessionVersion = "o1"
+
+// OwnerSession signs and verifies the per-venue owner cookie.
+type OwnerSession struct {
+	secret []byte
+	now    func() time.Time
+}
+
+// NewOwnerSession builds the owner-cookie signer (same secret source as
+// admin — one secret, two disjoint cookie namespaces).
+func NewOwnerSession(secret []byte, now func() time.Time) *OwnerSession {
+	if now == nil {
+		now = time.Now
+	}
+	return &OwnerSession{secret: secret, now: now}
+}
+
+func (s *OwnerSession) sign(venueID, exp int64) string {
+	mac := hmac.New(sha256.New, s.secret)
+	mac.Write([]byte(ownerSessionVersion + "." +
+		strconv.FormatInt(venueID, 10) + "." + strconv.FormatInt(exp, 10)))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// IssueOwner sets the owner cookie for a venue.
+func (s *OwnerSession) IssueOwner(w http.ResponseWriter, venueID int64, ttl time.Duration, secure bool) {
+	exp := s.now().Add(ttl).Unix()
+	val := ownerSessionVersion + "." + strconv.FormatInt(venueID, 10) + "." +
+		strconv.FormatInt(exp, 10) + "." + s.sign(venueID, exp)
+	http.SetCookie(w, &http.Cookie{
+		Name:     OwnerSessionCookieName,
+		Value:    val,
+		Path:     "/owner",
+		MaxAge:   int(ttl.Seconds()),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// VerifyOwner returns the venue id the request is logged in as. ok=false on
+// missing, malformed, tampered or expired cookies — and on venueID <= 0, so
+// a forged "venue 0" scope can never address "every venue".
+func (s *OwnerSession) VerifyOwner(r *http.Request) (venueID int64, ok bool) {
+	c, err := r.Cookie(OwnerSessionCookieName)
+	if err != nil || c.Value == "" {
+		return 0, false
+	}
+	parts := strings.Split(c.Value, ".")
+	if len(parts) != 4 || parts[0] != ownerSessionVersion {
+		return 0, false
+	}
+	venueID, err = strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || venueID <= 0 {
+		return 0, false
+	}
+	exp := parseExp(parts[2])
+	if exp == 0 || s.now().Unix() >= exp {
+		return 0, false
+	}
+	if !hmac.Equal([]byte(parts[3]), []byte(s.sign(venueID, exp))) {
+		return 0, false
+	}
+	return venueID, true
+}
+
+// ClearOwner expires the owner cookie.
+func (s *OwnerSession) ClearOwner(w http.ResponseWriter, secure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     OwnerSessionCookieName,
+		Value:    "",
+		Path:     "/owner",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+}

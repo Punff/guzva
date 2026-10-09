@@ -1,7 +1,9 @@
 // Package admin is the signed-cookie admin console (PLAN §6.4 admin,
-// §6.5 auth): fleet board, venue create, device mint/revoke — htmx-driven
-// with embedded templates, one bcrypt credential, HMAC cookie session.
-// Handlers never touch SQL: everything goes through *store.
+// §6.5 auth): the super-admin fleet board (venue/device create, edit,
+// revoke, device-config, owner passwords) plus the per-venue owner panel
+// (owner.go: venue details + read-only device health, one password per
+// venue). htmx-driven with embedded templates; HMAC cookie sessions, no
+// sessions table. Handlers never touch SQL: everything goes through *store.
 package admin
 
 import (
@@ -25,14 +27,15 @@ import (
 
 // Server is the admin plane.
 type Server struct {
-	st       *store.Store
-	sess     *auth.Session
-	loginLim *auth.Limiter
-	passHash string
-	secure   bool // cookie Secure flag: only when the listener speaks TLS
-	tmpl     *template.Template
-	log      *slog.Logger
-	now      func() time.Time
+	st        *store.Store
+	sess      *auth.Session
+	ownerSess *auth.OwnerSession
+	loginLim  *auth.Limiter
+	passHash  string
+	secure    bool // cookie Secure flag: only when the listener speaks TLS
+	tmpl      *template.Template
+	log       *slog.Logger
+	now       func() time.Time
 }
 
 // New builds the admin server. passHash is the bcrypt hash from
@@ -47,14 +50,15 @@ func New(st *store.Store, passHash string, secret []byte, secure bool, log *slog
 		return nil, fmt.Errorf("admin: parse templates: %w", err)
 	}
 	return &Server{
-		st:       st,
-		sess:     auth.NewSession(secret, time.Now),
-		loginLim: auth.NewLimiter(0.1, 5, 0.2, 4, time.Now), // 0.1/s, burst 5 per IP
-		passHash: passHash,
-		secure:   secure,
-		tmpl:     tmpl,
-		log:      log,
-		now:      time.Now,
+		st:        st,
+		sess:      auth.NewSession(secret, time.Now),
+		ownerSess: auth.NewOwnerSession(secret, time.Now),
+		loginLim:  auth.NewLimiter(0.1, 5, 0.2, 4, time.Now), // 0.1/s, burst 5 per IP
+		passHash:  passHash,
+		secure:    secure,
+		tmpl:      tmpl,
+		log:       log,
+		now:       time.Now,
 	}, nil
 }
 
@@ -70,8 +74,14 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/logout", s.require(s.logout))
 	mux.HandleFunc("GET /admin/{$}", s.require(s.fleet))
 	mux.HandleFunc("POST /admin/venues", s.require(s.createVenue))
+	mux.HandleFunc("GET /admin/venues/{id}", s.require(s.venuePage))
+	mux.HandleFunc("POST /admin/venues/{id}", s.require(s.updateVenue))
+	mux.HandleFunc("POST /admin/venues/{id}/ownerpw", s.require(s.setOwnerPassword))
 	mux.HandleFunc("POST /admin/devices", s.require(s.createDevice))
+	mux.HandleFunc("GET /admin/devices/{id}", s.require(s.devicePage))
+	mux.HandleFunc("POST /admin/devices/{id}/cfg", s.require(s.updateDeviceCfg))
 	mux.HandleFunc("POST /admin/devices/{id}/revoke", s.require(s.revokeDevice))
+	s.registerOwner(mux)
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -261,38 +271,51 @@ func age(now, then time.Time) string {
 
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
 
-func (s *Server) createVenue(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	slug := strings.ToLower(strings.TrimSpace(r.FormValue("slug")))
-	name := strings.TrimSpace(r.FormValue("name"))
-	style := r.FormValue("style")
-	tz := strings.TrimSpace(r.FormValue("tz"))
-	hoursSpec := strings.TrimSpace(r.FormValue("hours"))
-
+// parseVenueForm validates the editable site-plane fields. It is the one
+// validator for venue create (super-admin), venue update (super-admin) and
+// the owner panel — three forms, one rule, so an owner can never save what
+// the console would refuse. Returns tz + parsed hours, or a user-facing
+// error. Slug is identity and is never editable.
+func parseVenueForm(name, style, tz, hoursSpec string) (string, venue.Hours, string) {
+	name = strings.TrimSpace(name)
+	tz = strings.TrimSpace(tz)
+	hoursSpec = strings.TrimSpace(hoursSpec)
 	switch {
-	case !slugRe.MatchString(slug):
-		s.flash(w, "Slug must be lowercase letters, digits or dashes (≤40).")
-		return
 	case name == "":
-		s.flash(w, "Name is required.")
-		return
+		return "", venue.Hours{}, "Name is required."
 	case style != "poster" && style != "mono":
-		s.flash(w, "Style must be poster or mono.")
-		return
+		return "", venue.Hours{}, "Style must be poster or mono."
 	}
 	if tz == "" {
 		tz = store.DefaultTZ
 	}
 	if _, err := time.LoadLocation(tz); err != nil {
-		s.flash(w, "Unknown timezone: "+tz)
-		return
+		return "", venue.Hours{}, "Unknown timezone: " + tz
 	}
 	h, err := venue.ParseSpec(hoursSpec)
 	if err != nil {
-		s.flash(w, "Bad hours: "+err.Error())
+		return "", venue.Hours{}, "Bad hours: " + err.Error()
+	}
+	return tz, h, ""
+}
+
+func (s *Server) createVenue(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	slug := strings.ToLower(strings.TrimSpace(r.FormValue("slug")))
+	if !slugRe.MatchString(slug) {
+		s.flash(w, "Slug must be lowercase letters, digits or dashes (≤40).")
 		return
 	}
-	id, err := s.st.CreateVenue(r.Context(), store.Venue{Slug: slug, Name: name, TZ: tz, Style: style})
+	tz, h, ferr := parseVenueForm(
+		r.FormValue("name"), r.FormValue("style"), r.FormValue("tz"), r.FormValue("hours"))
+	if ferr != "" {
+		s.flash(w, ferr)
+		return
+	}
+	id, err := s.st.CreateVenue(r.Context(), store.Venue{
+		Slug: slug, Name: strings.TrimSpace(r.FormValue("name")), TZ: tz,
+		Style: r.FormValue("style"),
+	})
 	if err != nil {
 		if err == store.ErrSlugTaken {
 			s.flash(w, "Slug already exists.")
@@ -306,7 +329,9 @@ func (s *Server) createVenue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Config changes are slog audit lines (§6.2).
-	s.log.Info("admin: venue created", "slug", slug, "name", name, "tz", tz, "style", style, "actor", "admin")
+	s.log.Info("admin: venue created", "slug", slug,
+		"name", strings.TrimSpace(r.FormValue("name")),
+		"tz", tz, "style", r.FormValue("style"), "actor", "admin")
 	redirect(w, r, "/admin/?created=1")
 }
 
@@ -367,6 +392,231 @@ func (s *Server) revokeDevice(w http.ResponseWriter, r *http.Request) {
 func (s *Server) internal(w http.ResponseWriter, op string, err error) {
 	s.log.Error("admin: internal error", "op", op, "err", err.Error())
 	http.Error(w, "internal error", http.StatusInternalServerError)
+}
+
+// --- venue + device editing (super-admin) -----------------------------------
+
+type venueEditModel struct {
+	Venue     store.Venue
+	HoursSpec string
+	HasOwner  bool
+	Saved     bool
+	OwnerSet  bool
+}
+
+func (s *Server) loadVenue(w http.ResponseWriter, r *http.Request) (*store.Venue, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	v, err := s.st.VenueByID(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	return v, true
+}
+
+func (s *Server) venuePage(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.loadVenue(w, r)
+	if !ok {
+		return
+	}
+	h, err := s.st.Hours(r.Context(), v.ID)
+	if err != nil {
+		s.internal(w, "hours", err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	m := venueEditModel{Venue: *v, HoursSpec: h.Spec(), HasOwner: v.OwnerHash != "",
+		Saved: r.URL.Query().Get("saved") != "", OwnerSet: r.URL.Query().Get("owner") != ""}
+	if err := s.tmpl.ExecuteTemplate(w, "venue.html", m); err != nil {
+		s.log.Error("admin: render venue", "err", err.Error())
+	}
+}
+
+func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.loadVenue(w, r)
+	if !ok {
+		return
+	}
+	r.ParseForm()
+	tz, h, ferr := parseVenueForm(
+		r.FormValue("name"), r.FormValue("style"), r.FormValue("tz"), r.FormValue("hours"))
+	if ferr != "" {
+		s.flash(w, ferr)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if err := s.st.UpdateVenue(r.Context(), v.ID, name, r.FormValue("style"), tz); err != nil {
+		s.internal(w, "update venue", err)
+		return
+	}
+	if err := s.st.SetHours(r.Context(), v.ID, h); err != nil {
+		s.internal(w, "set hours", err)
+		return
+	}
+	s.log.Info("admin: venue updated", "venue_id", v.ID, "slug", v.Slug,
+		"name", name, "tz", tz, "style", r.FormValue("style"), "actor", "admin")
+	redirect(w, r, fmt.Sprintf("/admin/venues/%d?saved=1", v.ID))
+}
+
+// minOwnerPassword is the only password policy in the system: owner logins
+// face the venue's visitors indirectly (a vendor reuses passwords), so a
+// short one is a real risk. The super-admin password itself is outside this
+// file's control (GUZVA_ADMIN_HASH), documented in the runbook.
+const minOwnerPassword = 10
+
+func (s *Server) setOwnerPassword(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.loadVenue(w, r)
+	if !ok {
+		return
+	}
+	r.ParseForm()
+	pw := r.FormValue("password")
+	if len(pw) < minOwnerPassword {
+		s.flash(w, fmt.Sprintf("Owner password must be at least %d characters.", minOwnerPassword))
+		return
+	}
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		s.internal(w, "hash owner password", err)
+		return
+	}
+	if err := s.st.SetOwnerHash(r.Context(), v.ID, hash); err != nil {
+		s.internal(w, "set owner hash", err)
+		return
+	}
+	// The password itself is never logged and never rendered back (§1).
+	s.log.Info("admin: owner password set", "venue_id", v.ID, "slug", v.Slug, "actor", "admin")
+	redirect(w, r, fmt.Sprintf("/admin/venues/%d?owner=1", v.ID))
+}
+
+// cfgField is one row of the device-config form: key, current value and the
+// clamp range from the proto table (inputs carry min/max so typos die in the
+// browser, and the server re-validates every key anyway).
+type cfgField struct {
+	Key      string
+	Val      int
+	Min, Max int
+	Cadence  bool // interval_s/quality: the cadence trio, not sensor keys
+}
+
+type deviceModel struct {
+	Device store.Device
+	Cfg    proto.DesiredCfg
+	Fields []cfgField
+	Amber  bool
+	Saved  bool
+}
+
+func deviceFields(cfg proto.DesiredCfg) []cfgField {
+	extra := cfg.Extra
+	if extra == nil {
+		extra = map[string]int{}
+	}
+	var out []cfgField
+	for _, k := range proto.SettableCfgKeys() {
+		spec := proto.CfgKeys[k]
+		val := extra[k]
+		cadence := false
+		switch k {
+		case "interval_s":
+			val, cadence = cfg.IntervalS, true
+		case "quality":
+			val, cadence = cfg.Quality, true
+		}
+		out = append(out, cfgField{Key: k, Val: val, Min: spec.Min, Max: spec.Max, Cadence: cadence})
+	}
+	return out
+}
+
+func (s *Server) devicePage(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	d, err := s.st.DeviceByID(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	cfg := d.DesiredCfg()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	m := deviceModel{Device: *d, Cfg: cfg, Fields: deviceFields(cfg),
+		Amber: d.Status == "active" && d.CfgAppliedVer != d.CfgVer,
+		Saved: r.URL.Query().Get("saved") != ""}
+	if err := s.tmpl.ExecuteTemplate(w, "device.html", m); err != nil {
+		s.log.Error("admin: render device", "err", err.Error())
+	}
+}
+
+// parseCfgForm reads the prefilled device-config form: every settable key
+// arrives as cfg_<key>; empty keeps the current value (a missing field must
+// never zero a sensor key). Each value is validated against the proto table
+// — the same gate as `guzva cfg -set`.
+func parseCfgForm(r *http.Request, cur proto.DesiredCfg) (proto.DesiredCfg, string) {
+	next := proto.DesiredCfg{Ver: cur.Ver + 1, IntervalS: cur.IntervalS, Quality: cur.Quality}
+	if cur.Extra != nil {
+		next.Extra = map[string]int{}
+		for k, v := range cur.Extra {
+			next.Extra[k] = v
+		}
+	} else {
+		next.Extra = map[string]int{}
+	}
+	for _, k := range proto.SettableCfgKeys() {
+		raw := strings.TrimSpace(r.FormValue("cfg_" + k))
+		if raw == "" {
+			continue
+		}
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			return cur, k + " must be an integer."
+		}
+		if err := proto.ValidateCfgKey(k, v); err != nil {
+			return cur, err.Error()
+		}
+		switch k {
+		case "interval_s":
+			next.IntervalS = v
+		case "quality":
+			next.Quality = v
+		default:
+			next.Extra[k] = v
+		}
+	}
+	return next, ""
+}
+
+func (s *Server) updateDeviceCfg(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	d, err := s.st.DeviceByID(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	r.ParseForm()
+	next, ferr := parseCfgForm(r, d.DesiredCfg())
+	if ferr != "" {
+		s.flash(w, ferr)
+		return
+	}
+	if err := s.st.SetDeviceCfg(r.Context(), d.ID, next); err != nil {
+		s.internal(w, "set device cfg", err)
+		return
+	}
+	s.log.Info("admin: device cfg updated", "device_id", d.ID, "serial", d.Serial,
+		"ver", d.CfgVer, "actor", "admin")
+	redirect(w, r, fmt.Sprintf("/admin/devices/%d?saved=1", d.ID))
 }
 
 func randHex(n int) string {

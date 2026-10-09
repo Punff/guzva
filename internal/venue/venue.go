@@ -5,6 +5,7 @@ package venue
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -116,9 +117,56 @@ func (h Hours) ClassifyOpen(t time.Time) OpenClosed {
 	return Closed
 }
 
+// Spec renders Hours back into the compact spec form, so edit forms (owner
+// panel, super-admin) can prefill the current schedule instead of showing a
+// blank field that would clear it on save. Consecutive days (Mo-first order)
+// sharing identical ranges collapse into one group: "Mo-Fr 09:00-17:00".
+// Unconfigured hours render as "".
+func (h Hours) Spec() string {
+	dayName := []string{"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"}
+	// Spec order is Mo-first; Go weekday index is Su-first.
+	order := []int{1, 2, 3, 4, 5, 6, 0}
+	type group struct {
+		first, last int // positions in order[]
+		rs          []Range
+	}
+	var groups []group
+	for pos, d := range order {
+		rs := h[d]
+		if len(rs) == 0 {
+			continue
+		}
+		if n := len(groups); n > 0 && slices.Equal(groups[n-1].rs, rs) &&
+			groups[n-1].last+1 == pos {
+			groups[n-1].last = pos
+			continue
+		}
+		groups = append(groups, group{first: pos, last: pos, rs: rs})
+	}
+	// One range per group: the spec grammar is "<days> <one range>", so a
+	// day with several ranges (only hand-built Hours can hold those — the
+	// parser accepts one range per group) emits one group per range. Every
+	// Spec() output re-parses.
+	var b strings.Builder
+	sep := ""
+	for _, g := range groups {
+		days := dayName[order[g.first]]
+		if g.first != g.last {
+			days += "-" + dayName[order[g.last]]
+		}
+		for _, r := range g.rs {
+			b.WriteString(sep + days)
+			fmt.Fprintf(&b, " %02d:%02d-%02d:%02d",
+				r.OpenMin/60, r.OpenMin%60, r.CloseMin/60, r.CloseMin%60)
+			sep = ";"
+		}
+	}
+	return b.String()
+}
+
 // --- spec parsing ---------------------------------------------------------
 //
-// Provisioning and (Phase 2) the owner form both speak the compact spec:
+// Provisioning and the owner/super-admin edit forms both speak the compact spec:
 //
 //	"Mo-Fr 09:00-17:00;Sa 10:00-14:00"    two groups, ;-separated
 //	"Mo-Su 00:00-24:00"                   always open
