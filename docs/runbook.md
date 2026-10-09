@@ -70,6 +70,22 @@ can reach a field unit. `ver` is server-managed — it bumps on every change and
 the board echoes it back as `cfg_ver_applied` (amber on the admin board until
 it does).
 
+## Venue owners (the /owner/ panel)
+
+- Each venue has its own password, set by you on its admin page
+  (`/admin/venues/<id>`, ≥10 chars, hashed on save, never shown again).
+  Hand it to the owner out-of-band; the owner signs in at `/owner/` with
+  venue slug + password.
+- Owners can change: name, style, timezone, opening hours. They see device
+  health read-only (fresh/stale, last seen, config wanted/applied). They can
+  never see tokens, change camera settings, revoke devices, or see other
+  venues — enforced by the session's signed scope, not by hiding buttons.
+- Resetting the password is the remote kill: the old one stops working at
+  next login (there is no server-side session to revoke, same as admin).
+- If an owner reports "Wrong venue or password" for a venue that never had
+  a password set, that message is intentional — the login never reveals
+  which venues exist or which have owner access.
+
 ## Deploy / rollback (Makefile is the only supported path)
 
 ```sh

@@ -45,6 +45,20 @@
   of a release dir (`Not a directory`); fixed, Makefile pins the
   `releases/<tag>/guzva` convention.
 
+## 2026-10-09 — admin split deployed (`d480564`)
+
+- Super-admin: venue edit page, owner-password set, device page with the full
+  21-key config form. Owner (`/owner/`): venue-details edit + read-only
+  device health, one password per venue. Store migration v3 (`owner_hash`)
+  applied itself on the live DB at startup.
+- Verified live: owner login/dash/edit on bench (renamed Bench→Bench
+  Test→Bench), owner→admin wall bounces, bad login 401 with the generic
+  message. Live bench owner password: `bench-owner-01` — rotate before
+  handing to the real vendor owner (venue page in /admin/).
+- ACTION: the generic login message means support cannot distinguish "wrong
+  venue" from "no owner set" either — check the venue page's owner status
+  instead of asking the owner to retry blindly.
+
 ## 2026-10-09 — parked items (do not lose)
 
 - ACTION: 48 h soak + exit-gate numbers (fresh-minute %, connect ms, heap

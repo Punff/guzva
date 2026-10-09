@@ -78,7 +78,7 @@ ssh info: root@guzva
 |----|----------|-------------|
 | D1 | Stylise **server-side** | Raw JPEG crosses the wire device→VM (TLS only), lives in RAM for one `Process` call, never written. Styles stay changeable without a firmware release. |
 | D2 | Stills history is **not** a product, but may become one | 48 h ring per venue + last-good. Sidecars keep `preset@version`, hashes, `received_at`, so longer retention can be added later. |
-| D3 | Owner auth = per-venue password + cookie session | **Designed, built later** (Phase 3, when a venue asks to self-edit). Pilot: you are the only editor, via admin. |
+| D3 | Owner auth = per-venue password + cookie session | **Built 09 Oct** (earlier than planned): one bcrypt hash on the venue row, scoped `o1.<venueID>.<exp>.<mac>` cookie on Path `/owner`, no sessions table (same discipline as admin). Owner edits venue details + sees device health; tokens/config/revoke stay super-admin. |
 | D4 | Host on a **dedicated GCP Always Free e2-micro**; punff is gone, so the box is Guzva-only | Go terminates TLS itself (`autocert`), no Caddy. See the free-tier checklist in §8. |
 | D5 | Public side = **pre-rendered static files** | Public requests never touch SQLite, templates, or the render pipeline. History is not publicly routable at all. |
 
@@ -249,9 +249,10 @@ global semaphore caps concurrent `Process` calls; server `ReadHeaderTimeout` /
 - `frames`: venue_id, capture_id, hash, received_at, preset@version, quarantine
   flag; `UNIQUE(venue_id, capture_id)`.
 
-No sessions table (admin uses a signed cookie), no `settings_log` (changes are
-slog audit lines), no `health_events`. Added only with their features: users/
-sessions (owner area), viewer_hits, intents, OTA releases/state, claim codes.
+No sessions table (admin and owner both use signed cookies — the owner cookie
+carries its venue scope in the signed payload), no `settings_log` (changes are
+slog audit lines), no `health_events`. Added only with their features:
+viewer_hits, intents, OTA releases/state, claim codes.
 
 SQLite: WAL, single writer connection, `busy_timeout`, embedded migrations.
 
@@ -271,11 +272,18 @@ well under the 30 GB disk for the pilot.
   `index.html` is rewritten only when state changes (frame arrives, or the
   scheduler sees fresh→STALE / open→closed). Writes are temp-file + rename.
   After a restart, `sched` re-derives state within one tick.
-- **Admin P1:** fleet board (last seen, RSSI, counters, fw); create venue (slug,
-  tz, style, hours); issue/revoke device token (shown once); record the
+- **Admin P1:** fleet board (last seen, RSSI, counters, fw, cfg read-back);
+  create venue (slug, tz, style, hours); venue edit page (details + owner
+  password); device page with the full 21-key `desired_cfg` form (same gate as
+  `guzva cfg -set`); issue/revoke device token (shown once); record the
   reference-frame sign-off (done in person at install; ref hash stored on the
   venue, audit line logged).
-- **Owner area:** deferred (D3, Phase 3).
+- **Owner area (D3, built 09 Oct):** `/owner/` — one password per venue
+  (bcrypt hash on the venue row, set by super-admin, ≥10 chars); venue details
+  edit (name/style/tz/hours, one shared validator) + read-only device health.
+  Scope comes from the session cookie only — no venue param is accepted, and
+  the IDOR test (owner-A vs venue-B, owner↔admin cookie walls) is in
+  `internal/admin/admin_test.go`.
 
 ### 6.5 Auth
 - **Device:** bearer token, sha256-hashed at rest, revocable.
@@ -284,9 +292,14 @@ well under the 30 GB disk for the pilot.
   with secret from `.env`. No CSRF tokens needed for a single-admin
   `SameSite=Strict` app. Limitation, accepted: logout can't revoke server-side
   except by rotating the secret.
-- **Owner (Phase 3):** per-venue bcrypt password → server-side session (adds a
-  sessions table) + one scope middleware injecting `venue_id`; IDOR test
-  owner-A vs venue-B is required before it ships.
+- **Owner:** per-venue bcrypt password (hash on the venue row; empty = no login)
+  → scoped HMAC cookie `guzva_owner` (`o1.<venueID>.<exp>.<mac>`, Path
+  `/owner`, `HttpOnly` + `Secure` + `SameSite=Strict`), verified by the
+  `requireOwner` middleware that injects the venue — never a form/URL param.
+  Shared login throttle with admin; one generic failure message (no venue
+  enumeration, no "owner not enabled" oracle). No sessions table by design.
+  Limitation, accepted (same as admin): logout is client-side; a password
+  reset is the server-side kill.
 
 ### 6.6 Observability and alerting
 `/healthz` (+ TLS expiry) and the fleet board; no `/metrics` until a trigger.
@@ -457,9 +470,10 @@ GPIO automation, multi-photo strips, OAuth, AVIF/WebP, K8s, managed DB.
 
 **Phase 2 — Pilot hardening (1–3 friendly venues).**
 - Firmware: steps 5–7 (degraded camera mode, config read-back, LAN cage).
-- Server: admin P1 (fleet board, tokens, venue create, reference sign-off),
-  retention pruner, scheduler alerts + dead-man, privacy test suite, fakecam
-  isolation gate.
+- Server: admin P1 (fleet board, tokens, venue create **+ venue/device edit
+  pages and the owner panel — built 09 Oct, ahead of schedule**, reference
+  sign-off), retention pruner, scheduler alerts + dead-man, privacy test
+  suite, fakecam isolation gate.
 - Ops: runbook written, install gate enforced (RSSI ≥ −65, ping <200 ms, supply
   spec, reference-frame sign-off recorded).
 - Exit: 2 weeks/venue, <5% missed minutes, zero raw leaks (disk-scan green),
@@ -469,8 +483,10 @@ GPIO automation, multi-photo strips, OAuth, AVIF/WebP, K8s, managed DB.
 - Firmware: pull OTA + rollback (first check whether the Arduino-ESP32 core's
   bootloader has app rollback enabled before writing a custom boot counter;
   manual canary: device #1 first).
-- Server: owner area (D3) with sessions + IDOR test, claim flow, viewer/intent
-  counters, "I'm coming", hours override, device read-back view.
+- Server: claim flow, viewer/intent counters, "I'm coming", hours override.
+  (Owner area (D3) shipped in Phase 1 without sessions — scoped cookie
+  instead, IDOR test included; device read-back view is the owner health
+  table + the amber mismatch badge.)
 - Exit: 95% minutes fresh, honest gaps on outages, owner dashboard in real use,
   MTTR <24 h without a developer visit.
 
@@ -497,8 +513,9 @@ GPIO automation, multi-photo strips, OAuth, AVIF/WebP, K8s, managed DB.
    `setup.sh` rebuild; restore drill before the pilot.
 7. **Silent backup rot** → restore drill with a timer, logged; quarterly after.
 8. **Scope creep** → §9 table; sell stills + freshness first.
-9. **Auth bypass** → pilot has no owner accounts (static public pages + single
-   admin); owner area ships only with its IDOR test.
+9. **Auth bypass** → owner panel is scope-by-cookie with the IDOR test in
+   `internal/admin/admin_test.go` (owner-A vs venue-B, owner↔admin walls);
+   any new owner capability re-runs that test before shipping.
 10. **Fleet-bricking OTA** (Phase 3) → rollback proven on a bench unit before any
     venue; manual canary; LAN-USB recovery documented.
 11. **Solo-builder bandwidth** → one approval-gated step at a time; each phase
