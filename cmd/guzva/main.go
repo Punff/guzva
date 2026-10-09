@@ -179,11 +179,13 @@ func serveMain(args []string) int {
 	srv := &http.Server{
 		Addr:    *listen,
 		Handler: mux,
-		// TLS profile for the bench cutover: TLS 1.2 only, no session
-		// tickets. The ESP32's mbedtls (arduino-esp32 2.x) negotiates fine
-		// against OpenSSL servers but stalls against Go's defaults —
-		// tickets-off + 1.2-pinned is the rig-shaped profile it is proven
-		// with. Revisit with a newer core when autocert lands (§8).
+		// TLS profile for the bench cutover, shaped to what the ESP32's
+		// mbedtls (arduino-esp32 2.x) completes: TLS 1.2 only (the core
+		// offers a TLS 1.3 draft we ignore — pinning 1.2 keeps both sides
+		// on one path) and NO session tickets (Go's NewSessionTicket is
+		// what stalls the core; with tickets off the handshake completes
+		// in ~2.4 s instead of timing out at the device's 12 s budget).
+		// Revisit with a newer core when autocert lands (§8).
 		TLSConfig: &tls.Config{
 			MinVersion:             tls.VersionTLS12,
 			MaxVersion:             tls.VersionTLS12,

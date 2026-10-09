@@ -188,6 +188,10 @@ char     metaBuf[1024]   = {0};
 char     reqHead[640]    = {0};
 char     respHdr[1024]   = {0};
 char     respBody[2048]  = {0};   // room for a full sensor desired_cfg
+// Bytes read past the end of the header block (the body often arrives in the
+// same TLS record); the body read consumes these before touching the socket.
+char     respCarry[512]  = {0};
+size_t   respCarryLen    = 0;
 
 WiFiClientSecure tlsClient;
 WebServer server(80);
@@ -569,14 +573,24 @@ static bool tlsWriteAll(const uint8_t *p, size_t len, uint32_t deadline) {
 
 // Read exactly n bytes; stored into buf[*stored .. cap-2] while they fit,
 // the rest drained so keep-alive stays usable.
+// Read exactly n bytes; stored into buf[*stored .. cap-2] while they fit,
+// the rest drained so keep-alive stays usable. Bytes already pulled out of
+// the TLS stream by the header read (respCarry) are consumed first — they
+// are gone from mbedtls's buffer, so reading from the socket alone would
+// stall waiting for data that has already been seen.
 static bool tlsReadInto(size_t n, char *buf, size_t cap, size_t *stored,
                         uint32_t deadline) {
-  size_t got = 0;
+  size_t got = 0, carry = 0;
   while (got < n) {
     if (due(deadline)) return false;
+    while (got < n && carry < respCarryLen) {
+      if (*stored + 1 >= cap) return false;
+      buf[(*stored)++] = respCarry[carry++];
+      got++;
+    }
+    if (got >= n) break;
+    respCarryLen = carry = 0;  // carry drained
     int avail = tlsClient.available();
-    // Same pump-read as tlsReadUntil: available() reports only decrypted
-    // bytes, so a not-yet-pulled record must still be read through.
     size_t want = n - got;
     if (want > 256) want = 256;
     if (avail > 0 && (size_t)avail < want) want = (size_t)avail;
@@ -602,14 +616,18 @@ static bool tlsReadRaw(size_t n, char *scratch, size_t cap, uint32_t deadline) {
   return ok;
 }
 
-// Read until `needle` appears at the tail of dst (needle included).
+// Read until `needle` appears in dst (needle included).
 //
-// The read is NOT gated on available(): WiFiClientSecure::available() only
-// reports bytes mbedtls has already decrypted into its internal buffer, so a
-// record still sitting in the socket is invisible and a read that waits for
-// available() > 0 spins until the deadline (the server's response is on the
-// wire and ACKed, yet never surfaces). read() is the pump: it pulls and
-// decrypts, returning -1 when there is nothing yet.
+// available() is itself the pump (WiFiClientSecure::data_to_read calls
+// mbedtls_ssl_read(NULL,0) to pull+decrypt, then reports what is buffered), and
+// read() is gated on it — so the 1-byte probe below is belt-and-braces for the
+// window where available() reports 0, not the primary mechanism.
+//
+// Two things this must get right, both of which were bugs:
+//   1. the needle is scanned at every position the new bytes could have
+//      completed it at, not just at the tail (see below);
+//   2. bytes read past the needle are carried into the body read (respCarry),
+//      because they are already out of mbedtls and re-reading the socket stalls.
 static bool tlsReadUntil(const char *needle, char *dst, size_t cap,
                          uint32_t deadline) {
   const size_t nlen = strlen(needle);
@@ -620,6 +638,7 @@ static bool tlsReadUntil(const char *needle, char *dst, size_t cap,
     uint8_t tmp[128];
     size_t want = avail > 0 ? (size_t)avail : 1;  // 1-byte probe when idle
     if (want > sizeof tmp) want = sizeof tmp;
+    size_t before = len;
     int rd = tlsClient.read(tmp, want);
     if (rd > 0) {
       for (int i = 0; i < rd; i++) {
@@ -627,8 +646,24 @@ static bool tlsReadUntil(const char *needle, char *dst, size_t cap,
         dst[len++] = (char)tmp[i];
       }
       dst[len] = '\0';
-      if (len >= nlen && memcmp(dst + len - nlen, needle, nlen) == 0)
-        return true;
+      // Scan every position the new bytes could have completed the needle at.
+      // Testing only the tail misses it whenever it lands mid-read (reads are
+      // capped at 128 B, so a 313 B response put "\r\n\r\n" at ~150 and a
+      // complete, valid 201 was discarded at the deadline).
+      size_t from = (before + 1 > nlen) ? (before + 1 - nlen) : 0;
+      for (size_t i = from; i + nlen <= len; i++) {
+        if (memcmp(dst + i, needle, nlen) == 0) {
+          size_t end = i + nlen;    // keep through the needle
+          // Whatever followed it (usually the body) has already been pulled
+          // from mbedtls — hand it on rather than dropping it.
+          respCarryLen = len - end;
+          if (respCarryLen > sizeof respCarry) respCarryLen = sizeof respCarry;
+          memcpy(respCarry, dst + end, respCarryLen);
+          len = end;
+          dst[len] = '\0';
+          return true;
+        }
+      }
     } else {
       if (rd < 0 && !tlsClient.connected()) return false;
       delay(1);  // nothing yet — yield, do not spin on available()
@@ -664,13 +699,20 @@ static bool tlsReadChunked(char *dst, size_t cap, size_t *outLen,
 // read-to-close). Returns the HTTP status (0 = transport failure).
 static int tlsReadResponse(uint32_t deadline, bool *reusable) {
   *reusable = false;
+  respCarryLen = 0;
   if (!tlsReadUntil("\r\n\r\n", respHdr, sizeof respHdr, deadline)) {
-    // Distinguish "nothing arrived" from "arrived but unreadable": the
-    // 48 h soak reads this line when a POST is accepted but unanswered.
-    Serial.printf("[TLS ] no response headers (avail=%d conn=%d ssl_err=%d "
-                  "'%s')\n",
-                  tlsClient.available(), tlsClient.connected(), diagSslErr,
-                  diagSslMsg[0] ? diagSslMsg : "-");
+    // Diagnostics for the accepted-but-unanswered case (48 h soak reads
+    // this): how much plaintext we actually got, and mbedtls's REAL last
+    // error. diagSslErr is connect-time only and is stale here, so ask the
+    // client directly.
+    char emsg[48] = {0};
+    int ecode = tlsClient.lastError(emsg, sizeof emsg);
+    Serial.printf("[TLS ] no response headers: got=%d bytes '%.*s' "
+                  "avail=%d conn=%d mbedtls_err=%d '%s'\n",
+                  (int)strlen(respHdr), (int)(strlen(respHdr) > 48 ? 48
+                                                                : strlen(respHdr)),
+                  respHdr, tlsClient.available(), tlsClient.connected(), ecode,
+                  emsg[0] ? emsg : "-");
     return 0;
   }
   const char *sp = strchr(respHdr, ' ');

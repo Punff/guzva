@@ -6,47 +6,65 @@ Google Cloud Always Free e2-micro, with TLS inside the binary (no Caddy), a
 static public side, and a smaller pilot schema. Everything cut or deferred is in
 §9 with a measurable trigger for bringing it back.
 
-Status (09 Oct 2026 — supersedes the old POC-state note):
-- **Bench rig live on the VPS** (`deploy/testrig/`, systemd `camtest`,
-  `ssh root@guzva`): Python proto-v1 receiver on :443 (self-signed,
-  epoch-valid cert, raw IP 34.139.58.143) + :80→301, 23/23 e2e tests green,
-  live `desired_cfg` push via `cfg.json` verified end-to-end. **Scaffolding,
-  not §6** — it exists to prove the protocol and the firmware; the Go server
-  is still unbuilt.
+Status (09 Oct 2026 — bench cutover done; supersedes the rig-live note):
+- **Go server is live on the VPS and serving the real board** (`guzva.service`,
+  `ssh root@guzva`, :443, `/etc/guzva/{tls.crt,tls.key}` copied from the rig so
+  the firmware's embedded CA still validates — no re-flash). The Python rig
+  (`camtest`) is **stopped and disabled**; it steps aside, not deleted, and
+  stayed the reference implementation the Go ingest was diffed against.
+- **Full device plane shipped:** all 22 documented `desired_cfg` keys
+  (`proto.CfgKeys`, ranges pinned to `docs/proto-v1.md` by a test), the cadence
+  trio in columns + the 19 sensor keys in `cfg_json` (store migration v2),
+  `guzva cfg -serial X -set k=v,…` (validates + bumps `cfg_ver`), and
+  `guzva provision -token <existing>` so an already-flashed board keeps its
+  token. Board confirmed applying **ver=2 from the Go server** (the rig's was
+  ver 7) and honouring its `next_s=45`.
+- **Per-ingest journal line** (`msg=ingest`; Info for 201/409, Warn for rejects)
+  carrying status/serial/capture_id/rssi/free_heap/counters plus the negotiated
+  `tls_ver`/`tls_suite` — this is the 48 h soak's data source.
+- **TLS profile the ESP32 needs (bench-measured, keep until autocert):**
+  `SessionTicketsDisabled` + TLS 1.2 pinned. Go's `NewSessionTicket` stalls the
+  arduino-esp32 2.x mbedtls — with tickets on, every handshake ran to the
+  device's 12 s budget and the POST never went out; with tickets off connect
+  drops to **≈2–3 s** and POSTs arrive. Cipher choice is *not* load-bearing
+  (Go's default `aes128-gcm` round-trips fine; AES-256-GCM was a red herring).
+- **A real firmware bug, not a Go incompatibility** — recorded because it
+  impersonated one for hours. `tlsReadUntil` compared its needle only against
+  the buffer *tail* after each read, and reads cap at 128 B, so a 313-byte
+  response put `\r\n\r\n` at ~150 — mid-chunk, never tested. The board held a
+  complete, decrypted `HTTP/1.1 201 Created` for 25 s, discarded it, retried the
+  same `capture_id` (409) and dropped the frame; the rig masked it because its
+  response arrived in pieces that happened to land the terminator on a chunk
+  boundary. Two fixes: scan every position the new bytes could have completed
+  the needle at, and **carry bytes past the needle into the body read** (they
+  are already out of mbedtls, so re-reading the socket stalls — that flaw was
+  in the original code too, it just failed differently). Cracked by an
+  instrumented build printing `got=313 bytes 'HTTP/1.1 201 Created'`, which
+  killed every server-side theory at once. Lesson: when a symptom survives a
+  server change, make the device print the bytes and the real error code — the
+  `ssl_err` in the old logs was a stale connect-time global and told us nothing.
+- **Still open:** 48 h soak numbers not yet recorded; autocert/domain,
+  `setup.sh`/`make deploy`, backup timer, budget alert; ingest host still
+  compiled into `settings.h` (§4 wants NVS); no reference-frame hash. Cosmetic:
+  the public page carries `<meta refresh=30>` while `interval_s` is 45, so ~1 in
+  3 browser reloads legitimately shows the previous photo — the files themselves
+  are written in one operation (verified same-second mtimes).
 - **Firmware build steps 1–6 done, step 7 minus reference-frame hash**: capture
   cadence, multipart HTTPS ingest, NVS identity, non-blocking WiFi, camera
-  degraded mode + counters, full OV2640 `desired_cfg` with read-back (ver=7
-  applied live), LAN cage (`/api/status`, `/jpg`, `/ping`, caged factory
-  reset), mDNS, serial CLI, status LED. Three real bugs found and fixed:
-  one corrupt base64 char in the embedded CA PEM (handshake died as
-  `X509 format invalid`); a fixed 12 s single-SYN connect budget (now a
-  failure-only 6 s probe, so healthy ticks open one connection); and a
-  server-side accept-loop jam in the rig (TLS handshake ran inside
-  `accept()` on one thread → backlog 5 full → kernel silently dropped every
-  new SYNs while established keep-alives kept working — fixed with
-  per-connection handshake, backlog 128). Commits `86b7dd7`, `eb771bb`.
-- **TLS spike (real link):** keep-alive reuse across ticks works; fresh tick
-  ≈ conn 2.5 s + write 14 ms + response 4 s; RSSI −57…−70 at the bench.
-- **Known gaps vs this plan:** ingest host compiled into `settings.h` (§4
-  wants it in NVS from day 1); no reference-frame hash; autocert,
-  `setup.sh`/`make deploy`, backups — not started. (`proto-v1.md` written
-  09 Oct from the proven rig+firmware.)
-- **Go server skeleton landed (09 Oct):** the v3 tree was restored and
-  migrated to v3.1 — three-table schema (hours as JSON on `venues`, no
-  sessions/settings_log/health_events), static D5 public pages
-  (`internal/pages`, temp+rename, web root = index.html + latest.jpg only),
-  htmx admin console (`internal/admin`: bcrypt login, HMAC cookie, fleet
-  board, venue create, token mint-once, revoke), no `/metrics`, XFF ignored
-  (no proxy). 10/10 packages green incl. `-race`; local E2E proven: fakecam
-  3×201 (p50 72 ms), public page + admin flows verified by curl. Renamed
-  **imaliguzve → guzva** everywhere (module, binary, service, mDNS, docs).
-
-Bench facts (08 Oct 2026, still binding): RSSI −72…−75 → 12 s+ fetches, ~50%
-join fails; thin USB → brownout + camera probe fails; NVS persists settings;
-external antenna without RF-jumper move = zero gain; QQVGA q18 ≈ 2–30 KB/frame.
-Relocation result (09 Oct): at RSSI ≥ −57 joins are instant and packet loss
-vanishes — link quality was real but *not* the whole story (see the accept-loop
-jam above). Brownout counter is live and reads 3 → supply spec still suspect.
+  degraded mode + counters, full OV2640 `desired_cfg` with read-back, LAN cage
+  (`/api/status`, `/jpg`, `/ping`, caged factory reset), mDNS, serial CLI,
+  status LED. Earlier real bugs fixed: a corrupt base64 char in the embedded CA
+  PEM; a fixed 12 s single-SYN connect budget (now a failure-only 6 s probe); a
+  server-side accept-loop jam in the rig (TLS handshake inside `accept()` on one
+  thread → backlog 5 full → kernel silently dropped new SYNs while established
+  keep-alives kept working). Commits `86b7dd7`, `eb771bb`.
+- **Bench facts (08 Oct 2026, still binding):** RSSI −72…−75 → 12 s+ fetches,
+  ~50% join fails; thin USB → brownout + camera probe fails; NVS persists
+  settings; external antenna without RF-jumper move = zero gain; QQVGA q18 ≈
+  2–30 KB/frame. Relocation result (09 Oct): at RSSI ≥ −57 joins are instant and
+  packet loss vanishes — link quality was real but *not* the whole story (see
+  the accept-loop jam above). Brownout counter is live and reads 4 → supply spec
+  still suspect.
 
 ---
 
@@ -334,6 +352,12 @@ your IP. UFW inside the VM mirrors it. Nothing at the venues is opened.
 `data/certs/`). The service gets `AmbientCapabilities=CAP_NET_BIND_SERVICE`.
 Rate limits live in Go.
 
+*ESP32 constraint, carry into autocert:* the arduino-esp32 2.x mbedtls stalls on
+Go's `NewSessionTicket`, so `serve` pins TLS 1.2 and disables session tickets
+today (bench-measured, see status block). Autocert must not reintroduce tickets
+without re-testing the board, and the whole profile should be revisited when the
+firmware core is upgraded.
+
 **Resource guards:** systemd `MemoryMax=700M`, `Restart=on-failure`, a 1 GB swap
 file as a safety net.
 
@@ -404,9 +428,10 @@ GPIO automation, multi-photo strips, OAuth, AVIF/WebP, K8s, managed DB.
 - VM: free-tier checklist (§8), `setup.sh`, `make deploy`, autocert, firewall,
   budget alert, nightly backup timer.
   *Status: firewall (tcp 80/443) open on `guzva` and reachability proven from
-  multiple external nodes; testrig `setup.sh` done. autocert / `make deploy` /
-  backup timer / budget alert: not started — today the rig is self-signed on a
-  raw IP.*
+  multiple external nodes; testrig `setup.sh` done. The Go binary is deployed and
+  serving :443 from the bench cert (`/etc/guzva/tls.*`, copied from the rig) with
+  `guzva.service` enabled — autocert/domain, `make deploy`, backup timer and
+  budget alert still not started.*
 - Protocol: one-page `proto-v1.md`, `POST /v1/ingest`, device token, ingest host
   in NVS.
   *Status: endpoint, bearer token and multipart contract proven end-to-end by
@@ -417,8 +442,9 @@ GPIO automation, multi-photo strips, OAuth, AVIF/WebP, K8s, managed DB.
   *Status: built (09 Oct) — v3 tree restored + v3.1-migrated: 3-table
   schema, ingest + render + prune as tested, static D5 pages with the
   30 s state-flip tick, htmx admin console, fakecam gate green locally
-  incl. `-race`. Remaining for this bullet: deploy to the VM (autocert,
-  `setup.sh`, `make deploy`) and the 48 h on-link numbers.*
+  incl. `-race`, **deployed to the VM and serving the real board** (§ status
+  block). Remaining for this bullet: autocert, `setup.sh`, `make deploy` and
+  the 48 h on-link numbers.*
 - Firmware: build steps 1–4 incl. the TLS spike.
   *Status: done — steps 1–6 + most of 7; TLS numbers recorded in the status
   block at the top of this plan.*
@@ -481,6 +507,33 @@ GPIO automation, multi-photo strips, OAuth, AVIF/WebP, K8s, managed DB.
 ---
 
 ## 12. Change log
+
+**v3.1 (09 Oct 2026 — bench cutover: Go server live on the real board)**
+- **Bench cutover executed.** Go serves :443 in front of the live ESP32 using the
+  existing epoch self-signed cert (copied to `/etc/guzva/`, so the firmware's
+  embedded CA still validates and nothing was re-flashed); the Python rig is
+  stopped + disabled but kept as the reference implementation. `guzva.service`
+  carries the bench shape (`:443`, `-tls-cert/-tls-key`, env file,
+  `CAP_NET_BIND_SERVICE`); the autocert shape replaces it later.
+- **Device plane completed:** all 22 `desired_cfg` keys (`proto.CfgKeys`, ranges
+  pinned to `docs/proto-v1.md` by a doc/code sync test), store migration v2
+  (`cfg_json` for the 19 sensor keys), `guzva cfg -serial -set k=v,…`,
+  `guzva provision -token` (import an existing token instead of re-flashing),
+  and `MinQuality` 5→4 to match the documented range. Board verified applying
+  server-driven config end-to-end.
+- **Observability for the soak:** one `msg=ingest` journal line per
+  device-visible response (Info 201/409, Warn for rejects) with
+  status/serial/capture_id/rssi/free_heap/counters, plus `tls_ver`/`tls_suite`.
+- **TLS:** `serve` pins TLS 1.2 and disables session tickets — Go's
+  `NewSessionTicket` stalls this ESP32's mbedtls and burned the device's whole
+  12 s connect budget. Cipher pinning and HTTP/1.1-only were tried and
+  **reverted**: neither was required.
+- **Firmware read-path bug (the long one):** the HTTP response parser only
+  compared its needle against the buffer tail, so a terminator landing mid-read
+  was missed and a valid `201` was discarded, retried as a `409` and dropped —
+  the visible symptom was "the site refreshes but sometimes shows the same
+  image". Fixed by scanning all candidate positions and carrying post-needle
+  bytes into the body read. Both sides now 201 with `post_fail=0`.
 
 **v3.1 (09 Oct 2026 — status update, no design change)**
 - **Rename: imaliguzve → guzva** everywhere the product name appears (Go
