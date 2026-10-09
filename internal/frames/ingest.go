@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -98,20 +99,22 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Declared up front so respond (below) can log serial/rssi/counters for
-	// every device-visible response — the per-ingest journal line the 48 h
-	// soak reads.
+	// Declared up front so respond can log serial/rssi/counters (+ render_ms
+	// when a frame was actually processed) on every device-visible response.
 	var (
 		dev      *store.Device
 		meta     proto.Meta
 		frameRaw []byte
+		renderMS float64 // only meaningful for a response that rendered
 	)
 
 	// respond is THE exit path for 201/409/422: it logs one line (Info for
 	// accepted outcomes, Warn for rejects) and then writes the canonical
-	// body. All of these statuses carry desired_cfg (§4).
+	// body. All of these statuses carry desired_cfg (§4). The reject reason
+	// goes into the journal too — a 422 that only lives in quarantine.jsonl
+	// is invisible to whoever is on support.
 	respond := func(status int, reason string) {
-		s.logOutcome(status, dev, meta, r.TLS)
+		s.logOutcome(status, dev, meta, r.TLS, renderMS, reason)
 		s.writeResp(w, status, s.response(dev, reason))
 	}
 
@@ -138,7 +141,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// Per-device token bucket (§6.1 step 2).
 	if !s.lim.AllowDevice(dev.ID) {
 		s.m.add("ratelimited")
-		s.logOutcome(proto.StatusRateLimit, dev, meta, r.TLS)
+		s.logOutcome(proto.StatusRateLimit, dev, meta, r.TLS, 0, "")
 		s.write429(w)
 		return
 	}
@@ -150,7 +153,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	if pct, err := s.diskFree(s.dataDir); err == nil && pct < MinFreePct {
 		s.m.add("disk_full")
 		s.log.Error("disk degraded", "free_pct", pct)
-		s.logOutcome(proto.StatusDiskFull, dev, meta, r.TLS)
+		s.logOutcome(proto.StatusDiskFull, dev, meta, r.TLS, 0, "")
 		s.writeErr(w, proto.StatusDiskFull, "disk_degraded")
 		return
 	}
@@ -162,7 +165,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &re) {
 			if re.status == proto.StatusTooLarge {
 				s.m.add("too_large")
-				s.logOutcome(proto.StatusTooLarge, dev, meta, r.TLS)
+				s.logOutcome(proto.StatusTooLarge, dev, meta, r.TLS, 0, "")
 				s.writeErr(w, proto.StatusTooLarge, "too_large")
 				return
 			}
@@ -174,7 +177,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) || errors.Is(err, errTooLarge) {
 			s.m.add("too_large")
-			s.logOutcome(proto.StatusTooLarge, dev, meta, r.TLS)
+			s.logOutcome(proto.StatusTooLarge, dev, meta, r.TLS, 0, "")
 			s.writeErr(w, proto.StatusTooLarge, "too_large")
 			return
 		}
@@ -236,6 +239,14 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	})
 	cancel()
 	s.m.observeRender(s.now().Sub(start))
+	renderMS = float64(s.now().Sub(start).Microseconds()) / 1000 // §11: gate-visible
+	// Guard against a zero reading from a sub-millisecond render or a pinned
+	// test clock: gate-visible needs a positive number, and a fast render is
+	// a real measurement, not "absent".
+	if renderMS <= 0 {
+		renderMS = 0.1
+	}
+
 	if perr != nil {
 		if reason, ok := render.IsReject(perr); ok {
 			// Quarantined: headers-only record, nothing stored (§7).
@@ -319,7 +330,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 // mbedtls is picky and the cipher tells us which side of the wire to look
 // at when a response goes missing. Info for accepted outcomes (201/409),
 // Warn for rejects (422/429/507). Bodies and tokens are never logged (§1).
-func (s *Server) logOutcome(status int, dev *store.Device, meta proto.Meta, tlsState *tls.ConnectionState) {
+func (s *Server) logOutcome(status int, dev *store.Device, meta proto.Meta, tlsState *tls.ConnectionState, renderMS float64, rejectReason string) {
 	serial, venue := "?", int64(0)
 	if dev != nil {
 		serial, venue = dev.Serial, dev.VenueID
@@ -339,6 +350,17 @@ func (s *Server) logOutcome(status int, dev *store.Device, meta proto.Meta, tlsS
 	if tlsState != nil {
 		attrs = append(attrs, "tls_ver", fmt.Sprintf("0x%04x", tlsState.Version),
 			"tls_suite", tlsCipherName(tlsState.CipherSuite))
+	}
+	// render_ms: only meaningful when a frame was processed; emitted on the
+	// stored/quarantined responses so the Phase 1 exit gate can read render
+	// latency without resurrecting /metrics (§11).
+	if renderMS > 0 {
+		attrs = append(attrs, "render_ms", math.Round(renderMS*10)/10)
+	}
+	// The server's own reject reason (bad_meta, dark, …) — meta.Reason is the
+	// device's provision-diag field, which is something else entirely.
+	if rejectReason != "" {
+		attrs = append(attrs, "reject", rejectReason)
 	}
 	if meta.Reason != "" {
 		attrs = append(attrs, "reason", meta.Reason)

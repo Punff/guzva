@@ -754,3 +754,39 @@ func TestIngestLogsOutcome(t *testing.T) {
 		t.Errorf("token leaked into logs:\n%s", logs)
 	}
 }
+
+// render_ms appears on the per-ingest journal line for stored frames, so the
+// Phase 1 exit gate ("render ms on the e2-micro") reads it without a metrics
+// endpoint. Health beats (no frame) and pre-render rejects carry no value.
+func TestLogOutcomeCarriesRenderMs(t *testing.T) {
+	f := newFixture(t, 4)
+	f.postFrame(t, "C1-1-aaaa", syntheticFrame(t, 320, 240, 3))
+	lh := f.logs.String()
+	if !strings.Contains(lh, "render_ms=") {
+		t.Fatalf("stored 201 missing render_ms:\n%s", lh)
+	}
+	// Health-only beat: no render → no field.
+	w := f.post(t, "Bearer "+testToken, metaJSON(t, proto.Meta{
+		CaptureID: "C1-2-bbbb", FW: "1.0.0", RSSI: -60,
+	}), nil)
+	if w.Code != proto.StatusStored {
+		t.Fatalf("beat = %d", w.Code)
+	}
+	lh2 := f.logs.String()[len(lh):]
+	if strings.Contains(lh2, "render_ms=") {
+		t.Fatalf("health-only beat carried render_ms:\n%s", lh2)
+	}
+}
+
+// A 422 carries its reason in the journal (reject=), so support can answer
+// "why was this frame dropped" from the journal alone — the quarantine file
+// must not be the only place it exists. The historical bench corpus has
+// `bad_meta` rejects that are unreadable without it.
+func TestLogOutcomeCarriesRejectReason(t *testing.T) {
+	f := newFixture(t, 4)
+	f.postFrame(t, "C1-1-aaaa", blackFrame(t, 640, 480))
+	lh := f.logs.String()
+	if !strings.Contains(lh, "reject=dark") {
+		t.Fatalf("dark frame 422 missing reject reason:\n%s", lh)
+	}
+}
