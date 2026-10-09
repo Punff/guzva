@@ -34,13 +34,14 @@ build: ## static release binary, version-stamped
 	@echo "built $(BIN) version=$(VERSION)"
 
 deploy: test build ## ship VERSION: push release, flip symlink, restart, verify
-	@echo "deploying $(VERSION) → $(SSH):$(REL)/$(VERSION)"
+	@echo "deploying $(VERSION) → $(SSH):$(REL)/$(VERSION)/guzva"
 	scp $(BIN) $(SSH):/tmp/guzva.new
 	ssh $(SSH) 'set -euo pipefail; \
-	  install -m 0755 -o root -g root /tmp/guzva.new $(REL)/$(VERSION); \
+	  mkdir -p $(REL)/$(VERSION); \
+	  install -m 0755 -o root -g root /tmp/guzva.new $(REL)/$(VERSION)/guzva; \
 	  rm -f /tmp/guzva.new; \
 	  ln -sfn $(REL)/$(VERSION) $(CUR); \
-	  ls -t $(REL) | tail -n +4 | xargs -r -I{} rm -f $(REL)/{}; \
+	  ls -t $(REL) | tail -n +4 | xargs -r -I{} rm -rf $(REL)/{}; \
 	  systemctl restart guzva; sleep 3; systemctl is-active guzva'
 	@$(MAKE) --no-print-directory check VERSION=$(VERSION)
 	@echo "deployed $(VERSION) — log it in docs/ops-log.md"
@@ -48,7 +49,7 @@ deploy: test build ## ship VERSION: push release, flip symlink, restart, verify
 rollback: ## rollback to a previous release: make rollback TAG=<tag>
 	@test -n "$(TAG)" || (echo "usage: make rollback TAG=<tag>  (ls: releases/)"; exit 2)
 	ssh $(SSH) 'set -euo pipefail; \
-	  test -x $(REL)/$(TAG) || (echo "no such release: $(TAG)"; exit 1); \
+	  test -x $(REL)/$(TAG)/guzva || (echo "no such release: $(TAG)"; exit 1); \
 	  ln -sfn $(REL)/$(TAG) $(CUR); \
 	  systemctl restart guzva; sleep 3; systemctl is-active guzva'
 	@$(MAKE) --no-print-directory check VERSION=$(TAG)
