@@ -6,13 +6,38 @@ Google Cloud Always Free e2-micro, with TLS inside the binary (no Caddy), a
 static public side, and a smaller pilot schema. Everything cut or deferred is in
 §9 with a measurable trigger for bringing it back.
 
-POC state: lean ESP32 capture firmware (`src/main.cpp`), Go/htmx console
-(`web/`) with poller, stdlib stylise, frame-hash freshness, venue settings in
-`site.json`.
+Status (09 Oct 2026 — supersedes the old POC-state note):
+- **Bench rig live on the VPS** (`deploy/testrig/`, systemd `camtest`,
+  `ssh root@guzva`): Python proto-v1 receiver on :443 (self-signed,
+  epoch-valid cert, raw IP 34.139.58.143) + :80→301, 23/23 e2e tests green,
+  live `desired_cfg` push via `cfg.json` verified end-to-end. **Scaffolding,
+  not §6** — it exists to prove the protocol and the firmware; the Go server
+  is still unbuilt.
+- **Firmware build steps 1–6 done, step 7 minus reference-frame hash**: capture
+  cadence, multipart HTTPS ingest, NVS identity, non-blocking WiFi, camera
+  degraded mode + counters, full OV2640 `desired_cfg` with read-back (ver=7
+  applied live), LAN cage (`/api/status`, `/jpg`, `/ping`, caged factory
+  reset), mDNS, serial CLI, status LED. Three real bugs found and fixed:
+  one corrupt base64 char in the embedded CA PEM (handshake died as
+  `X509 format invalid`); a fixed 12 s single-SYN connect budget (now a
+  failure-only 6 s probe, so healthy ticks open one connection); and a
+  server-side accept-loop jam in the rig (TLS handshake ran inside
+  `accept()` on one thread → backlog 5 full → kernel silently dropped every
+  new SYNs while established keep-alives kept working — fixed with
+  per-connection handshake, backlog 128). Commits `86b7dd7`, `eb771bb`.
+- **TLS spike (real link):** keep-alive reuse across ticks works; fresh tick
+  ≈ conn 2.5 s + write 14 ms + response 4 s; RSSI −57…−70 at the bench.
+- **Known gaps vs this plan:** ingest host compiled into `settings.h` (§4
+  wants it in NVS from day 1); no reference-frame hash; no `proto-v1.md` yet
+  (the rig's `server.py` + `firmware/src/main.cpp` are the de-facto spec);
+  Go server, autocert, `setup.sh`/`make deploy`, backups — all not started.
 
 Bench facts (08 Oct 2026, still binding): RSSI −72…−75 → 12 s+ fetches, ~50%
 join fails; thin USB → brownout + camera probe fails; NVS persists settings;
 external antenna without RF-jumper move = zero gain; QQVGA q18 ≈ 2–30 KB/frame.
+Relocation result (09 Oct): at RSSI ≥ −57 joins are instant and packet loss
+vanishes — link quality was real but *not* the whole story (see the accept-loop
+jam above). Brownout counter is live and reads 3 → supply spec still suspect.
 
 ---
 
@@ -146,8 +171,8 @@ backfill return only if the §9 trigger fires.)
 
 Mechanisms: HTTPS via `WiFiClientSecure` + embedded CA bundle (never
 `setInsecure` in prod, grep-gated); capture never waits for NTP; chunked 4–8 KB
-upload with immediate `fb_return`; single in-flight request; 8 s connect / 25 s
-POST timeouts; VGA q14–18 cap; static per-device bearer token, ingest hostname
+upload with immediate `fb_return`; single in-flight request; 12 s
+connect/handshake + 25 s POST timeouts (measured 09 Oct); VGA q14–18 cap; static per-device bearer token, ingest hostname
 and capture counter in NVS (`prov` ns); desired-cfg version with applied
 read-back in every POST; camera probe fail → exponential backoff → health-only
 degraded mode + LED pattern after 5 (no hot reboot loop); brownout detector on,
@@ -164,10 +189,10 @@ handshake at −65 and −72 dBm, test HTTP keep-alive reuse of one
 `WiFiClientSecure` across ticks, and check heap headroom with TLS + camera
 buffers live.
 
-Build order: (1) prod skeleton + flags → (2) NVS schema + factory reset →
-(3) non-blocking WiFi manager → (4) HTTPS ingest POST + TLS spike numbers →
-(5) camera degraded mode + counters → (6) desired-config read-back →
-(7) LAN cage + reference-frame hash → (8, Phase 3) pull OTA + rollback.
+Build order: (1) ✓ prod skeleton + flags → (2) ✓ NVS schema + factory reset →
+(3) ✓ non-blocking WiFi manager → (4) ✓ HTTPS ingest POST + TLS spike numbers →
+(5) ✓ camera degraded mode + counters → (6) ✓ desired-config read-back →
+(7) LAN cage ✓ / reference-frame hash ✗ → (8, Phase 3) pull OTA + rollback.
 
 Acceptance: ≥95% POST success at ≥ −65 dBm over 48 h; heap-leak bounded over
 48 h; provision→first-frame ≤15 min; camera-death and WiFi-loss tests recover
@@ -368,11 +393,21 @@ GPIO automation, multi-photo strips, OAuth, AVIF/WebP, K8s, managed DB.
 **Phase 1 — Thin slice on the real VM (1 device, real venue link).**
 - VM: free-tier checklist (§8), `setup.sh`, `make deploy`, autocert, firewall,
   budget alert, nightly backup timer.
+  *Status: firewall (tcp 80/443) open on `guzva` and reachability proven from
+  multiple external nodes; testrig `setup.sh` done. autocert / `make deploy` /
+  backup timer / budget alert: not started — today the rig is self-signed on a
+  raw IP.*
 - Protocol: one-page `proto-v1.md`, `POST /v1/ingest`, device token, ingest host
   in NVS.
+  *Status: endpoint, bearer token and multipart contract proven end-to-end by
+  the rig + firmware (incl. 401/409/422/429/507 handling in firmware).
+  `proto-v1.md` not written yet; ingest host still compiled in, not NVS.*
 - Server: `store` (3 tables) + ingest + `render` skeleton (poster/mono,
   validation gate) + `pages` (static public output) + `sched` tick + fakecam.
+  *Status: not started (the Python rig is throwaway scaffolding).*
 - Firmware: build steps 1–4 incl. the TLS spike.
+  *Status: done — steps 1–6 + most of 7; TLS numbers recorded in the status
+  block at the top of this plan.*
 - Exit: 48 h from a real venue link with recorded numbers — fresh-minute %, TLS
   handshake ms (US-region RTT), heap trend, brownouts, post_fail rate, render ms
   on the e2-micro, still size; privacy disk-scan + web-root tests green; first
@@ -432,6 +467,14 @@ GPIO automation, multi-photo strips, OAuth, AVIF/WebP, K8s, managed DB.
 ---
 
 ## 12. Change log
+
+**v3.1 (09 Oct 2026 — status update, no design change)**
+- Status block at the top replaces the POC-state note: bench rig live on the
+  VPS, firmware steps 1–6 (+LAN cage) done, TLS spike numbers recorded,
+  known gaps listed (ingest host in NVS, reference-frame hash, proto-v1.md,
+  Go server).
+- §5: connect budget corrected to 12 s (measured); build order checkmarked.
+- §10 Phase 1: per-bullet done/not-started annotations.
 
 **v3 → v3.1**
 - Hosting: dedicated GCP Always Free e2-micro (D4) with a free-tier checklist,
