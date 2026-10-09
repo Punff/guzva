@@ -496,48 +496,43 @@ static void serviceWiFi() {
 }
 
 // ============================ TLS TRANSPORT ================================
-// Diagnostics for the connect phases (printed by the caller on failure):
-// dns is 0 ms by construction (INGEST_HOST is an IP literal), then plain TCP,
-// then the TLS handshake with the full 12 s budget.
+// Failure diagnostics (printed by the caller): the connect duration, then the
+// post-mortem TCP probe result, then mbedTLS's own error text.
 static uint32_t diagTcpMs = 0;
 static bool     diagTcpOk = false;
 static int      diagSslErr = 0;
 static char     diagSslMsg[64] = {0};
 
+// Classify a failed connect with ONE plain TCP probe on a fresh socket.
+// Probe OK -> the path was fine, the handshake itself died (ssl_err says
+// why); probe FAIL -> SYNs are not getting through (route/RF). Runs only
+// after a failure, so a healthy tick opens exactly one connection instead of
+// two — no probe traffic on the air when things work. 6 s = SYNs at 0/3 s,
+// one lwIP retransmit before judging the path.
+static void tlsDiagnose() {
+  uint32_t t = millis();
+  WiFiClient probe;
+  diagTcpOk = probe.connect(INGEST_HOST, INGEST_PORT, 6000) != 0;
+  diagTcpMs = millis() - t;
+  probe.stop();
+}
+
 // Reuse the single WiFiClientSecure across ticks while it is still up and
 // its idle window is under the keep-alive budget; otherwise fresh handshake.
-// Phase 1 is a plain TCP probe: it separates SYN loss / routing problems from
-// TLS problems, and its cost is one RTT on a fresh connection only.
 static bool tlsEnsureConnected(bool *reused, uint32_t *connectMs) {
   *reused = false;
   *connectMs = 0;
+  diagTcpMs = 0;
   diagTcpOk = false;
   diagSslErr = 0;
   diagSslMsg[0] = 0;
   uint32_t now = millis();
   if (tlsClient.connected() && (now - tlsLastUseMs) < KEEPALIVE_IDLE_MS) {
     *reused = true;
-    diagTcpMs = 0;
     return true;
   }
   if (tlsClient.connected()) tlsClient.stop();
 
-  // --- phase 1: plain TCP ---------------------------------------------------
-  // Several short probes on fresh sockets instead of one long wait: lwIP only
-  // sends SYNs at 0/3/9 s, so a single lost SYN burns the whole 12 s budget.
-  // 4 × 3 s gives four independent first-SYN chances in the same window.
-  uint32_t t0 = millis();
-  diagTcpOk = false;
-  for (int i = 0; i < 4 && !diagTcpOk; i++) {
-    WiFiClient probe;
-    diagTcpOk = probe.connect(INGEST_HOST, INGEST_PORT, 3000) != 0;
-    probe.stop();
-    if (!diagTcpOk) delay(250);          // brief gap before re-arming the radio
-  }
-  diagTcpMs = millis() - t0;
-  if (!diagTcpOk) return false;
-
-  // --- phase 2: TLS handshake ----------------------------------------------
 #if INSECURE_TLS
   tlsClient.setInsecure();  // DEV ONLY — prod grep-gates INSECURE_TLS=0
 #else
@@ -554,6 +549,7 @@ static bool tlsEnsureConnected(bool *reused, uint32_t *connectMs) {
   if (!ok) {
     diagSslErr = tlsClient.lastError(diagSslMsg, sizeof diagSslMsg);
     tlsClient.stop();
+    tlsDiagnose();
     return false;
   }
   tlsClient.setTimeout(POST_TIMEOUT_MS / 1000);   // seconds: socket r/w budget
@@ -752,13 +748,14 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
     tlsFail++;
     postFail++;
     if (!diagTcpOk) {
-      Serial.printf("[TLS ] dns 0 ms (ip) | TCP FAILED after %lu ms "
+      Serial.printf("[TLS ] connect %lu ms FAILED | tcp probe %lu ms FAILED "
                     "(no SYN-ACK: route/PATH) heap %u\n",
-                    (unsigned long)diagTcpMs, (unsigned)ESP.getFreeHeap());
+                    (unsigned long)connectMs, (unsigned long)diagTcpMs,
+                    (unsigned)ESP.getFreeHeap());
     } else {
-      Serial.printf("[TLS ] dns 0 ms (ip) | tcp %lu ms OK | handshake FAILED "
-                    "after %lu ms (ssl_err=%d '%s') heap %u\n",
-                    (unsigned long)diagTcpMs, (unsigned long)connectMs,
+      Serial.printf("[TLS ] connect %lu ms FAILED | tcp probe %lu ms OK | "
+                    "handshake FAILED (ssl_err=%d '%s') heap %u\n",
+                    (unsigned long)connectMs, (unsigned long)diagTcpMs,
                     diagSslErr, diagSslMsg, (unsigned)ESP.getFreeHeap());
     }
     return 0;
@@ -812,11 +809,11 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   if (reusable) tlsLastUseMs = millis();
   else tlsClient.stop();
 
-  // TLS spike print (PLAN §5): phase timings + free heap every tick.
-  Serial.printf("[TLS ] dns 0 ms (ip) | tcp %lu ms%s | hs %lu ms | "
-                "write %lu ms | resp %lu ms | total %lu ms | free heap %u\n",
-                (unsigned long)diagTcpMs, reused ? " (idle-reuse)" : "",
+  // TLS spike print (PLAN §5): connect/write/response timings + heap per tick.
+  Serial.printf("[TLS ] conn %lu ms%s | write %lu ms | resp %lu ms | "
+                "total %lu ms | free heap %u\n",
                 (unsigned long)(reused ? 0 : connectMs),
+                reused ? " (idle-reuse)" : "",
                 (unsigned long)writeMs, (unsigned long)respMs,
                 (unsigned long)(millis() - t0), (unsigned)ESP.getFreeHeap());
   return status;
@@ -826,6 +823,37 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
 // Apply desired_cfg (apply-if-found: 201/409/422/429 carry it). Cadence keys
 // live in "cam"/interval, sensor keys in the scfg blob. Ver is echoed as
 // cfg_ver_applied on the next POST (read-back contract).
+//
+// Sensor keys are table-driven: one row per key carrying its clamp range, so
+// parse/compare/persist is written once and a new key is a one-line addition.
+struct CfgU8Row { const char *key; uint8_t SensorCfg::*m; uint32_t lo, hi; };
+struct CfgI8Row { const char *key; int8_t  SensorCfg::*m; int32_t lo, hi; };
+
+static const CfgU8Row CFG_U8[] = {
+  { "\"quality\":",    &SensorCfg::quality,    4, 63 },   // JPEG 4..63
+  { "\"framesize\":",  &SensorCfg::framesize,  0, FRAMESIZE_MAX_OV2640 },
+  { "\"denoise\":",    &SensorCfg::denoise,    0, 1 },
+  { "\"special_fx\":", &SensorCfg::special_fx, 0, 6 },
+  { "\"wb_mode\":",    &SensorCfg::wb_mode,    0, 4 },
+  { "\"awb\":",        &SensorCfg::awb,        0, 1 },
+  { "\"aec\":",        &SensorCfg::aec,        0, 1 },
+  { "\"agc\":",        &SensorCfg::agc,        0, 1 },
+  { "\"agc_gain\":",   &SensorCfg::agc_gain,   0, 30 },
+  { "\"hmirror\":",    &SensorCfg::hmirror,    0, 1 },
+  { "\"vflip\":",      &SensorCfg::vflip,      0, 1 },
+  { "\"dcw\":",        &SensorCfg::dcw,        0, 1 },
+  { "\"lenc\":",       &SensorCfg::lenc,       0, 1 },
+  { "\"colorbar\":",   &SensorCfg::colorbar,   0, 1 },
+  { "\"led_pwm\":",    &SensorCfg::led_pwm,    0, 255 },
+};
+static const CfgI8Row CFG_I8[] = {
+  { "\"brightness\":", &SensorCfg::brightness, -2, 2 },
+  { "\"contrast\":",   &SensorCfg::contrast,   -2, 2 },
+  { "\"saturation\":", &SensorCfg::saturation, -2, 2 },
+  { "\"sharpness\":",  &SensorCfg::sharpness,  -2, 2 },
+  { "\"ae_level\":",   &SensorCfg::ae_level,   -2, 2 },
+};
+
 static void applyCfgFromBody() {
   bool any = false;
   bool sensorChanged = false;
@@ -849,105 +877,17 @@ static void applyCfgFromBody() {
   }
 
   // --- sensor plane: any subset of the OV2640 feature set -------------------
-  if (jsonU32(respBody, "\"quality\":", &uv)) {
-    uv = clampu(uv, 4, 63);
-    if (uv != sc.quality) { sc.quality = (uint8_t)uv; sensorChanged = true; }
+  for (const CfgU8Row &r : CFG_U8) {
+    if (!jsonU32(respBody, r.key, &uv)) continue;
+    uv = clampu(uv, r.lo, r.hi);
     any = true;
+    if (uv != sc.*(r.m)) { sc.*(r.m) = (uint8_t)uv; sensorChanged = true; }
   }
-  if (jsonU32(respBody, "\"framesize\":", &uv)) {
-    uv = clampu(uv, 0, FRAMESIZE_MAX_OV2640);
-    if (uv != sc.framesize) { sc.framesize = (uint8_t)uv; sensorChanged = true; }
+  for (const CfgI8Row &r : CFG_I8) {
+    if (!jsonS32(respBody, r.key, &sv)) continue;
+    sv = clampi(sv, r.lo, r.hi);
     any = true;
-  }
-  if (jsonS32(respBody, "\"brightness\":", &sv)) {
-    sv = clampi(sv, -2, 2);
-    if (sv != sc.brightness) { sc.brightness = (int8_t)sv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonS32(respBody, "\"contrast\":", &sv)) {
-    sv = clampi(sv, -2, 2);
-    if (sv != sc.contrast) { sc.contrast = (int8_t)sv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonS32(respBody, "\"saturation\":", &sv)) {
-    sv = clampi(sv, -2, 2);
-    if (sv != sc.saturation) { sc.saturation = (int8_t)sv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonS32(respBody, "\"sharpness\":", &sv)) {
-    sv = clampi(sv, -2, 2);
-    if (sv != sc.sharpness) { sc.sharpness = (int8_t)sv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonS32(respBody, "\"ae_level\":", &sv)) {
-    sv = clampi(sv, -2, 2);
-    if (sv != sc.ae_level) { sc.ae_level = (int8_t)sv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"denoise\":", &uv)) {
-    uv = clampu(uv, 0, 1);
-    if (uv != sc.denoise) { sc.denoise = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"special_fx\":", &uv)) {
-    uv = clampu(uv, 0, 6);
-    if (uv != sc.special_fx) { sc.special_fx = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"wb_mode\":", &uv)) {
-    uv = clampu(uv, 0, 4);
-    if (uv != sc.wb_mode) { sc.wb_mode = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"awb\":", &uv)) {
-    uv = clampu(uv, 0, 1);
-    if (uv != sc.awb) { sc.awb = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"aec\":", &uv)) {
-    uv = clampu(uv, 0, 1);
-    if (uv != sc.aec) { sc.aec = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"agc\":", &uv)) {
-    uv = clampu(uv, 0, 1);
-    if (uv != sc.agc) { sc.agc = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"agc_gain\":", &uv)) {
-    uv = clampu(uv, 0, 30);
-    if (uv != sc.agc_gain) { sc.agc_gain = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"hmirror\":", &uv)) {
-    uv = clampu(uv, 0, 1);
-    if (uv != sc.hmirror) { sc.hmirror = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"vflip\":", &uv)) {
-    uv = clampu(uv, 0, 1);
-    if (uv != sc.vflip) { sc.vflip = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"dcw\":", &uv)) {
-    uv = clampu(uv, 0, 1);
-    if (uv != sc.dcw) { sc.dcw = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"lenc\":", &uv)) {
-    uv = clampu(uv, 0, 1);
-    if (uv != sc.lenc) { sc.lenc = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"colorbar\":", &uv)) {
-    uv = clampu(uv, 0, 1);
-    if (uv != sc.colorbar) { sc.colorbar = (uint8_t)uv; sensorChanged = true; }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"led_pwm\":", &uv)) {
-    uv = clampu(uv, 0, 255);
-    if (uv != sc.led_pwm) { sc.led_pwm = (uint8_t)uv; sensorChanged = true; }
-    any = true;
+    if (sv != sc.*(r.m)) { sc.*(r.m) = (int8_t)sv; sensorChanged = true; }
   }
 
   if (sensorChanged) {
@@ -981,9 +921,23 @@ static uint32_t retryAfterS() {
 // ============================ TICK =========================================
 // One full tick: capture (unless revoked/degraded) → POST → handle response →
 // schedule the next tick. No queue: the next tick always captures fresh.
+
+// Service background work for ms instead of a bare delay(): a retry gap is
+// 6 s and a failing tick far longer — the LAN cage, LED patterns and serial
+// console must stay alive throughout.
+static void serialPoll();   // defined in the serial console section below
+static void serviceIdle(uint32_t ms) {
+  uint32_t until = millis() + ms;
+  while (!due(until)) {
+    server.handleClient();
+    serialPoll();
+    ledService();
+    delay(10);
+  }
+}
+
 static void runTick() {
   nextCaptureId();
-  const char *reason = metaReason();
 
   bool haveFrame = false;
   uint8_t *frameCopy = nullptr;
@@ -1033,9 +987,9 @@ static void runTick() {
         if (camFailStreak >= CAM_FAIL_LIMIT) camEnterDegraded();
       }
     }
-    if (camDegraded) reason = metaReason();
   }
 
+  const char *reason = metaReason();
   Serial.printf("[TICK] #%lu id=%s %s reason=%s heap=%u\n",
                 (unsigned long)captureSeq, captureId,
                 haveFrame ? "frame" : "health-only",
@@ -1047,7 +1001,7 @@ static void runTick() {
   for (uint8_t attempt = 1; attempt <= POST_ATTEMPTS && status == 0; attempt++) {
     if (attempt > 1) {
       Serial.printf("[HTTP] retry attempt %u/%u\n", attempt, POST_ATTEMPTS);
-      delay(POST_RETRY_GAP_MS);
+      serviceIdle(POST_RETRY_GAP_MS);
     }
     status = ingestPost(haveFrame, frameCopy, frameLen);
   }
@@ -1246,7 +1200,7 @@ static void cmdNet() {
     Serial.println("[NET ] wifi not connected");
     return;
   }
-  netProbe("lan-pc", "192.168.1.11", 8080, 3000);
+  netProbe("lan-pc", LAN_PROBE_HOST, 8080, 3000);
   netProbe("gw-http", WiFi.gatewayIP().toString().c_str(), 80, 3000);
   netProbe("wan-ingest", INGEST_HOST, INGEST_PORT, 6000);
   netProbe("wan-cf", "1.1.1.1", 443, 6000);
@@ -1277,7 +1231,8 @@ static void handleSerialCmd(char *cmd) {
                   sc.agc_gain, sc.hmirror, sc.vflip, sc.dcw, sc.lenc,
                   sc.colorbar, sc.led_pwm);
   } else {
-    Serial.printf("[CLI] unknown command '%s' (try: reset, status, cfg)\n", cmd);
+    Serial.printf("[CLI] unknown command '%s' (try: reset, status, cfg, net)\n",
+                  cmd);
   }
 }
 
