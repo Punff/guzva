@@ -126,20 +126,30 @@ func TestOnFrameWritesOnlyPublicFiles(t *testing.T) {
 	for _, want := range []string{
 		"Jadro",
 		"Fresh",
-		`<meta http-equiv="refresh" content="30"`,
-		"Updated 16:00",             // venue-local, absolute (§6.4)
+		`<meta http-equiv="refresh" content="30"`, // no-JS fallback
+		"16:00",                     // venue-local, absolute (§6.4)
+		"today",                     // day label disambiguates the clock
+		"CEST",                      // venue timezone, not the viewer's
 		`src="latest.jpg?v=`,        // cache-busted by received_at
-		"Today 09:00–17:00",         // today (Friday) hours, venue-local
+		"Open today 09:00–17:00",    // today (Friday) hours, venue-local
 		"raw camera image is never", // privacy footer
+		`aspect-ratio:`,             // box reserved before the JPEG loads
+		`alt="Stylised live view`,   // alt text says what it is
 	} {
 		if !strings.Contains(idx, want) {
 			t.Errorf("index.html missing %q", want)
 		}
 	}
 	// A static page must never show a relative age — it cannot keep it
-	// correct (§6.4).
-	if strings.Contains(idx, "ago") {
-		t.Error("index.html shows a relative age")
+	// correct (§6.4). "Updated" is gone entirely; the clock + day label
+	// replace it and the freshness badge owns "how long ago".
+	if strings.Contains(idx, "ago") || strings.Contains(idx, "Updated") {
+		t.Error("index.html shows a relative age or the old 'Updated' label")
+	}
+	// The still's intrinsic size reaches the template so the browser can
+	// reserve the box (no layout shift on a new frame).
+	if !strings.Contains(idx, `width="640"`) {
+		t.Error("index.html missing intrinsic still width")
 	}
 }
 
@@ -229,10 +239,60 @@ func TestQuarantineKeepsLastGood(t *testing.T) {
 		t.Fatal("latest.jpg changed after a quarantined frame")
 	}
 	idx := f.readIndex(t)
-	if !strings.Contains(idx, "Fresh") || strings.Contains(idx, "No frame yet") {
+	if !strings.Contains(idx, "Fresh") || strings.Contains(idx, "Waiting for the first frame") {
 		t.Fatalf("page lost last-good state:\n%s", idx)
 	}
-	if !strings.Contains(idx, "Updated 16:00") {
-		t.Fatalf("Updated must still show the last GOOD frame:\n%s", idx)
+	// The clock + day label must still show the last GOOD frame's time.
+	if !strings.Contains(idx, "16:00") || !strings.Contains(idx, "today") {
+		t.Fatalf("clock must still show the last GOOD frame:\n%s", idx)
+	}
+}
+
+// dayLabel must disambiguate a bare clock time without becoming a relative
+// age (§6.4): today, yesterday across a month/year boundary, and a date.
+func TestDayLabel(t *testing.T) {
+	ny := time.Date(2026, 10, 9, 14, 0, 0, 0, time.UTC)
+	cases := []struct {
+		at   time.Time
+		want string
+	}{
+		{time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC), "today"},
+		{time.Date(2026, 10, 9, 23, 59, 0, 0, time.UTC), "today"},
+		{time.Date(2026, 10, 8, 14, 0, 0, 0, time.UTC), "yesterday"},
+		{time.Date(2026, 10, 6, 14, 0, 0, 0, time.UTC), "Tue 6 Oct"},
+	}
+	for _, c := range cases {
+		if got := dayLabel(c.at, ny); got != c.want {
+			t.Errorf("dayLabel(%s) = %q, want %q", c.at.Format("2006-01-02 15:04"), got, c.want)
+		}
+	}
+	// The month/year boundary cases need their own "now" pins.
+	if got := dayLabel(time.Date(2026, 9, 30, 6, 0, 0, 0, time.UTC),
+		time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC)); got != "yesterday" {
+		t.Errorf("month rollover = %q", got)
+	}
+	if got := dayLabel(time.Date(2026, 12, 31, 6, 0, 0, 0, time.UTC),
+		time.Date(2027, 1, 1, 6, 0, 0, 0, time.UTC)); got != "yesterday" {
+		t.Errorf("year rollover = %q", got)
+	}
+}
+
+// zoneLabel prefers a real abbreviation, falls back to a numeric offset.
+func TestZoneLabel(t *testing.T) {
+	sarajevo, err := time.LoadLocation("Europe/Sarajevo")
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	summer := time.Date(2026, 7, 1, 12, 0, 0, 0, sarajevo)
+	if got := zoneLabel(summer, sarajevo); got != "CEST" {
+		t.Errorf("summer zone = %q, want CEST", got)
+	}
+	winter := time.Date(2026, 1, 1, 12, 0, 0, 0, sarajevo)
+	if got := zoneLabel(winter, sarajevo); got != "CET" {
+		t.Errorf("winter zone = %q, want CET", got)
+	}
+	// UTC is spelled out, not abbreviated to "GMT".
+	if got := zoneLabel(summer.UTC(), time.UTC); got != "UTC" {
+		t.Errorf("utc zone = %q", got)
 	}
 }

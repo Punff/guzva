@@ -3,47 +3,233 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- No-JS fallback: the sched tick rewrites this file when state changes,
+     so a plain reload still lands on the current view. With JS the page
+     updates itself in place instead (no flash, no scroll jump). -->
 <meta http-equiv="refresh" content="30">
 <title>{{.Name}} — live still</title>
+<meta name="description" content="A stylised live view of {{.Name}}{{if .Updated}}, updated {{.UpdatedDay}} at {{.Updated}} {{.TZ}}{{end}}.">
+<meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfa" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{.Name}} — live still">
+<meta property="og:description" content="A stylised live view of {{.Name}}.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0d10'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%237ee787' stroke-width='3'/%3E%3C/svg%3E">
 <style>
-  :root { color-scheme: light dark; }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; max-width: 44rem; margin-inline: auto; }
-  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .75rem; margin-bottom: .75rem; }
-  h1 { font-size: 1.4rem; margin: 0; }
-  .badge { display: inline-block; font-size: .8rem; padding: .2em .6em; border-radius: 1em; font-weight: 600; }
-  .badge.fresh { background: #d7f5d7; color: #145214; }
-  .badge.stale { background: #ffe6b3; color: #7a4b00; }
-  .badge.unknown { background: #e4e4e4; color: #555; }
-  .badge.open { background: #dceeff; color: #0b4a80; }
-  .badge.closed { background: #eeeeee; color: #666; }
-  .still { background: #000; border-radius: 12px; overflow: hidden; line-height: 0; }
-  .still img { width: 100%; height: auto; display: block; }
-  .still-empty { color: #888; padding: 3rem 0; text-align: center; line-height: 1.4; }
-  footer { margin-top: .75rem; font-size: .78rem; color: #888; }
-  @media (prefers-color-scheme: dark) {
-    .badge.fresh { background: #123b12; color: #b7f0b7; }
-    .badge.stale { background: #4a3200; color: #ffd98a; }
-    .badge.unknown { background: #333; color: #aaa; }
-    .badge.open { background: #10314a; color: #a9d5ff; }
-    .badge.closed { background: #2c2c2c; color: #999; }
-    footer { color: #666; }
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfbfa;
+    --surface: #ffffff;
+    --ink: #14161a;
+    --ink-2: #4a5058;
+    --ink-3: #7c848e;
+    --line: #e5e7eb;
+    --accent: #14161a;
+    --fresh: #0f7b3f; --fresh-bg: #dcf5e6;
+    --stale: #8a5a00; --stale-bg: #fdefd2;
+    --unknown: #555c66; --unknown-bg: #e8eaee;
+    --open: #0b5aa6; --open-bg: #ddeaff;
+    --radius: 14px;
+    --shadow: 0 1px 2px rgba(16,20,28,.06), 0 8px 28px -12px rgba(16,20,28,.22);
   }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0d10;
+      --surface: #14181d;
+      --ink: #eceef1;
+      --ink-2: #a9b1bb;
+      --ink-3: #737c87;
+      --line: #232830;
+      --accent: #eceef1;
+      --fresh: #7ee787; --fresh-bg: #10331f;
+      --stale: #ffd98a; --stale-bg: #3a2a0c;
+      --unknown: #9aa2ad; --unknown-bg: #23272e;
+      --open: #a9d5ff; --open-bg: #0e2b45;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    padding: clamp(1rem, 4vw, 2.5rem) 1rem 2rem;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+  }
+  .wrap { width: 100%; max-width: 46rem; margin-inline: auto; display: flex; flex-direction: column; gap: 1rem; flex: 1; }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+  h1 { font-size: clamp(1.15rem, 3.4vw, 1.5rem); font-weight: 650; letter-spacing: -.015em; margin: 0; }
+  .badges { display: flex; gap: .4rem; margin-left: auto; }
+  .badge {
+    display: inline-flex; align-items: center; gap: .4em;
+    font-size: .78rem; font-weight: 600; letter-spacing: .01em;
+    padding: .28em .7em; border-radius: 999px; white-space: nowrap;
+  }
+  .badge::before { content: ""; width: .5em; height: .5em; border-radius: 50%; background: currentColor; }
+  .badge.fresh { color: var(--fresh); background: var(--fresh-bg); }
+  .badge.stale { color: var(--stale); background: var(--stale-bg); }
+  .badge.unknown { color: var(--unknown); background: var(--unknown-bg); }
+  .badge.open { color: var(--open); background: var(--open-bg); }
+  .badge.closed, .badge.no-hours { color: var(--ink-3); background: var(--unknown-bg); }
+  .badge.stale::before { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .badge.stale::before { animation: none; } }
+
+  .frame {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    /* Reserve the still's box before it loads: no layout shift when a
+       frame of different proportions arrives. */
+    aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}};
+  }
+  .frame img { width: 100%; height: 100%; object-fit: contain; display: block; background: #0b0d10; }
+  .frame[data-loading="1"]::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.06) 50%, transparent 80%);
+    animation: sweep 1.1s linear infinite;
+  }
+  @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) { .frame[data-loading="1"]::after { animation: none; } }
+
+  .empty { position: absolute; inset: 0; display: grid; place-content: center; gap: .5rem; text-align: center; padding: 2rem; color: var(--ink-3); }
+  .empty svg { margin-inline: auto; opacity: .5; }
+
+  .meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .6rem; font-size: .92rem; color: var(--ink-2); }
+  .meta .time { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+  .meta .sep { color: var(--ink-3); }
+
+  footer { margin-top: auto; padding-top: 1.25rem; font-size: .8rem; color: var(--ink-3); border-top: 1px solid var(--line); }
+  footer p { margin: 0; }
+  footer a { color: inherit; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>
 </head>
 <body>
-<header>
-  <h1>{{.Name}}</h1>
-  <span class="badge {{.FreshClass}}">{{.FreshText}}</span>{{if .OpenText}} <span class="badge {{.OpenClass}}">{{.OpenText}}</span>{{end}}
-</header>
-<main>
-  <div class="still">
-    {{if .HasFrame}}<img src="latest.jpg?v={{.StillVer}}" alt="stylised still" width="640">{{else}}<div class="still-empty">No frame yet — waiting for the venue camera…</div>{{end}}
-  </div>
-</main>
-<footer>
-  {{if .Updated}}Updated {{.Updated}}{{end}}{{if .HoursToday}} · Today {{.HoursToday}}{{end}}
-  <br>This page shows a stylised render. The raw camera image is never stored or published.
-</footer>
+<div class="wrap">
+  <header>
+    <h1>{{.Name}}</h1>
+    <div class="badges">
+      <span class="badge {{.FreshClass}}" id="fresh">{{.FreshText}}</span>
+      {{if .OpenText}}<span class="badge {{.OpenClass}}" id="open">{{.OpenText}}</span>{{end}}
+    </div>
+  </header>
+
+  <main class="frame" id="frame"{{if .HasFrame}} data-ver="{{.StillVer}}" data-loading="1"{{else}} data-ver="" data-empty="1"{{end}}>
+    {{if .HasFrame}}
+    <img id="still" src="latest.jpg?v={{.StillVer}}" alt="Stylised live view of {{.Name}}"{{if .StillW}} width="{{.StillW}}" height="{{.StillH}}"{{end}} decoding="async">
+    {{else}}
+    <div class="empty">
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+        <rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="12" cy="12" r="3.5"/>
+      </svg>
+      <div>Waiting for the first frame from {{.Name}}…</div>
+    </div>
+    {{end}}
+  </main>
+
+  <p class="meta" id="meta">
+    {{if .HasFrame}}
+    <span><span class="time">{{.Updated}}</span> <span class="sep">·</span> {{.UpdatedDay}} <span class="sep">·</span> {{.TZ}}</span>
+    {{if .HoursToday}}<span><span class="sep">·</span> Open today {{.HoursToday}}</span>{{end}}
+    {{else}}<span>No frame yet.</span>{{end}}
+  </p>
+
+  <footer>
+    <p>A stylised render. The raw camera image is never stored or published.</p>
+  </footer>
+</div>
+
+<p class="sr" role="status" aria-live="polite" id="live"></p>
+
+<script>
+// In-place updates. The page re-fetches ITSELF (a static file — no
+// database, no server render) and swaps only what changed: the still, the
+// clock, the badge. A full meta-refresh would flash the document and reset
+// scroll on every tick, including the ~2 out of 3 ticks where nothing has
+// changed. Keeps the two-file web root; the meta refresh remains the
+// fallback when JS is off or this fails.
+(function () {
+  var frame = document.getElementById('frame');
+  var live = document.getElementById('live');
+  if (!frame || !location.protocol.startsWith('http')) return;
+
+  var ver = frame.getAttribute('data-ver') || '';
+  var busy = false;
+
+  function swap(doc) {
+    var nextFrame = doc.getElementById('frame');
+    if (!nextFrame) return;
+    var nextVer = nextFrame.getAttribute('data-ver') || '';
+    var nextImg = doc.getElementById('still');
+
+    // First frame ever arriving (or the image changing): swap the src.
+    if (nextImg && nextVer !== ver) {
+      ver = nextVer;
+      var img = document.getElementById('still');
+      if (img) {
+        frame.setAttribute('data-loading', '1');
+        frame.removeAttribute('data-empty');
+        img.src = nextImg.getAttribute('src');
+        img.alt = nextImg.getAttribute('alt') || img.alt;
+        frame.insertBefore(nextImg.cloneNode(true), img);
+        img.remove();
+        document.getElementById('still').addEventListener('load', function () {
+          frame.removeAttribute('data-loading');
+        }, { once: true });
+      }
+    }
+    // Badges and the clock always track the server's view of state.
+    ['fresh', 'open'].forEach(function (id) {
+      var el = document.getElementById(id), next = doc.getElementById(id);
+      if (el && next) { el.textContent = next.textContent; el.className = next.className; }
+    });
+    var meta = document.getElementById('meta'), nextMeta = doc.getElementById('meta');
+    if (meta && nextMeta) { meta.innerHTML = nextMeta.innerHTML; }
+  }
+
+  function tick() {
+    if (busy || document.hidden) return;
+    busy = true;
+    // cache-bust so we always get the current file, not a 304 body we
+    // already have; the body is ~2 KB.
+    fetch(location.pathname + '?p=' + Date.now(), { cache: 'no-store', credentials: 'omit' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (t) {
+        if (!t) return;
+        var doc = new DOMParser().parseFromString(t, 'text/html');
+        var nextFrame = doc.getElementById('frame');
+        var nextVer = nextFrame && nextFrame.getAttribute('data-ver');
+        if (nextVer !== ver) { swap(doc); if (live) live.textContent = 'New view available.'; }
+        else {
+          // State can still change without a new still (fresh→stale).
+          var fresh = doc.getElementById('fresh'), el = document.getElementById('fresh');
+          if (fresh && el && fresh.textContent !== el.textContent) {
+            el.textContent = fresh.textContent; el.className = fresh.className;
+            var meta = document.getElementById('meta'), nm = doc.getElementById('meta');
+            if (meta && nm) meta.innerHTML = nm.innerHTML;
+          }
+        }
+      })
+      .catch(function () { /* offline: next tick retries, meta refresh is the fallback */ })
+      .then(function () { busy = false; });
+  }
+
+  // Poll faster than the 30 s meta refresh so an arrived frame shows up
+  // promptly, but stay gentle: 12 s is well under a venue's 45 s cadence.
+  setInterval(tick, 12000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });
+})();
+</script>
 </body>
 </html>

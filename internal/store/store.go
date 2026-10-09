@@ -189,6 +189,8 @@ func (s *Store) migrate(ctx context.Context) error {
 		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 3"); err != nil {
 			return fmt.Errorf("store: set user_version: %w", err)
 		}
+	case 3:
+		// current — nothing to do.
 	default:
 		return fmt.Errorf("store: unknown schema version %d (binary older than db?)", ver)
 	}

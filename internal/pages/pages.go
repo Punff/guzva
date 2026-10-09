@@ -102,12 +102,17 @@ type view struct {
 	Name       string
 	HasFrame   bool
 	StillVer   string // latest.jpg cache-buster (frame received unix)
+	StillW     int    // intrinsic render size, so the browser reserves the
+	StillH     int    // box before the JPEG lands (no layout shift)
 	FreshClass string
 	FreshText  string
 	OpenClass  string
 	OpenText   string
 	Updated    string // "14:07" venue-local, empty before the first frame
+	UpdatedDay string // "today" | "yesterday" | "Mon 6 Oct" — disambiguates
+	// the bare clock time without a relative age
 	HoursToday string // "09:00–17:00" venue-local, empty if hours unset
+	TZ         string // venue tz abbreviation, e.g. "CET"
 }
 
 func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
@@ -169,10 +174,16 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	vw := view{
 		Name:     v.Name,
 		HasFrame: latest != nil && latest.Status == "ok",
+		TZ:       zoneLabel(last.In(loc), loc),
 	}
 	if vw.HasFrame {
 		vw.StillVer = fmt.Sprintf("%d", latest.ReceivedAt.Unix())
-		vw.Updated = last.In(loc).Format("15:04")
+		local := last.In(loc)
+		vw.Updated = local.Format("15:04")
+		vw.UpdatedDay = dayLabel(local, now.In(loc))
+		if latest.Width > 0 && latest.Height > 0 {
+			vw.StillW, vw.StillH = latest.Width, latest.Height
+		}
 	}
 	switch fresh {
 	case venue.Fresh:
@@ -195,6 +206,50 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	}
 	w.last[v.Slug] = stateKey
 	return nil
+}
+
+// zoneLabel abbreviates the venue's timezone for display ("CET", "GMT+2").
+// Abbreviations are ambiguous across zones, so the offset is the fallback
+// whenever the zone has no stable abbreviation at that instant.
+func zoneLabel(at time.Time, loc *time.Location) string {
+	name, off := at.Zone()
+	if name == "" || name == "UTC" {
+		return "UTC"
+	}
+	// Only trust the abbreviation when it is not a pure numeric GMT±N.
+	if len(name) > 1 && (name[0] < '0' || name[0] > '9') {
+		return name
+	}
+	sign := "+"
+	if off < 0 {
+		sign, off = "-", -off
+	}
+	return fmt.Sprintf("GMT%s%d", sign, off/3600)
+}
+
+// sameDayMinusOne reports whether a is the calendar day before b (both in
+// the same location), handling month and year rollover.
+func sameDayMinusOne(a, b time.Time) bool {
+	y, m, d := b.Date()
+	prev := time.Date(y, m, d, 12, 0, 0, 0, time.UTC).AddDate(0, 0, -1)
+	ay, am, ad := a.Date()
+	return ay == prev.Year() && am == prev.Month() && ad == prev.Day()
+}
+
+// dayLabel says which day the frame is from, so a bare clock time is never
+// ambiguous ("Updated 14:07" on a page from yesterday reads wrong). Not a
+// relative age — the freshness badge owns "how long ago" (§6.4).
+func dayLabel(frameAt, nowLocal time.Time) string {
+	ay, am, ad := frameAt.Date()
+	ny, nm, _ := nowLocal.Date()
+	switch {
+	case ay == ny && am == nm && ad == nowLocal.Day():
+		return "today"
+	case sameDayMinusOne(frameAt, nowLocal):
+		return "yesterday"
+	default:
+		return frameAt.Format("Mon 2 Jan")
+	}
 }
 
 // hoursToday formats today's ranges in venue-local time, "" when unset.

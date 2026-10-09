@@ -438,3 +438,26 @@ func TestVenueDetailsAndOwner(t *testing.T) {
 		t.Fatalf("devices by venue = %+v", devs)
 	}
 }
+
+// Reopening an already-current database must be a no-op, not an "unknown
+// schema version" error. This is the regression test for a real outage: the
+// v3 migration left user_version=3 with no matching `case`, so every service
+// restart after the first boot failed to open the store.
+func TestReopenCurrentDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "reopen.db")
+	// A fresh database migrates 0→3 in one open; reopens stay at 3.
+	for i, want := range []int{3, 3, 3} {
+		s, err := Open(path)
+		if err != nil {
+			t.Fatalf("open #%d: %v", i+1, err)
+		}
+		var ver int
+		if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil {
+			t.Fatal(err)
+		}
+		if ver != want {
+			t.Errorf("open #%d: user_version = %d, want %d", i+1, ver, want)
+		}
+		s.Close()
+	}
+}
