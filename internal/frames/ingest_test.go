@@ -688,3 +688,69 @@ func TestOnStoredHook(t *testing.T) {
 		t.Errorf("OnStored venue = %d, want %d", fired[0], f.vid)
 	}
 }
+
+// The device plane: operator-set sensor keys ride every response, flattened
+// into the one object proto-v1 specifies (apply-if-found subset is legal).
+func TestIngestDesiredCfgExtras(t *testing.T) {
+	f := newFixture(t, 4)
+	ctx := context.Background()
+	if err := f.st.SetDeviceCfg(ctx, f.did, proto.DesiredCfg{
+		Ver: 3, IntervalS: 45, Quality: 12,
+		Extra: map[string]int{"framesize": 5, "led_pwm": 80, "brightness": 1, "special_fx": 2},
+	}); err != nil {
+		t.Fatalf("set cfg: %v", err)
+	}
+
+	w := f.postFrame(t, "C1-1-aaaa", syntheticFrame(t, 320, 240, 7))
+	if w.Code != proto.StatusStored {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
+	}
+	dc := decodeResponse(t, w)["desired_cfg"].(map[string]any)
+	want := map[string]float64{
+		"ver": 3, "interval_s": 45, "quality": 12,
+		"framesize": 5, "led_pwm": 80, "brightness": 1, "special_fx": 2,
+	}
+	for k, v := range want {
+		if dc[k] != v {
+			t.Errorf("desired_cfg[%s] = %v, want %v (full: %v)", k, dc[k], v, dc)
+		}
+	}
+	// The trio is never duplicated inside an object; the wire form is flat.
+	if _, nested := dc["extra"]; nested {
+		t.Errorf("extra must be flattened, not nested: %v", dc)
+	}
+
+	// A reject (dark) carries the same config — cfg rides every response.
+	w = f.postFrame(t, "C1-2-bbbb", blackFrame(t, 640, 480))
+	if w.Code != proto.StatusRejected {
+		t.Fatalf("dark = %d", w.Code)
+	}
+	dc = decodeResponse(t, w)["desired_cfg"].(map[string]any)
+	if dc["led_pwm"] != float64(80) || dc["ver"] != float64(3) {
+		t.Errorf("422 desired_cfg = %v", dc)
+	}
+}
+
+// The per-ingest journal line: one Info line per accepted outcome with the
+// soak's fields (status, serial, rssi, free_heap), Warn on rejects.
+func TestIngestLogsOutcome(t *testing.T) {
+	f := newFixture(t, 4)
+	if w := f.postFrame(t, "C1-1-aaaa", syntheticFrame(t, 320, 240, 9)); w.Code != proto.StatusStored {
+		t.Fatalf("post = %d", w.Code)
+	}
+	if w := f.postFrame(t, "C1-2-bbbb", blackFrame(t, 640, 480)); w.Code != proto.StatusRejected {
+		t.Fatalf("dark = %d", w.Code)
+	}
+	logs := f.logs.String()
+	if !strings.Contains(logs, "ingest status=201 serial=esp32-aa") ||
+		!strings.Contains(logs, "rssi=-60") {
+		t.Errorf("missing accepted ingest line, logs:\n%s", logs)
+	}
+	if !strings.Contains(logs, "ingest status=422") {
+		t.Errorf("missing rejected ingest line, logs:\n%s", logs)
+	}
+	// Privacy (§1): no frame bytes, no bearer token in the journal.
+	if strings.Contains(logs, testToken) || strings.Contains(logs, "Bearer") {
+		t.Errorf("token leaked into logs:\n%s", logs)
+	}
+}

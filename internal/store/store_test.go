@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -94,17 +95,108 @@ func TestDeviceLifecycle(t *testing.T) {
 	if !d.LastSeenAt.Equal(at) {
 		t.Fatalf("last_seen = %v want %v", d.LastSeenAt, at)
 	}
-	if got := d.DesiredCfg(); got != (proto.DesiredCfg{Ver: 1, IntervalS: 60, Quality: 18}) {
+	if got := d.DesiredCfg(); got.Ver != 1 || got.IntervalS != 60 || got.Quality != 18 || got.Extra != nil {
 		t.Fatalf("desired cfg = %+v", got)
 	}
 
-	// Config bump lands on the device row (audit = slog line at the caller).
-	if err := s.SetDeviceCfg(ctx, did, 2, 30, 14); err != nil {
+	// Config bump lands on the device row (audit = slog line at the caller),
+	// cadence trio in its columns and sensor keys in cfg_json.
+	if err := s.SetDeviceCfg(ctx, did, proto.DesiredCfg{
+		Ver: 2, IntervalS: 30, Quality: 14,
+		Extra: map[string]int{"framesize": 5, "led_pwm": 80, "brightness": 1},
+	}); err != nil {
 		t.Fatalf("set cfg: %v", err)
 	}
 	d, _ = s.DeviceByTokenHash(ctx, "hash1")
 	if d.CfgVer != 2 || d.CfgIntervalS != 30 || d.CfgQuality != 14 {
 		t.Fatalf("cfg not applied: %+v", d)
+	}
+	want := map[string]int{"framesize": 5, "led_pwm": 80, "brightness": 1}
+	if len(d.CfgExtra) != len(want) {
+		t.Fatalf("cfg extras = %v want %v", d.CfgExtra, want)
+	}
+	for k, v := range want {
+		if d.CfgExtra[k] != v {
+			t.Fatalf("cfg extra %s = %d want %d", k, d.CfgExtra[k], v)
+		}
+	}
+	got := d.DesiredCfg()
+	if got.Ver != 2 || got.Extra["framesize"] != 5 {
+		t.Fatalf("desired cfg after bump = %+v", got)
+	}
+
+	// Clearing the extras (empty set) must empty cfg_json, not keep stale keys.
+	if err := s.SetDeviceCfg(ctx, did, proto.DesiredCfg{Ver: 3, IntervalS: 30, Quality: 14}); err != nil {
+		t.Fatalf("clear extras: %v", err)
+	}
+	d, _ = s.DeviceByTokenHash(ctx, "hash1")
+	if len(d.CfgExtra) != 0 || d.CfgVer != 3 {
+		t.Fatalf("extras not cleared: ver=%d extra=%v", d.CfgVer, d.CfgExtra)
+	}
+
+	// DeviceBySerial resolves the offline cfg tooling's lookup.
+	bySerial, err := s.DeviceBySerial(ctx, "esp32-aa")
+	if err != nil || bySerial.ID != did {
+		t.Fatalf("by serial: d=%+v err=%v", bySerial, err)
+	}
+	if _, err := s.DeviceBySerial(ctx, "nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("by serial miss: err = %v, want ErrNotFound", err)
+	}
+}
+
+// TestMigrationV1ToV2 builds a v1-era database (no cfg_json column) and
+// checks Open migrates it in place with existing devices intact.
+func TestMigrationV1ToV2(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open raw: %v", err)
+	}
+	if _, err := db.Exec(schemaV1); err != nil {
+		t.Fatalf("seed v1 schema: %v", err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 1`); err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		INSERT INTO venues (slug, name, style, tz, created_at) VALUES ('old', 'Old', 'poster', 'UTC', 0)`)
+	if err != nil {
+		t.Fatalf("seed venue: %v", err)
+	}
+	_, err = db.Exec(`
+		INSERT INTO devices (venue_id, serial, token_hash, cfg_ver, cfg_interval_s, cfg_quality, created_at)
+		VALUES (1, 'esp32-old', 'hashold', 7, 45, 12, 0)`)
+	if err != nil {
+		t.Fatalf("seed device: %v", err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("open migrated: %v", err)
+	}
+	defer s.Close()
+
+	var ver int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 2 {
+		t.Fatalf("user_version = %d err=%v, want 2", ver, err)
+	}
+	d, err := s.DeviceBySerial(context.Background(), "esp32-old")
+	if err != nil {
+		t.Fatalf("device after migration: %v", err)
+	}
+	if d.CfgVer != 7 || d.CfgIntervalS != 45 || d.CfgQuality != 12 || len(d.CfgExtra) != 0 {
+		t.Fatalf("v1 device not intact: %+v", d)
+	}
+	// And the migrated row accepts extras.
+	if err := s.SetDeviceCfg(context.Background(), d.ID, proto.DesiredCfg{
+		Ver: 8, IntervalS: 45, Quality: 12, Extra: map[string]int{"framesize": 5},
+	}); err != nil {
+		t.Fatalf("set cfg after migration: %v", err)
+	}
+	d, _ = s.DeviceBySerial(context.Background(), "esp32-old")
+	if d.CfgExtra["framesize"] != 5 {
+		t.Fatalf("extras after migration: %v", d.CfgExtra)
 	}
 }
 

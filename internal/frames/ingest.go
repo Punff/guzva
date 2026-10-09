@@ -97,16 +97,36 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Declared up front so respond (below) can log serial/rssi/counters for
+	// every device-visible response — the per-ingest journal line the 48 h
+	// soak reads.
+	var (
+		dev      *store.Device
+		meta     proto.Meta
+		frameRaw []byte
+	)
+
+	// respond is THE exit path for 201/409/422: it logs one line (Info for
+	// accepted outcomes, Warn for rejects) and then writes the canonical
+	// body. All of these statuses carry desired_cfg (§4).
+	respond := func(status int, reason string) {
+		s.logOutcome(status, dev, meta)
+		s.writeResp(w, status, s.response(dev, reason))
+	}
+
 	// Per-IP floor first — a deliberate refinement of the §6.1 order:
 	// unauthenticated floods must not reach the database at all.
 	if !s.lim.AllowIP(auth.ClientIP(r)) {
 		s.m.add("ratelimited")
+		// No log line on purpose: dropping floods must not become a log
+		// flood (metrics count them).
 		s.write429(w)
 		return
 	}
 
 	// Auth (§6.1 step 1). Body/headers are never logged (§1).
-	dev, err := auth.Authenticate(ctx, s.st, r)
+	var err error
+	dev, err = auth.Authenticate(ctx, s.st, r)
 	if err != nil {
 		s.m.add("unauthorized")
 		s.log.Warn("ingest rejected", "err", err.Error(), "ip", auth.ClientIP(r))
@@ -117,6 +137,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// Per-device token bucket (§6.1 step 2).
 	if !s.lim.AllowDevice(dev.ID) {
 		s.m.add("ratelimited")
+		s.logOutcome(proto.StatusRateLimit, dev, meta)
 		s.write429(w)
 		return
 	}
@@ -128,39 +149,37 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	if pct, err := s.diskFree(s.dataDir); err == nil && pct < MinFreePct {
 		s.m.add("disk_full")
 		s.log.Error("disk degraded", "free_pct", pct)
+		s.logOutcome(proto.StatusDiskFull, dev, meta)
 		s.writeErr(w, proto.StatusDiskFull, "disk_degraded")
 		return
 	}
 
 	// Parse meta + optional frame.
-	meta, frameRaw, err := s.readMultipart(r)
+	meta, frameRaw, err = s.readMultipart(r)
 	if err != nil {
 		var re *reqError
 		if errors.As(err, &re) {
 			if re.status == proto.StatusTooLarge {
 				s.m.add("too_large")
+				s.logOutcome(proto.StatusTooLarge, dev, meta)
 				s.writeErr(w, proto.StatusTooLarge, "too_large")
 				return
 			}
 			// 422: rejected + reason + quarantined (headers-only record).
 			s.quarantine(ctx, dev, meta.CaptureID, reasonOf(err), len(frameRaw), "", meta)
-			s.writeResp(w, proto.StatusRejected, s.response(dev, reasonOf(err)))
+			respond(proto.StatusRejected, reasonOf(err))
 			return
 		}
 		var mbe *http.MaxBytesError
-		if errors.As(err, &mbe) {
+		if errors.As(err, &mbe) || errors.Is(err, errTooLarge) {
 			s.m.add("too_large")
-			s.writeErr(w, proto.StatusTooLarge, "too_large")
-			return
-		}
-		if errors.Is(err, errTooLarge) {
-			s.m.add("too_large")
+			s.logOutcome(proto.StatusTooLarge, dev, meta)
 			s.writeErr(w, proto.StatusTooLarge, "too_large")
 			return
 		}
 		s.m.add("bad_meta")
 		s.quarantine(ctx, dev, meta.CaptureID, proto.ReasonBadMeta, len(frameRaw), "", meta)
-		s.writeResp(w, proto.StatusRejected, s.response(dev, proto.ReasonBadMeta))
+		respond(proto.StatusRejected, proto.ReasonBadMeta)
 		return
 	}
 
@@ -188,7 +207,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 			s.log.Error("beat update failed", "err", err.Error())
 		}
 		s.m.add("duplicate")
-		s.writeResp(w, proto.StatusDuplicate, s.response(dev, ""))
+		respond(proto.StatusDuplicate, "")
 		return
 	}
 
@@ -199,7 +218,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.m.add("health")
-		s.writeResp(w, proto.StatusStored, s.response(dev, ""))
+		respond(proto.StatusStored, "")
 		return
 	}
 
@@ -230,7 +249,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 				}
 				// Already seen: idempotent 409.
 				s.m.add("duplicate")
-				s.writeResp(w, proto.StatusDuplicate, s.response(dev, ""))
+				respond(proto.StatusDuplicate, "")
 				return
 			}
 			if err := s.st.UpdateDeviceBeat(ctx, dev.ID, beat); err != nil {
@@ -239,7 +258,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 			s.m.add("quarantined")
 			s.log.Warn("frame quarantined",
 				"venue", dev.VenueID, "capture_id", meta.CaptureID, "reason", reason)
-			s.writeResp(w, proto.StatusRejected, s.response(dev, reason))
+			respond(proto.StatusRejected, reason)
 			return
 		}
 		s.internal(w, "render", perr)
@@ -268,7 +287,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		os.Remove(tmp)
 		if errors.Is(ferr, store.ErrDuplicate) {
 			s.m.add("duplicate")
-			s.writeResp(w, proto.StatusDuplicate, s.response(dev, ""))
+			respond(proto.StatusDuplicate, "")
 			return
 		}
 		s.internal(w, "insert frame", ferr)
@@ -290,7 +309,39 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		s.OnStored(ctx, dev.VenueID)
 	}
 	s.m.add("stored")
-	s.writeResp(w, proto.StatusStored, s.response(dev, ""))
+	respond(proto.StatusStored, "")
+}
+
+// logOutcome is the per-ingest journal line: one line for every response
+// the device can see, carrying what the 48 h soak measures (status, rssi,
+// free heap, capture counters). Info for accepted outcomes (201/409), Warn
+// for rejects (422/429/507). Bodies and tokens are never logged (§1).
+func (s *Server) logOutcome(status int, dev *store.Device, meta proto.Meta) {
+	serial, venue := "?", int64(0)
+	if dev != nil {
+		serial, venue = dev.Serial, dev.VenueID
+	}
+	attrs := []any{
+		"status", status,
+		"serial", serial,
+		"venue", venue,
+		"capture_id", meta.CaptureID,
+		"rssi", meta.RSSI,
+		"free_heap", meta.FreeHeap,
+		"boot", meta.Counters.Boot,
+		"brownout", meta.Counters.Brownout,
+		"post_fail", meta.Counters.PostFail,
+		"tls_fail", meta.Counters.TLSFail,
+	}
+	if meta.Reason != "" {
+		attrs = append(attrs, "reason", meta.Reason)
+	}
+	switch {
+	case status >= 400:
+		s.log.Warn("ingest", attrs...)
+	default:
+		s.log.Info("ingest", attrs...)
+	}
 }
 
 // readMultipart streams meta (≤16 KiB) and the optional frame (≤4 MiB);

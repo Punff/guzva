@@ -26,19 +26,24 @@ func provisionMain(args []string) int {
 	name := fs.String("name", "", "venue display name (required)")
 	style := fs.String("style", "poster", "preset: poster | mono (no raw preset exists, §7)")
 	interval := fs.Int("interval", proto.DefaultIntervalS, "device-plane interval_s (30-300 s)")
-	quality := fs.Int("quality", proto.DefaultQuality, "device-plane JPEG quality (5-63, lower = better)")
+	quality := fs.Int("quality", proto.DefaultQuality, "device-plane JPEG quality (4-63, lower = better)")
 	hours := fs.String("hours", "", `opening hours, e.g. "Mo-Fr 09:00-17:00;Sa 10:00-14:00" (empty = no badge)`)
 	serial := fs.String("serial", "", "device serial (default: random — replace with the efuse MAC label)")
+	token := fs.String("token", "", "import an existing token instead of minting one (cutover: the flashed board keeps its token — no re-flash)")
 	tz := fs.String("tz", store.DefaultTZ, "venue IANA timezone, e.g. Europe/Sarajevo")
 	devices := fs.Int("devices", 1, "how many devices to mint on this venue (fakecam gate harness)")
 	fs.Parse(args)
 
 	if *slug == "" {
-		fmt.Fprintln(os.Stderr, "usage: guzva provision -slug <slug> -name <name> [-style poster|mono] [-hours ...] [-devices N] [-data dir]")
+		fmt.Fprintln(os.Stderr, "usage: guzva provision -slug <slug> -name <name> [-token <existing>] [-style poster|mono] [-hours ...] [-devices N] [-data dir]")
 		return 2
 	}
 	if *devices < 1 || *devices > 256 {
 		fmt.Fprintln(os.Stderr, "provision: -devices must be 1..256")
+		return 2
+	}
+	if *token != "" && *devices > 1 {
+		fmt.Fprintln(os.Stderr, "provision: -token imports one device only; drop -devices or -token")
 		return 2
 	}
 	if *style != "poster" && *style != "mono" {
@@ -63,10 +68,15 @@ func provisionMain(args []string) int {
 	}
 	defer st.Close()
 
-	token, err := auth.GenerateToken()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "provision: token: %v\n", err)
-		return 1
+	// Token: mint one, or import the flashed board's existing token (cutover
+	// — the device keeps working, no re-flash). Auth stores only its sha256.
+	if *token == "" {
+		tok, err := auth.GenerateToken()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "provision: token: %v\n", err)
+			return 1
+		}
+		*token = tok
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -107,7 +117,7 @@ func provisionMain(args []string) int {
 	deviceID, err := st.CreateDevice(ctx, store.Device{
 		VenueID: venueID, Serial: *serial,
 		CfgVer: 1, CfgIntervalS: *interval, CfgQuality: *quality,
-	}, auth.HashToken(token))
+	}, auth.HashToken(*token))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "provision: create device: %v\n", err)
 		return 1
@@ -125,7 +135,7 @@ token  %s
 
   ***  STORE THIS TOKEN NOW — IT IS SHOWN ONLY ONCE.  ***
 `,
-		vName, *slug, vStyle, hoursLabel, *serial, deviceID, token)
+		vName, *slug, vStyle, hoursLabel, *serial, deviceID, *token)
 
 	// Extra devices for the fakecam gate: same venue, distinct identities
 	// (each hits its own per-device rate bucket, §6.1).
@@ -145,6 +155,15 @@ token  %s
 			return 1
 		}
 		fmt.Printf("device %q  (id %d)\ntoken  %s\n", serial, id, tok)
+	}
+
+	if *token != "" {
+		fmt.Printf(`
+Imported existing token for %q (no re-flash needed — the board already
+carries it; only its POST will now hit this server).
+Public page: /%s/
+`, *serial, *slug)
+		return 0
 	}
 
 	fmt.Printf(`

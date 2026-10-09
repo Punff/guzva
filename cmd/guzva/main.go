@@ -1,7 +1,8 @@
 // Command guzva is the whole service: one static Go binary (PLAN §2).
 //
 //	guzva serve      ingest + static public pages + admin console (default)
-//	guzva provision  create a venue + device, print the token once
+//	guzva provision  create a venue + device, print the token once (-token = import)
+//	guzva cfg        show or change a device's desired_cfg (-set k=v,...)
 //	guzva hashpw     bcrypt-hash a password for GUZVA_ADMIN_HASH
 //
 // Layout follows PLAN §3: this file only wires packages together — no
@@ -47,6 +48,8 @@ func main() {
 		switch args[0] {
 		case "provision":
 			os.Exit(provisionMain(args[1:]))
+		case "cfg":
+			os.Exit(cfgMain(args[1:]))
 		case "hashpw":
 			os.Exit(hashpwMain(args[1:]))
 		case "serve":
