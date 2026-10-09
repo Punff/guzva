@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -178,6 +179,16 @@ func serveMain(args []string) int {
 	srv := &http.Server{
 		Addr:    *listen,
 		Handler: mux,
+		// TLS profile for the bench cutover: TLS 1.2 only, no session
+		// tickets. The ESP32's mbedtls (arduino-esp32 2.x) negotiates fine
+		// against OpenSSL servers but stalls against Go's defaults —
+		// tickets-off + 1.2-pinned is the rig-shaped profile it is proven
+		// with. Revisit with a newer core when autocert lands (§8).
+		TLSConfig: &tls.Config{
+			MinVersion:             tls.VersionTLS12,
+			MaxVersion:             tls.VersionTLS12,
+			SessionTicketsDisabled: true,
+		},
 		// Slow clients must not tie up resources (§6.1). ReadTimeout
 		// exceeds the device's 25 s POST budget on purpose.
 		// ReadHeaderTimeout also bounds the TLS handshake: it must

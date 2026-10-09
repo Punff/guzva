@@ -12,6 +12,7 @@ package frames
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -110,7 +111,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// accepted outcomes, Warn for rejects) and then writes the canonical
 	// body. All of these statuses carry desired_cfg (§4).
 	respond := func(status int, reason string) {
-		s.logOutcome(status, dev, meta)
+		s.logOutcome(status, dev, meta, r.TLS)
 		s.writeResp(w, status, s.response(dev, reason))
 	}
 
@@ -137,7 +138,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// Per-device token bucket (§6.1 step 2).
 	if !s.lim.AllowDevice(dev.ID) {
 		s.m.add("ratelimited")
-		s.logOutcome(proto.StatusRateLimit, dev, meta)
+		s.logOutcome(proto.StatusRateLimit, dev, meta, r.TLS)
 		s.write429(w)
 		return
 	}
@@ -149,7 +150,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	if pct, err := s.diskFree(s.dataDir); err == nil && pct < MinFreePct {
 		s.m.add("disk_full")
 		s.log.Error("disk degraded", "free_pct", pct)
-		s.logOutcome(proto.StatusDiskFull, dev, meta)
+		s.logOutcome(proto.StatusDiskFull, dev, meta, r.TLS)
 		s.writeErr(w, proto.StatusDiskFull, "disk_degraded")
 		return
 	}
@@ -161,7 +162,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &re) {
 			if re.status == proto.StatusTooLarge {
 				s.m.add("too_large")
-				s.logOutcome(proto.StatusTooLarge, dev, meta)
+				s.logOutcome(proto.StatusTooLarge, dev, meta, r.TLS)
 				s.writeErr(w, proto.StatusTooLarge, "too_large")
 				return
 			}
@@ -173,7 +174,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) || errors.Is(err, errTooLarge) {
 			s.m.add("too_large")
-			s.logOutcome(proto.StatusTooLarge, dev, meta)
+			s.logOutcome(proto.StatusTooLarge, dev, meta, r.TLS)
 			s.writeErr(w, proto.StatusTooLarge, "too_large")
 			return
 		}
@@ -314,9 +315,11 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 
 // logOutcome is the per-ingest journal line: one line for every response
 // the device can see, carrying what the 48 h soak measures (status, rssi,
-// free heap, capture counters). Info for accepted outcomes (201/409), Warn
-// for rejects (422/429/507). Bodies and tokens are never logged (§1).
-func (s *Server) logOutcome(status int, dev *store.Device, meta proto.Meta) {
+// free heap, capture counters) plus the negotiated TLS suite — the ESP32's
+// mbedtls is picky and the cipher tells us which side of the wire to look
+// at when a response goes missing. Info for accepted outcomes (201/409),
+// Warn for rejects (422/429/507). Bodies and tokens are never logged (§1).
+func (s *Server) logOutcome(status int, dev *store.Device, meta proto.Meta, tlsState *tls.ConnectionState) {
 	serial, venue := "?", int64(0)
 	if dev != nil {
 		serial, venue = dev.Serial, dev.VenueID
@@ -333,6 +336,10 @@ func (s *Server) logOutcome(status int, dev *store.Device, meta proto.Meta) {
 		"post_fail", meta.Counters.PostFail,
 		"tls_fail", meta.Counters.TLSFail,
 	}
+	if tlsState != nil {
+		attrs = append(attrs, "tls_ver", fmt.Sprintf("0x%04x", tlsState.Version),
+			"tls_suite", tlsCipherName(tlsState.CipherSuite))
+	}
 	if meta.Reason != "" {
 		attrs = append(attrs, "reason", meta.Reason)
 	}
@@ -341,6 +348,25 @@ func (s *Server) logOutcome(status int, dev *store.Device, meta proto.Meta) {
 		s.log.Warn("ingest", attrs...)
 	default:
 		s.log.Info("ingest", attrs...)
+	}
+}
+
+// tlsCipherName names the suites an ESP32 can actually negotiate; anything
+// else is logged as its hex id.
+func tlsCipherName(id uint16) string {
+	switch id {
+	case tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256:
+		return "chacha20-poly1305"
+	case tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256:
+		return "aes128-gcm"
+	case tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384:
+		return "aes256-gcm"
+	case tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA:
+		return "aes128-cbc-sha"
+	case tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:
+		return "aes256-cbc-sha"
+	default:
+		return fmt.Sprintf("0x%04x", id)
 	}
 }
 

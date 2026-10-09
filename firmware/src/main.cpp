@@ -575,18 +575,19 @@ static bool tlsReadInto(size_t n, char *buf, size_t cap, size_t *stored,
   while (got < n) {
     if (due(deadline)) return false;
     int avail = tlsClient.available();
-    if (avail > 0) {
-      size_t want = n - got;
-      if (want > 256) want = 256;
-      if ((size_t)avail < want) want = (size_t)avail;
-      uint8_t tmp[256];
-      int rd = tlsClient.read(tmp, want);
-      if (rd <= 0) return false;
+    // Same pump-read as tlsReadUntil: available() reports only decrypted
+    // bytes, so a not-yet-pulled record must still be read through.
+    size_t want = n - got;
+    if (want > 256) want = 256;
+    if (avail > 0 && (size_t)avail < want) want = (size_t)avail;
+    uint8_t tmp[256];
+    int rd = tlsClient.read(tmp, want);
+    if (rd > 0) {
       for (int i = 0; i < rd; i++)
         if (*stored + 1 < cap) buf[(*stored)++] = (char)tmp[i];
       got += (size_t)rd;
     } else {
-      if (!tlsClient.connected()) return false;
+      if (rd < 0 && !tlsClient.connected()) return false;
       delay(1);                      // poll yield, not a wait
     }
   }
@@ -602,6 +603,13 @@ static bool tlsReadRaw(size_t n, char *scratch, size_t cap, uint32_t deadline) {
 }
 
 // Read until `needle` appears at the tail of dst (needle included).
+//
+// The read is NOT gated on available(): WiFiClientSecure::available() only
+// reports bytes mbedtls has already decrypted into its internal buffer, so a
+// record still sitting in the socket is invisible and a read that waits for
+// available() > 0 spins until the deadline (the server's response is on the
+// wire and ACKed, yet never surfaces). read() is the pump: it pulls and
+// decrypts, returning -1 when there is nothing yet.
 static bool tlsReadUntil(const char *needle, char *dst, size_t cap,
                          uint32_t deadline) {
   const size_t nlen = strlen(needle);
@@ -609,11 +617,11 @@ static bool tlsReadUntil(const char *needle, char *dst, size_t cap,
   dst[0] = '\0';
   while (!due(deadline)) {
     int avail = tlsClient.available();
-    if (avail > 0) {
-      uint8_t tmp[128];
-      int want = avail > (int)sizeof tmp ? (int)sizeof tmp : avail;
-      int rd = tlsClient.read(tmp, want);
-      if (rd <= 0) return false;
+    uint8_t tmp[128];
+    size_t want = avail > 0 ? (size_t)avail : 1;  // 1-byte probe when idle
+    if (want > sizeof tmp) want = sizeof tmp;
+    int rd = tlsClient.read(tmp, want);
+    if (rd > 0) {
       for (int i = 0; i < rd; i++) {
         if (len + 1 >= cap) return false;
         dst[len++] = (char)tmp[i];
@@ -622,8 +630,8 @@ static bool tlsReadUntil(const char *needle, char *dst, size_t cap,
       if (len >= nlen && memcmp(dst + len - nlen, needle, nlen) == 0)
         return true;
     } else {
-      if (!tlsClient.connected()) return false;
-      delay(1);
+      if (rd < 0 && !tlsClient.connected()) return false;
+      delay(1);  // nothing yet — yield, do not spin on available()
     }
   }
   return false;
@@ -656,7 +664,15 @@ static bool tlsReadChunked(char *dst, size_t cap, size_t *outLen,
 // read-to-close). Returns the HTTP status (0 = transport failure).
 static int tlsReadResponse(uint32_t deadline, bool *reusable) {
   *reusable = false;
-  if (!tlsReadUntil("\r\n\r\n", respHdr, sizeof respHdr, deadline)) return 0;
+  if (!tlsReadUntil("\r\n\r\n", respHdr, sizeof respHdr, deadline)) {
+    // Distinguish "nothing arrived" from "arrived but unreadable": the
+    // 48 h soak reads this line when a POST is accepted but unanswered.
+    Serial.printf("[TLS ] no response headers (avail=%d conn=%d ssl_err=%d "
+                  "'%s')\n",
+                  tlsClient.available(), tlsClient.connected(), diagSslErr,
+                  diagSslMsg[0] ? diagSslMsg : "-");
+    return 0;
+  }
   const char *sp = strchr(respHdr, ' ');
   if (!sp) return 0;
   int status = atoi(sp + 1);

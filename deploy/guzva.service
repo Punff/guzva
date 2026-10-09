@@ -1,9 +1,11 @@
 # guzva.service — systemd unit for the venue-stills service (PLAN §8).
-# Installed to /etc/systemd/system/guzva.service by deploy/provision.sh.
+# Installed to /etc/systemd/system/guzva.service.
 #
-# v3.1: the binary terminates TLS itself (autocert on :80/:443, CAP_NET_BIND_
-# SERVICE — wiring pending, PLAN §8) and serves public static files directly.
-# The loopback listen below is the pre-autocert bench shape.
+# BENCH CUTOVER shape: the binary terminates TLS itself with the existing
+# epoch self-signed cert (/etc/guzva/tls.* — the firmware's embedded CA
+# already trusts it, so no re-flash). When autocert + domain land (§8),
+# drop -tls-cert/-tls-key and point -listen at the autocert ports.
+# Secrets come from /etc/guzva/guzva.env (root-only, EnvironmentFile).
 # Static binary, no container, no Docker.
 
 [Unit]
@@ -16,7 +18,12 @@ Wants=network-online.target
 Type=simple
 User=guzva
 Group=guzva
-ExecStart=/usr/local/bin/guzva serve -listen 127.0.0.1:8080 -data /var/lib/guzva -retain-hours 48
+EnvironmentFile=/etc/guzva/guzva.env
+ExecStart=/usr/local/bin/guzva serve -listen :443 -tls-cert /etc/guzva/tls.crt -tls-key /etc/guzva/tls.key -data /var/lib/guzva -retain-hours 48
+
+# Bind :443 without running as root (bind permission only, nothing else).
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 # Restart always, after a short pause: the <2 s restart gap is absorbed by
 # idempotent ingest (a duplicate capture_id gets 409 with the same body as a
