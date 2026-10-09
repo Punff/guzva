@@ -28,9 +28,9 @@ Status (09 Oct 2026 — supersedes the old POC-state note):
 - **TLS spike (real link):** keep-alive reuse across ticks works; fresh tick
   ≈ conn 2.5 s + write 14 ms + response 4 s; RSSI −57…−70 at the bench.
 - **Known gaps vs this plan:** ingest host compiled into `settings.h` (§4
-  wants it in NVS from day 1); no reference-frame hash; no `proto-v1.md` yet
-  (the rig's `server.py` + `firmware/src/main.cpp` are the de-facto spec);
-  Go server, autocert, `setup.sh`/`make deploy`, backups — all not started.
+  wants it in NVS from day 1); no reference-frame hash; Go server, autocert,
+  `setup.sh`/`make deploy`, backups — all not started. (`proto-v1.md` written
+  09 Oct from the proven rig+firmware.)
 
 Bench facts (08 Oct 2026, still binding): RSSI −72…−75 → 12 s+ fetches, ~50%
 join fails; thin USB → brownout + camera probe fails; NVS persists settings;
@@ -140,7 +140,8 @@ dedicated `guzva` user.
 - Responses: `201` stored · `409` duplicate (same body as 201) · `422` rejected +
   reason (quarantined) · `401` revoked/unknown · `413` too big · `429` +
   `Retry-After` · `507` disk degraded.
-- Response body: `{ desired_cfg: {ver, interval_s, quality}, next_s, server_time }`.
+- Response body: `{ desired_cfg: {ver, interval_s, quality, …}, next_s, server_time }`
+  (full device-plane key set — `docs/proto-v1.md`, proven live 09 Oct 2026).
 - `interval_s` 30–300 (default 60); quality is adjusted through `desired_cfg`.
 
 Hostnames: ingest lives on its own name (`ingest.imaliguzve.ba`) from day 1,
@@ -400,8 +401,8 @@ GPIO automation, multi-photo strips, OAuth, AVIF/WebP, K8s, managed DB.
 - Protocol: one-page `proto-v1.md`, `POST /v1/ingest`, device token, ingest host
   in NVS.
   *Status: endpoint, bearer token and multipart contract proven end-to-end by
-  the rig + firmware (incl. 401/409/422/429/507 handling in firmware).
-  `proto-v1.md` not written yet; ingest host still compiled in, not NVS.*
+  the rig + firmware (incl. 401/409/422/429/507 handling in firmware);
+  `proto-v1.md` written 09 Oct. Ingest host still compiled in, not NVS.*
 - Server: `store` (3 tables) + ingest + `render` skeleton (poster/mono,
   validation gate) + `pages` (static public output) + `sched` tick + fakecam.
   *Status: not started (the Python rig is throwaway scaffolding).*
