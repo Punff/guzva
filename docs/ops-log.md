@@ -75,3 +75,17 @@
   reloads repeats the photo; wire refresh to the venue interval or leave it.
 - Bench link: RSSI ≈ −71, 12 s connects, cold boot ≈ 70 s STALE. Install
   spec (RSSI ≥ −65) applies at venue time, not in code.
+
+## 2026-10-09 — UI/UX pass + outage fix (`544c049`)
+
+- OUTAGE, caught before it bit: the v3 migration chain had no `case 3:`, so
+  the first boot after the admin split migrated 2→3 and every later boot
+  failed to open the store. The VPS was one restart from a dead site.
+  Reproduced, fixed, pinned by `TestReopenCurrentDatabase`; verified live
+  with two consecutive restarts (active both times).
+- Public page redesigned: in-place still updates (no more whole-document
+  refresh flash), design tokens + real dark mode, reserved frame box (no
+  layout shift), freshness as the headline with a day label + timezone, a11y
+  (alt text, aria-live, reduced-motion), and page metadata.
+- ACTION: verify the page by eye in a browser (the harness had no attached
+  browser this session) — particularly the dark mode and the in-place swap.
