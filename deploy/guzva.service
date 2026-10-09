@@ -1,0 +1,35 @@
+# guzva.service — systemd unit for the venue-stills service (PLAN §8).
+# Installed to /etc/systemd/system/guzva.service by deploy/provision.sh.
+#
+# v3.1: the binary terminates TLS itself (autocert on :80/:443, CAP_NET_BIND_
+# SERVICE — wiring pending, PLAN §8) and serves public static files directly.
+# The loopback listen below is the pre-autocert bench shape.
+# Static binary, no container, no Docker.
+
+[Unit]
+Description=guzva venue-stills service
+Documentation=file:///usr/local/bin/guzva
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=guzva
+Group=guzva
+ExecStart=/usr/local/bin/guzva serve -listen 127.0.0.1:8080 -data /var/lib/guzva -retain-hours 48
+
+# Restart always, after a short pause: the <2 s restart gap is absorbed by
+# idempotent ingest (a duplicate capture_id gets 409 with the same body as a
+# 201) and by the device retrying on its next tick (PLAN §8, deploy section).
+Restart=always
+RestartSec=2
+
+# Hardening: no privilege escalation, private /tmp, read-only system dirs
+# except the data dir (SQLite WAL + venues/ live there).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/guzva
+
+[Install]
+WantedBy=multi-user.target

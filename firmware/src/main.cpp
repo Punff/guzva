@@ -1,6 +1,6 @@
 /*
  * ============================================================================
- *  imaliguzve — ESP32-CAM capture firmware (fresh build, PLAN §5)
+ *  guzva — ESP32-CAM capture firmware (fresh build, PLAN §5)
  *  AI-Thinker ESP32-CAM / OV2640 · PlatformIO + arduino-esp32 + esp32-camera
  *  https://github.com/espressif/esp32-camera
  * ----------------------------------------------------------------------------
@@ -27,7 +27,7 @@
  *      over USB serial ("reset") and the caged LAN endpoint
  *    - LAN cage on port 80: GET /api/status, GET /jpg (1 per 3 s),
  *      GET /ping, POST /api/factory-reset?confirm=1 — nothing else
- *    - mDNS imaliguzve-<serial>.local, serial from efuse MAC
+ *    - mDNS guzva-<serial>.local, serial from efuse MAC
  *    - status LED GPIO33 (active LOW), all patterns millis()-based
  *
  *  Deliberately NOT here (PLAN §5 "prod builds delete"): port-81 MJPEG
@@ -113,7 +113,7 @@ static const uint8_t  CAM_FAIL_LIMIT      = 5;       // degraded after 5
 static const uint8_t  FRAMESIZE_MAX_OV2640 = 10;     // FRAMESIZE_UXGA
 
 // ============================ MULTIPART (proto-v1) =========================
-#define MP_BOUNDARY "imaliguzve-v1-9f3a"
+#define MP_BOUNDARY "guzva-v1-9f3a"
 static const char PART_META_HDR[] =
     "--" MP_BOUNDARY "\r\n"
     "Content-Disposition: form-data; name=\"meta\"\r\n"
@@ -1164,7 +1164,7 @@ static void startWebServer() {
   server.begin();
 }
 
-// mDNS: imaliguzve-<serial>.local (serial = efuse MAC), advertises http/80.
+// mDNS: guzva-<serial>.local (serial = efuse MAC), advertises http/80.
 static void startMdns() {
   if (MDNS.begin(mdnsName)) {
     MDNS.addService("http", "tcp", 80);
@@ -1264,7 +1264,7 @@ void setup() {
   Serial.begin(115200);
   delay(100);
   Serial.println();
-  Serial.println("=== imaliguzve firmware " FW_VERSION " ===");
+  Serial.println("=== guzva firmware " FW_VERSION " ===");
 
   pinMode(INDICATOR_LED_PIN, OUTPUT);
   ledWrite(false);

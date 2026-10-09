@@ -1,0 +1,19 @@
+{{define "login.html"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>guzva — admin login</title>
+{{template "styles.html" .}}
+</head>
+<body>
+<h1>guzva — admin</h1>
+{{if .Err}}<div class="err" style="background:#ffe0e0;color:#7a1414;padding:.4em .7em;border-radius:6px;">{{.Err}}</div>{{end}}
+<form method="post" action="/admin/login" class="formgrid" style="margin-top:1rem">
+  <label for="password">Password</label>
+  <input type="password" id="password" name="password" autofocus autocomplete="current-password">
+  <span></span><button type="submit">Sign in</button>
+</form>
+<p class="muted">Single-admin console. Sessions are HMAC cookies (§6.5); the raw camera image never appears here or on the public pages.</p>
+</body>
+</html>{{end}}

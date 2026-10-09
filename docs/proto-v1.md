@@ -1,4 +1,4 @@
-# Protocol v1 — `imaliguzve`
+# Protocol v1 — `guzva`
 
 Single source of truth for the device↔server wire protocol (PLAN §4).
 Read alongside `PLAN.md`. One endpoint carries everything.

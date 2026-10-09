@@ -1,4 +1,4 @@
-# imaliguzve.ba — Dev / Production Plan v3.1 (lean, free-tier VM, Go)
+# guzva.ba — Dev / Production Plan v3.1 (lean, free-tier VM, Go)
 
 Supersedes v3. Same architecture (single Go binary on one VM, ESP32-CAMs push
 outbound, no inbound firewall rules at venues), now targeted at a dedicated
@@ -28,9 +28,18 @@ Status (09 Oct 2026 — supersedes the old POC-state note):
 - **TLS spike (real link):** keep-alive reuse across ticks works; fresh tick
   ≈ conn 2.5 s + write 14 ms + response 4 s; RSSI −57…−70 at the bench.
 - **Known gaps vs this plan:** ingest host compiled into `settings.h` (§4
-  wants it in NVS from day 1); no reference-frame hash; Go server, autocert,
-  `setup.sh`/`make deploy`, backups — all not started. (`proto-v1.md` written
+  wants it in NVS from day 1); no reference-frame hash; autocert,
+  `setup.sh`/`make deploy`, backups — not started. (`proto-v1.md` written
   09 Oct from the proven rig+firmware.)
+- **Go server skeleton landed (09 Oct):** the v3 tree was restored and
+  migrated to v3.1 — three-table schema (hours as JSON on `venues`, no
+  sessions/settings_log/health_events), static D5 public pages
+  (`internal/pages`, temp+rename, web root = index.html + latest.jpg only),
+  htmx admin console (`internal/admin`: bcrypt login, HMAC cookie, fleet
+  board, venue create, token mint-once, revoke), no `/metrics`, XFF ignored
+  (no proxy). 10/10 packages green incl. `-race`; local E2E proven: fakecam
+  3×201 (p50 72 ms), public page + admin flows verified by curl. Renamed
+  **imaliguzve → guzva** everywhere (module, binary, service, mDNS, docs).
 
 Bench facts (08 Oct 2026, still binding): RSSI −72…−75 → 12 s+ fetches, ~50%
 join fails; thin USB → brownout + camera probe fails; NVS persists settings;
@@ -79,10 +88,10 @@ ssh info: root@guzva
 
 ```
 [venue LAN]
-  ESP32-CAM ──HTTPS POST ingest.imaliguzve.ba/v1/ingest──┐   (outbound only)
+  ESP32-CAM ──HTTPS POST ingest.guzva.ba/v1/ingest──┐   (outbound only)
                                                          v
                       [GCP e2-micro, Always Free, Ubuntu 24.04, dedicated]
-                      Go binary `imaliguzve`  (autocert TLS on :80/:443)
+                      Go binary `guzva`  (autocert TLS on :80/:443)
                          ├─ ingest  (/v1/ingest, /healthz)
                          ├─ public  (static files: data/public/{slug}/index.html + latest.jpg)
                          ├─ admin   (/admin/…, signed-cookie session)
@@ -103,7 +112,7 @@ No framework, no Docker, no ORM, no reverse proxy.
 ## 3. Repo layout (modules = packages, dependencies flow downward only)
 
 ```
-cmd/imaliguzve/       main: `serve` (flags/env, slog, autocert wiring)
+cmd/guzva/       main: `serve` (flags/env, slog, autocert wiring)
 internal/proto/       wire types + constants; mirrors docs/proto-v1.md; used by server + fakecam
 internal/store/       SQLite, embedded migrations (PRAGMA user_version); the ONLY package with SQL
 internal/render/      Process(ctx, FrameIn) → Outputs; Preset registry
@@ -115,7 +124,7 @@ internal/auth/        device tokens, admin login, signed cookie, rate limits
 internal/sched/       30 s tick, pruner, missed-poll, alerts
 firmware/             PlatformIO project
 tools/fakecam/        one small Go client: fast / slow / flappy / dup modes
-deploy/               Makefile, imaliguzve.service, backup.service + .timer, setup.sh
+deploy/               Makefile, guzva.service, backup.service + .timer, setup.sh
 docs/                 proto-v1.md, runbook.md, ops-log.md
 ```
 
@@ -144,7 +153,7 @@ dedicated `guzva` user.
   (full device-plane key set — `docs/proto-v1.md`, proven live 09 Oct 2026).
 - `interval_s` 30–300 (default 60); quality is adjusted through `desired_cfg`.
 
-Hostnames: ingest lives on its own name (`ingest.imaliguzve.ba`) from day 1,
+Hostnames: ingest lives on its own name (`ingest.guzva.ba`) from day 1,
 stored in device NVS (not compiled in), so a later CDN for the public name needs
 no reflash. Both names point at the same VM; `autocert` serves both.
 
@@ -164,7 +173,7 @@ survive brownout / WiFi loss / camera death without humans.
 Never: serve public traffic, MJPEG, ML/stylise, face handling, open inbound
 ports. Prod builds delete: port-81 stream, motion, timelapse-as-product,
 RGB/gray endpoints, LAN OTA form. Kept (caged): `/api/status` (extended), `/jpg`
-rate-limited, provisioning, mDNS `imaliguzve-<serial>.local`.
+rate-limited, provisioning, mDNS `guzva-<serial>.local`.
 
 **No frame queue.** A failed upload drops the frame, counts `post_fail`; the next
 tick captures a fresh one. The server shows an honest STALE gap. (SD ring +
@@ -405,7 +414,11 @@ GPIO automation, multi-photo strips, OAuth, AVIF/WebP, K8s, managed DB.
   `proto-v1.md` written 09 Oct. Ingest host still compiled in, not NVS.*
 - Server: `store` (3 tables) + ingest + `render` skeleton (poster/mono,
   validation gate) + `pages` (static public output) + `sched` tick + fakecam.
-  *Status: not started (the Python rig is throwaway scaffolding).*
+  *Status: built (09 Oct) — v3 tree restored + v3.1-migrated: 3-table
+  schema, ingest + render + prune as tested, static D5 pages with the
+  30 s state-flip tick, htmx admin console, fakecam gate green locally
+  incl. `-race`. Remaining for this bullet: deploy to the VM (autocert,
+  `setup.sh`, `make deploy`) and the 48 h on-link numbers.*
 - Firmware: build steps 1–4 incl. the TLS spike.
   *Status: done — steps 1–6 + most of 7; TLS numbers recorded in the status
   block at the top of this plan.*
@@ -470,6 +483,18 @@ GPIO automation, multi-photo strips, OAuth, AVIF/WebP, K8s, managed DB.
 ## 12. Change log
 
 **v3.1 (09 Oct 2026 — status update, no design change)**
+- **Rename: imaliguzve → guzva** everywhere the product name appears (Go
+  module/binary `guzva`, systemd unit, firmware mDNS `guzva-<serial>.local`
+  + banner, docs, this plan). *If `imaliguzve.ba` is a registered domain,
+  its references here were renamed too and should be reviewed.*
+- **Go server skeleton built:** `internal/{proto,store,frames,render,venue,
+  auth,sched}` restored from the v3 tree and migrated to v3.1 (three-table
+  schema, hours JSON on venues, no settings_log/sessions/health_events, no
+  `/metrics`, XFF ignored since nothing proxies); new `internal/pages`
+  (static D5 pre-render + web-root-only-two-files privacy test) and
+  `internal/admin` (htmx fleet board, bcrypt login, HMAC cookie, mint-once
+  tokens, revoke). All packages green incl. `-race`; local E2E: fakecam
+  3×201 (p50 72 ms), public page / healthz / admin flows verified by curl.
 - Status block at the top replaces the POC-state note: bench rig live on the
   VPS, firmware steps 1–6 (+LAN cage) done, TLS spike numbers recorded,
   known gaps listed (ingest host in NVS, reference-frame hash, proto-v1.md,

@@ -1,0 +1,95 @@
+{{define "fleet.html"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>guzva — fleet</title>
+<script src="/admin/static/htmx.min.js" defer></script>
+{{template "styles.html" .}}
+</head>
+<body>
+<header style="display:flex;justify-content:space-between;align-items:baseline">
+  <h1>guzva — fleet</h1>
+  <form method="post" action="/admin/logout" class="inline">
+    <button type="submit">Sign out</button>
+  </form>
+</header>
+
+<div id="flash">{{if .ShowCreated}}<span class="ok">Venue created.</span>{{end}}</div>
+
+<h2>Venues</h2>
+{{range .Venues}}
+<article>
+  <h3>
+    <a href="/{{.Slug}}/" target="_blank">{{.Name}}</a>
+    <code>/{{.Slug}}/</code>
+    <span class="badge {{.FreshClass}}">{{.FreshText}}</span>
+    <span class="age">last frame {{.LastAge}}</span>
+  </h3>
+  {{if .Devices}}
+  <table>
+    <tr><th>Serial</th><th>Status</th><th>FW</th><th>RSSI</th><th>Last seen</th>
+        <th title="boot / brownout / join_fail / post_fail / tls_fail / capture_fail">Counters</th>
+        <th>cfg (wanted/applied)</th><th></th></tr>
+    {{range .Devices}}
+    <tr>
+      <td><code>{{.Serial}}</code></td>
+      <td>{{.Status}}</td>
+      <td>{{.FW}}</td>
+      <td>{{.RSSI}} dBm</td>
+      <td>{{.SeenAge}}</td>
+      <td>b{{.Counters.Boot}} · bo{{.Counters.Brownout}} · j{{.Counters.JoinFail}} · p{{.Counters.PostFail}} · t{{.Counters.TLSFail}} · c{{.Counters.CaptureFail}}</td>
+      <td {{if .Amber}}class="amber" title="read-back mismatch — device has not applied the latest config"{{end}}>{{.CfgVer}}/{{.CfgApplied}}</td>
+      <td>
+        {{if eq .Status "active"}}
+        <form class="inline" method="post" hx-post="/admin/devices/{{.ID}}/revoke"
+              hx-target="#flash" hx-swap="innerHTML"
+              hx-confirm="Revoke {{.Serial}}? It will stop being able to post.">
+          <button type="submit">Revoke</button>
+        </form>
+        {{else}}<span class="age">revoked</span>{{end}}
+      </td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}<p class="muted">No devices — mint one below.</p>{{end}}
+</article>
+{{else}}
+<p class="muted">No venues yet — create the first one below.</p>
+{{end}}
+
+<h2>New venue</h2>
+<form class="formgrid" hx-post="/admin/venues" hx-target="#flash" hx-swap="innerHTML">
+  <label for="v-slug">Slug</label>
+  <input id="v-slug" name="slug" placeholder="jadro" required pattern="[a-z0-9][a-z0-9-]{0,39}">
+  <label for="v-name">Name</label>
+  <input id="v-name" name="name" placeholder="Jadro" required>
+  <label for="v-tz">Timezone</label>
+  <input id="v-tz" name="tz" placeholder="Europe/Sarajevo" value="Europe/Sarajevo">
+  <label for="v-style">Style</label>
+  <select id="v-style" name="style">
+    <option value="poster">poster (4-level)</option>
+    <option value="mono">mono (B&amp;W)</option>
+  </select>
+  <label for="v-hours">Hours</label>
+  <input id="v-hours" name="hours" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (empty = no badge)">
+  <span></span><button type="submit">Create venue</button>
+</form>
+
+<h2>New device</h2>
+{{if .DeviceOpts}}
+<form class="formgrid" hx-post="/admin/devices" hx-target="#token-out" hx-swap="innerHTML">
+  <label for="d-venue">Venue</label>
+  <select id="d-venue" name="venue_id">
+    {{range .DeviceOpts}}<option value="{{.ID}}">{{.Name}} (/{{.Slug}}/)</option>{{end}}
+  </select>
+  <label for="d-serial">Serial</label>
+  <input id="d-serial" name="serial" placeholder="esp32-… (empty = random)">
+  <span></span><button type="submit">Mint device token</button>
+</form>
+{{else}}<p class="muted">Create a venue first.</p>{{end}}
+<div id="token-out"></div>
+
+<p class="muted">This console shows stylised renders only; raw frames exist in RAM for one Process call (PLAN D1).</p>
+</body>
+</html>{{end}}
