@@ -24,6 +24,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import ssl
 import sys
 import threading
@@ -428,6 +429,57 @@ class RedirectHandler(BaseHTTPRequestHandler):
     do_HEAD = _go
 
 
+class TLSThreadingHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer that handshakes TLS per-connection, in the worker.
+
+    The stdlib pattern (wrap the *listening* socket) runs the handshake inside
+    accept() on the single main thread: one peer that completes TCP but stalls
+    the handshake (e.g. ESP32 losing its ClientHello on RF) freezes the whole
+    accept loop, the backlog fills, and with tcp_abort_on_overflow=0 Linux
+    silently drops every subsequent SYN -- observed as "no SYN-ACK" on the
+    board and curl timeouts on the PC while established keep-alives kept
+    working. Handshaking in the worker isolates each stalled peer to one
+    daemon thread that dies on timeout.
+    """
+    daemon_threads = True
+    request_queue_size = 128      # stdlib default is 5 -- too small here
+    handshake_timeout = 10.0      # seconds; ESP32's own budget is 12 s
+
+    def __init__(self, addr, handler, tls_ctx):
+        super().__init__(addr, handler)
+        self.tls_ctx = tls_ctx
+
+    def process_request(self, request, client_address):
+        def _serve():
+            sock = request
+            try:
+                sock.settimeout(self.handshake_timeout)
+                sock = self.tls_ctx.wrap_socket(sock, server_side=True)
+                sock.settimeout(None)
+            except (ssl.SSLError, OSError):
+                try:
+                    request.close()
+                except OSError:
+                    pass
+                return
+            try:
+                self.finish_request(sock, client_address)
+            except Exception:
+                self.handle_error(sock, client_address)
+            finally:
+                self.shutdown_request(sock)
+
+        threading.Thread(target=_serve, daemon=True).start()
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        # Clients that hang up mid-request are routine here, not errors.
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError,
+                            ssl.SSLError, socket.timeout, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def main():
     RING_DIR.mkdir(parents=True, exist_ok=True)
     ROOT.mkdir(parents=True, exist_ok=True)
@@ -439,9 +491,7 @@ def main():
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.load_cert_chain(str(CERT), str(KEY))
 
-    https = ThreadingHTTPServer((BIND, PORT), Handler)
-    https.daemon_threads = True
-    https.socket = ctx.wrap_socket(https.socket, server_side=True)
+    https = TLSThreadingHTTPServer((BIND, PORT), Handler, ctx)
 
     if PORT80:
         plain = ThreadingHTTPServer((BIND, PORT80), RedirectHandler)

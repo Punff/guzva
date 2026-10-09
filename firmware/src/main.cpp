@@ -496,28 +496,63 @@ static void serviceWiFi() {
 }
 
 // ============================ TLS TRANSPORT ================================
+// Diagnostics for the connect phases (printed by the caller on failure):
+// dns is 0 ms by construction (INGEST_HOST is an IP literal), then plain TCP,
+// then the TLS handshake with the full 12 s budget.
+static uint32_t diagTcpMs = 0;
+static bool     diagTcpOk = false;
+static int      diagSslErr = 0;
+static char     diagSslMsg[64] = {0};
+
 // Reuse the single WiFiClientSecure across ticks while it is still up and
 // its idle window is under the keep-alive budget; otherwise fresh handshake.
+// Phase 1 is a plain TCP probe: it separates SYN loss / routing problems from
+// TLS problems, and its cost is one RTT on a fresh connection only.
 static bool tlsEnsureConnected(bool *reused, uint32_t *connectMs) {
   *reused = false;
   *connectMs = 0;
+  diagTcpOk = false;
+  diagSslErr = 0;
+  diagSslMsg[0] = 0;
   uint32_t now = millis();
   if (tlsClient.connected() && (now - tlsLastUseMs) < KEEPALIVE_IDLE_MS) {
     *reused = true;
+    diagTcpMs = 0;
     return true;
   }
   if (tlsClient.connected()) tlsClient.stop();
 
+  // --- phase 1: plain TCP ---------------------------------------------------
+  // Several short probes on fresh sockets instead of one long wait: lwIP only
+  // sends SYNs at 0/3/9 s, so a single lost SYN burns the whole 12 s budget.
+  // 4 × 3 s gives four independent first-SYN chances in the same window.
+  uint32_t t0 = millis();
+  diagTcpOk = false;
+  for (int i = 0; i < 4 && !diagTcpOk; i++) {
+    WiFiClient probe;
+    diagTcpOk = probe.connect(INGEST_HOST, INGEST_PORT, 3000) != 0;
+    probe.stop();
+    if (!diagTcpOk) delay(250);          // brief gap before re-arming the radio
+  }
+  diagTcpMs = millis() - t0;
+  if (!diagTcpOk) return false;
+
+  // --- phase 2: TLS handshake ----------------------------------------------
 #if INSECURE_TLS
   tlsClient.setInsecure();  // DEV ONLY — prod grep-gates INSECURE_TLS=0
 #else
   tlsClient.setCACert(CA_ROOT_PEM);
 #endif
-  uint32_t t0 = millis();
+  // Re-arm before every connect: after stop() the core can leave the
+  // handshake timeout at 0 and the handshake fails instantly (arduino-esp32
+  // issue #6077).
+  tlsClient.setHandshakeTimeout(TLS_HANDSHAKE_S);
+  uint32_t t1 = millis();
   bool ok = tlsClient.connect(INGEST_HOST, INGEST_PORT,
                               (int32_t)TLS_CONNECT_MS) != 0;
-  *connectMs = millis() - t0;
+  *connectMs = millis() - t1;
   if (!ok) {
+    diagSslErr = tlsClient.lastError(diagSslMsg, sizeof diagSslMsg);
     tlsClient.stop();
     return false;
   }
@@ -716,8 +751,16 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   if (!tlsEnsureConnected(&reused, &connectMs)) {
     tlsFail++;
     postFail++;
-    Serial.printf("[TLS ] connect failed after %lu ms (heap %u)\n",
-                  (unsigned long)connectMs, (unsigned)ESP.getFreeHeap());
+    if (!diagTcpOk) {
+      Serial.printf("[TLS ] dns 0 ms (ip) | TCP FAILED after %lu ms "
+                    "(no SYN-ACK: route/PATH) heap %u\n",
+                    (unsigned long)diagTcpMs, (unsigned)ESP.getFreeHeap());
+    } else {
+      Serial.printf("[TLS ] dns 0 ms (ip) | tcp %lu ms OK | handshake FAILED "
+                    "after %lu ms (ssl_err=%d '%s') heap %u\n",
+                    (unsigned long)diagTcpMs, (unsigned long)connectMs,
+                    diagSslErr, diagSslMsg, (unsigned)ESP.getFreeHeap());
+    }
     return 0;
   }
   uint32_t t0 = millis();
@@ -769,10 +812,11 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   if (reusable) tlsLastUseMs = millis();
   else tlsClient.stop();
 
-  // TLS spike print (PLAN §5): handshake/connect ms + free heap every tick.
-  Serial.printf("[TLS ] connect %lu ms (reuse=%d) | write %lu ms | resp %lu ms "
-                "| total %lu ms | free heap %u\n",
-                (unsigned long)(reused ? 0 : connectMs), (int)reused,
+  // TLS spike print (PLAN §5): phase timings + free heap every tick.
+  Serial.printf("[TLS ] dns 0 ms (ip) | tcp %lu ms%s | hs %lu ms | "
+                "write %lu ms | resp %lu ms | total %lu ms | free heap %u\n",
+                (unsigned long)diagTcpMs, reused ? " (idle-reuse)" : "",
+                (unsigned long)(reused ? 0 : connectMs),
                 (unsigned long)writeMs, (unsigned long)respMs,
                 (unsigned long)(millis() - t0), (unsigned)ESP.getFreeHeap());
   return status;
