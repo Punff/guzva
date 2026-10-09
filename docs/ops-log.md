@@ -32,6 +32,19 @@
 - Verified: repeated 201s, `post_fail` flat at 0, cfg ver=3 applied,
   `led_pwm=0` pushed live via `guzva cfg -set` (flash LED off, persists NVS).
 
+## 2026-10-09 — first `make deploy` (devops workflow live)
+
+- Shipped `a98e497` (tidy + workflow commit) through the Makefile: test →
+  build → push `releases/a98e497/` → flip `current` → restart → healthcheck
+  (healthz version match + page 200 + admin answering). No hand-scp.
+- `provision.sh` proven idempotent on the live box beforehand; it closed real
+  gaps (ufw + sqlite3 never installed, no swap, no backup timer — all now in
+  place). One-time migration: seeded `releases/` from the running binary,
+  unit now names only the `current` symlink.
+- Known wart: first migration attempt pointed `current` at the binary instead
+  of a release dir (`Not a directory`); fixed, Makefile pins the
+  `releases/<tag>/guzva` convention.
+
 ## 2026-10-09 — parked items (do not lose)
 
 - ACTION: 48 h soak + exit-gate numbers (fresh-minute %, connect ms, heap
