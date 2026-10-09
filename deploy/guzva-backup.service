@@ -1,0 +1,21 @@
+# guzva-backup.service — nightly SQLite snapshot (PLAN §8).
+# Oneshot, run by guzva-backup.timer (and by `make backup`). Uses the sqlite3
+# CLI's .backup (transactionally consistent copy, safe against a live writer),
+# gzips it, keeps the last 14. RPO ≈ 24 h is fine: the DB holds config only,
+# frames are a disposable ring. Cloud upload lands with the domain work (§9);
+# until then snapshots live on the box — the restore drill still proves them.
+[Unit]
+Description=guzva nightly storage snapshot
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=guzva
+Group=guzva
+ExecStart=/bin/bash -c 'set -euo pipefail; \
+  d=/var/backups/guzva; mkdir -p "$d"; \
+  stamp=$(date +%%Y%%m%%d-%%H%%M); \
+  sqlite3 /var/lib/guzva/guzva.db ".backup $d/guzva-$stamp.db"; \
+  gzip -f "$d/guzva-$stamp.db"; \
+  ls -t "$d"/guzva-*.db.gz | tail -n +15 | xargs -r rm -f; \
+  ls -la "$d" | tail -3'

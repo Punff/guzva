@@ -7,10 +7,15 @@
 # drop -tls-cert/-tls-key and point -listen at the autocert ports.
 # Secrets come from /etc/guzva/guzva.env (root-only, EnvironmentFile).
 # Static binary, no container, no Docker.
+#
+# Releases layout (PLAN §8, owned by `make deploy`): versioned binaries live
+# in /srv/guzva/bin/releases/<tag>, `current` points at the live one, the
+# last 3 are kept for `make rollback`. This unit never names a version —
+# only the symlink — so deploys never touch systemd.
 
 [Unit]
 Description=guzva venue-stills service
-Documentation=file:///usr/local/bin/guzva
+Documentation=file:///srv/guzva/bin/current/guzva
 After=network-online.target
 Wants=network-online.target
 
@@ -19,7 +24,7 @@ Type=simple
 User=guzva
 Group=guzva
 EnvironmentFile=/etc/guzva/guzva.env
-ExecStart=/usr/local/bin/guzva serve -listen :443 -tls-cert /etc/guzva/tls.crt -tls-key /etc/guzva/tls.key -data /var/lib/guzva -retain-hours 48
+ExecStart=/srv/guzva/bin/current/guzva serve -listen :443 -tls-cert /etc/guzva/tls.crt -tls-key /etc/guzva/tls.key -data /var/lib/guzva -retain-hours 48
 
 # Bind :443 without running as root (bind permission only, nothing else).
 AmbientCapabilities=CAP_NET_BIND_SERVICE
@@ -30,6 +35,10 @@ CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 # 201) and by the device retrying on its next tick (PLAN §8, deploy section).
 Restart=always
 RestartSec=2
+
+# Resource guard (PLAN §8): shared-vCPU box, the render path must never
+# crowd out the OS. 1 GB swap (provision.sh) is the second line of defence.
+MemoryMax=700M
 
 # Hardening: no privilege escalation, private /tmp, read-only system dirs
 # except the data dir (SQLite WAL + venues/ live there).

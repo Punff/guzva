@@ -1,0 +1,12 @@
+# guzva-backup.timer — nightly snapshot at 03:17 local (PLAN §8).
+# Persistent=true: a box that was down at 03:17 backs up on next boot instead
+# of silently skipping a night (silent backup rot is a top risk).
+[Unit]
+Description=guzva nightly storage snapshot timer
+
+[Timer]
+OnCalendar=03:17
+Persistent=true
+
+[Install]
+WantedBy=timers.target
