@@ -293,3 +293,34 @@ page itself: it is currently the heaviest thing we serve.
 
 The last two were found only by rendering the page and looking at it. Tests
 caught the rest, but none of them would have caught the CSS one.
+
+## 2026-10-10 — console rendered unstyled (Firefox), cause: a fixed CSS URL
+
+Reported as "admin panel is all over the place", with a screenshot showing no
+styling at all: no card borders, unstyled inputs, no table headers, and BOTH
+the desktop table and the mobile cards visible at once.
+
+Diagnosis. `hidden` not applying was the decisive clue. `display:none` is
+basic CSS, so the whole stylesheet was ABSENT rather than partly parsed —
+which ruled out the other candidate (Firefox <128 lacking `@property`,
+`color-mix(in oklab)`) because those would only cost the hatch gradients.
+Mobile Brave was fine because it had fetched the sheet fresh; the desktop
+Firefox had cached it when it was still served `Cache-Control:
+public, max-age=86400`, from before the templates moved to .card/.btn/.inp.
+No error, no log line, no failing test: every new component simply did
+nothing.
+
+Fix. DESIGN.md §4 specified `app.[hash].css` for exactly this and the hash was
+never implemented. The URL is now sha256(app.css)[:8], registered literally at
+build time and served immutable — the URL changes when the bytes do, so a
+stale sheet can no longer outlive its build. The un-hashed /admin/app.css
+still answers for old bookmarks.
+
+Also removed the exotic colour syntax from the tokens: the hatch textures
+were the only thing of mine needing color-mix(in oklab) (Firefox 113 / Safari
+16.2) and are now literal rgba. That matters beyond this bug — the owner
+opens this panel on whatever phone is behind the bar.
+
+Lesson worth keeping: a stylesheet served at a FIXED url under a long
+max-age is a silent dependency between two deploys. Nothing fails loudly; the
+UI just quietly stops existing.

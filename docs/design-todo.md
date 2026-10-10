@@ -71,3 +71,9 @@ evaluation (2026-10-10), so all ten ⚑ deltas were in scope.
    shutter covered the whole page on a closed venue.
 7. The CSS budget measured minified bytes — the wrong metric for a guest on
    mobile data.
+8. **The console stylesheet had a fixed URL under a long max-age.** When the
+   templates moved to new component classes, browsers that had cached the old
+   sheet silently rendered the console unstyled — no error anywhere. Fixed by
+   content-hashing the URL (`app.<sha>.css`, immutable), which DESIGN.md §4
+   had specified and I had not built. Fixed stylesheets and hashed filenames
+   are not the same thing.
