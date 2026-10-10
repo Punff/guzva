@@ -5,92 +5,103 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>guzva — fleet</title>
 <script src="/admin/static/htmx.min.js" defer></script>
-{{template "styles.html" .}}
+<link rel="stylesheet" href="/admin/app.css">
 </head>
-<body>
-<header style="display:flex;justify-content:space-between;align-items:baseline">
-  <h1>guzva — fleet</h1>
-  <form method="post" action="/admin/logout" class="inline">
-    <button type="submit">Sign out</button>
-  </form>
+<body class="bg-[var(--color-bg)] text-[var(--color-ink)] font-sans">
+<div class="wrap" style="max-width:56rem;margin-inline:auto;padding:1rem">
+
+<header class="flex items-center justify-between gap-4 py-2 mb-4">
+  <h1 class="text-xl font-semibold tracking-tight">Fleet</h1>
+  <form method="post" action="/admin/logout" class="inline"><button class="btn btn--ghost" type="submit">Sign out</button></form>
 </header>
 
-<div id="flash">{{if .ShowCreated}}<span class="ok">Venue created.</span>{{end}}</div>
+<div id="flash">{{if .ShowCreated}}<div class="flash flash--ok" role="status">Venue created.</div>{{end}}</div>
 
-<h2>Venues</h2>
+<section class="grid gap-4">
 {{range .Venues}}
-<article>
-  <h3>
-    <a href="/{{.Slug}}/" target="_blank">{{.Name}}</a>
-    <code>/{{.Slug}}/</code>
-    <span class="badge {{.FreshClass}}">{{.FreshText}}</span>
-    <span class="age">last frame {{.LastAge}}</span>
-    <span class="age"><a href="/admin/venues/{{.ID}}">edit</a></span>
-  </h3>
+<article class="card p-5 {{if eq .FreshClass "stale"}}ring-1 ring-[var(--color-stale-bg)]{{end}}">
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mb-3">
+    <a class="text-lg font-semibold tracking-tight hover:underline" href="/{{.Slug}}/" target="_blank" rel="noreferrer">{{.Name}}</a>
+    <code class="muted text-sm font-mono">/{{.Slug}}/</code>
+    <span class="badge badge--{{.FreshClass}}">{{.FreshText}}</span>
+    <span class="muted text-sm" style="margin-left:auto">{{.LastAge}}</span>
+    <a class="btn btn--ghost text-sm" href="/admin/venues/{{.ID}}">Edit</a>
+  </div>
   {{if .Devices}}
-  <table>
-    <tr><th>Serial</th><th>Status</th><th>FW</th><th>RSSI</th><th>Last seen</th>
+  <div class="overflow-x-auto -mx-5 px-5">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Serial</th><th>Status</th><th>FW</th><th>RSSI</th><th>Last seen</th>
         <th title="boot / brownout / join_fail / post_fail / tls_fail / capture_fail">Counters</th>
-        <th>cfg (wanted/applied)</th><th></th></tr>
-    {{range .Devices}}
-    <tr>
-      <td><code><a href="/admin/devices/{{.ID}}">{{.Serial}}</a></code></td>
-      <td>{{.Status}}</td>
-      <td>{{.FW}}</td>
-      <td>{{.RSSI}} dBm</td>
-      <td>{{.SeenAge}}</td>
-      <td>b{{.Counters.Boot}} · bo{{.Counters.Brownout}} · j{{.Counters.JoinFail}} · p{{.Counters.PostFail}} · t{{.Counters.TLSFail}} · c{{.Counters.CaptureFail}}</td>
-      <td {{if .Amber}}class="amber" title="read-back mismatch — device has not applied the latest config"{{end}}>{{.CfgVer}}/{{.CfgApplied}}</td>
-      <td>
-        {{if eq .Status "active"}}
-        <form class="inline" method="post" hx-post="/admin/devices/{{.ID}}/revoke"
-              hx-target="#flash" hx-swap="innerHTML"
-              hx-confirm="Revoke {{.Serial}}? It will stop being able to post.">
-          <button type="submit">Revoke</button>
-        </form>
-        {{else}}<span class="age">revoked</span>{{end}}
-      </td>
-    </tr>
-    {{end}}
+        <th>cfg</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Devices}}
+      <tr{{if .Amber}} title="read-back mismatch — desired {{.CfgVer}}, applied {{.CfgApplied}}"{{end}}>
+        <td class="font-mono"><a class="hover:underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a></td>
+        <td><span style="color:var(--color-fresh)"{{if ne .Status "active"}} class="muted"{{end}}>{{.Status}}</span></td>
+        <td>{{.FW}}</td>
+        <td{{if le .RSSI -75}} style="color:var(--color-danger)" title="Below the −65 dBm install gate"{{end}}>{{.RSSI}} dBm</td>
+        <td>{{.SeenAge}}</td>
+        <td class="muted font-mono text-xs">{{.Counters.Boot}}/{{.Counters.Brownout}}/{{.Counters.JoinFail}} · p{{.Counters.PostFail}} t{{.Counters.TLSFail}} c{{.Counters.CaptureFail}}</td>
+        <td class="sizeTxt">{{.CfgVer}}/{{.CfgApplied}}</td>
+        <td>
+          {{if eq .Status "active"}}
+          <form class="inline" method="post" hx-post="/admin/devices/{{.ID}}/revoke" hx-confirm="Revoke {{.Serial}}? It stops being able to post.">
+            <button class="btn btn--danger text-xs" type="submit">Revoke</button>
+          </form>
+          {{else}}<span class="muted">revoked</span>{{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
   </table>
+  </div>
   {{else}}<p class="muted">No devices — mint one below.</p>{{end}}
 </article>
 {{else}}
 <p class="muted">No venues yet — create the first one below.</p>
 {{end}}
+</section>
 
-<h2>New venue</h2>
-<form class="formgrid" hx-post="/admin/venues" hx-target="#flash" hx-swap="innerHTML">
-  <label for="v-slug">Slug</label>
-  <input id="v-slug" name="slug" placeholder="jadro" required pattern="[a-z0-9][a-z0-9-]{0,39}">
-  <label for="v-name">Name</label>
-  <input id="v-name" name="name" placeholder="Jadro" required>
-  <label for="v-tz">Timezone</label>
-  <input id="v-tz" name="tz" placeholder="Europe/Sarajevo" value="Europe/Sarajevo">
-  <label for="v-style">Style</label>
-  <select id="v-style" name="style">
-    <option value="poster">poster (4-level)</option>
-    <option value="mono">mono (B&amp;W)</option>
-  </select>
-  <label for="v-hours">Hours</label>
-  <input id="v-hours" name="hours" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (empty = no badge)">
-  <span></span><button type="submit">Create venue</button>
-</form>
+<section class="mt-6">
+  <h2 class="text-lg font-semibold mb-3">New venue</h2>
+  <form class="card p-5 grid gap-3 max-w-xl" hx-post="/admin/venues" hx-target="#flash" hx-swap="innerHTML">
+    <div class="field"><label class="label" for="v-slug">Slug</label><input class="input" id="v-slug" name="slug" placeholder="jadro" required pattern="[a-z0-9][a-z0-9-]{0,39}"></div>
+    <div class="field"><label class="label" for="v-name">Name</label><input class="input" id="v-name" name="name" placeholder="Jadro" required></div>
+    <div class="grid grid-cols-2 gap-3">
+      <div class="field"><label class="label" for="v-tz">Timezone</label><input class="input" id="v-tz" name="tz" placeholder="Europe/Sarajevo" value="Europe/Sarajevo"></div>
+      <div class="field"><label class="label" for="v-style">Style</label>
+        <select class="select" id="v-style" name="style">
+          <option value="poster">poster (4-level)</option>
+          <option value="mono">mono (B&amp;W)</option>
+        </select>
+      </div>
+    </div>
+    <div class="field"><label class="label" for="v-hours">Hours</label><input class="input" id="v-hours" name="hours" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (empty = no badge)"></div>
+    <button class="btn" type="submit">Create venue</button>
+  </form>
+</section>
 
-<h2>New device</h2>
-{{if .DeviceOpts}}
-<form class="formgrid" hx-post="/admin/devices" hx-target="#token-out" hx-swap="innerHTML">
-  <label for="d-venue">Venue</label>
-  <select id="d-venue" name="venue_id">
-    {{range .DeviceOpts}}<option value="{{.ID}}">{{.Name}} (/{{.Slug}}/)</option>{{end}}
-  </select>
-  <label for="d-serial">Serial</label>
-  <input id="d-serial" name="serial" placeholder="esp32-… (empty = random)">
-  <span></span><button type="submit">Mint device token</button>
-</form>
-{{else}}<p class="muted">Create a venue first.</p>{{end}}
-<div id="token-out"></div>
+<section class="mt-6">
+  <h2 class="text-lg font-semibold mb-3">New device</h2>
+  {{if .DeviceOpts}}
+  <form class="card p-5 grid gap-3 max-w-xl" hx-post="/admin/devices" hx-target="#token-out" hx-swap="innerHTML">
+    <div class="field"><label class="label" for="d-venue">Venue</label>
+      <select class="select" id="d-venue" name="venue_id">
+        {{range .DeviceOpts}}<option value="{{.ID}}">{{.Name}} (/{{.Slug}}/)</option>{{end}}
+      </select>
+    </div>
+    <div class="field"><label class="label" for="d-serial">Serial</label><input class="input" id="d-serial" name="serial" placeholder="esp32-… (empty = random)"></div>
+    <button class="btn" type="submit">Mint device token</button>
+  </form>
+  {{else}}<p class="muted">Create a venue first.</p>{{end}}
+  <div id="token-out" class="mt-3"></div>
+</section>
 
-<p class="muted">This console shows stylised renders only; raw frames exist in RAM for one Process call (PLAN D1).</p>
+<p class="muted mt-8 text-sm">This console shows stylised renders only; raw frames exist in RAM for one Process call (PLAN D1).</p>
+</div>
 </body>
 </html>{{end}}

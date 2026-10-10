@@ -1,5 +1,5 @@
-{{define "token.html"}}<div>
-  <p class="muted">Device <strong>{{.Serial}}</strong> created. Configure it now:</p>
-  <p class="tok">{{.Token}}</p>
-  <p class="warn">⚠ STORE THIS TOKEN NOW — IT IS SHOWN ONLY ONCE. Only its sha256 is stored.</p>
+{{define "token.html"}}<div class="card p-4 mt-2">
+  <p class="muted text-sm">Device <strong>{{.Serial}}</strong> created. Put this token into firmware/include/settings.h:</p>
+  <p class="font-mono text-sm p-3 rounded bg-[#101820] text-[#9fe8a0] mb-2" style="word-break:break-all">{{.Token}}</p>
+  <p class="text-xs" style="color:var(--color-danger)"><strong>STORE THIS TOKEN NOW — IT IS SHOWN ONLY ONCE.</strong> Only its sha256 is stored.</p>
 </div>{{end}}

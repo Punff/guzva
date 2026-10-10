@@ -78,7 +78,7 @@ func (s *Server) ownerLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	ip := auth.ClientIP(r)
 	if !s.loginLim.AllowIP(ip) {
 		s.log.Warn("owner: login throttled", "ip", ip)
-		s.renderOwnerLogin(w, http.StatusTooManyRequests, "Too many attempts — wait a minute.")
+		s.renderOwnerLogin(w, http.StatusTooManyRequests, "Previše pokušaja — pričekajte minutu.")
 		return
 	}
 	r.ParseForm()
@@ -90,7 +90,7 @@ func (s *Server) ownerLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	if err != nil || v.OwnerHash == "" ||
 		!auth.CheckAdminPassword(v.OwnerHash, r.FormValue("password")) {
 		s.log.Warn("owner: bad login", "ip", ip)
-		s.renderOwnerLogin(w, http.StatusUnauthorized, "Wrong venue or password.")
+		s.renderOwnerLogin(w, http.StatusUnauthorized, "Pogrešan objekt ili lozinka.")
 		return
 	}
 	s.ownerSess.IssueOwner(w, v.ID, auth.SessionTTL, s.secure)

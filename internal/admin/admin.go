@@ -23,6 +23,7 @@ import (
 	"guzva/internal/proto"
 	"guzva/internal/store"
 	"guzva/internal/venue"
+	"guzva/internal/webui"
 )
 
 // Server is the admin plane.
@@ -69,6 +70,10 @@ func (s *Server) Register(mux *http.ServeMux) {
 		mux.Handle("GET /admin/static/", http.StripPrefix("/admin/static/",
 			http.FileServer(http.FS(static))))
 	}
+	// The compiled design system (PLAN §9/D6) replaces the inline <style> block:
+	// one Tailwind-purged stylesheet, embedded, cached, shared with the public
+	// page (which inlines the same bytes).
+	mux.Handle("GET /admin/app.css", webui.Handler())
 	mux.HandleFunc("GET /admin/login", s.loginPage)
 	mux.HandleFunc("POST /admin/login", s.loginSubmit)
 	mux.HandleFunc("POST /admin/logout", s.require(s.logout))

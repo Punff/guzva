@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+/*
+ * guzva design tokens — one theme, three surfaces (public, admin, owner).
+ * The tokens are the same CSS variables the public page already used, so the
+ * consoles inherit the same look instead of growing a second (worse) one.
+ * Light and dark come from color-scheme; dark values are the pair.
+ */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --color-bg: #fbfbfa;
+  --color-bg1: #f4f4f1;
+  --color-surface: #ffffff;
+  --color-surface-2: #f6f6f4;
+  --color-ink: #14161a;
+  --color-ink-2: #4a5058;
+  --color-ink-3: #7c848e;
+  --color-line: #e5e7eb;
+  --color-accent: #14161a;
+  --color-accent-ink: #ffffff;
+
+  --color-fresh: #0f7b3f;  --color-fresh-bg: #dcf5e6;
+  --color-stale: #8a5a00;  --color-stale-bg: #fdefd2;
+  --color-unknown: #555c66; --color-unknown-bg: #e8eaee;
+  --color-open: #0b5aa6;   --color-open-bg: #ddeaff;
+  --color-closed: #666;    --color-closed-bg: #e8eaee;
+  --color-danger: #b42318; --color-danger-bg: #fee4e2;
+
+  --radius-card: 14px;
+  --radius-control: 8px;
+  --shadow-card: 0 1px 2px rgba(16,20,28,.06), 0 8px 28px -12px rgba(16,20,28,.22);
+
+  --text-xs: .78rem;
+  --text-sm: .85rem;
+  --text-base: 16px;
+  --text-lg: 1.05rem;
+  --text-xl: 1.3rem;
+}
+
+/* Dark theme overrides: same tokens, different values, driven by
+ * prefers-color-scheme (no class toggle, no JS). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0b0d10;
+    --color-bg1: #0f1216;
+    --color-surface: #14181d;
+    --color-surface-2: #1a1f26;
+    --color-ink: #eceef1;
+    --color-ink-2: #a9b1bb;
+    --color-ink-3: #737c87;
+    --color-line: #232830;
+    --color-accent: #eceef1;
+    --color-accent-ink: #14161a;
+
+    --color-fresh: #7ee787; --color-fresh-bg: #10331f;
+    --color-stale: #ffd98a; --color-stale-bg: #3a2a0c;
+    --color-unknown: #9aa2ad; --color-unknown-bg: #23272e;
+    --color-open: #a9d5ff;  --color-open-bg: #0e2b45;
+    --color-closed: #999;   --color-closed-bg: #2c2c2c;
+    --color-danger: #ffa39e; --color-danger-bg: #4a1414;
+
+    --shadow-card: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+
+/* Component layer — the named pieces the three surfaces share. Templates use
+ * these; free utilities exist for one-offs. The point (PLAN §9) is the same
+ * component renders the same way everywhere it appears. */
+@layer components {
+  .card {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-card);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-card);
+  }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: .5rem; border-radius: var(--radius-control);
+    padding: .35rem .8rem; font-size: var(--text-sm); font-weight: 500;
+    background: var(--color-accent); color: var(--color-accent-ink);
+    cursor: pointer; border: 0; transition: filter .12s, background .12s;
+  }
+  .btn:hover { filter: brightness(1.07); }
+  .btn--ghost {
+    background: transparent; color: var(--color-ink-2);
+    border: 1px solid var(--color-line);
+  }
+  .btn--ghost:hover { background: var(--color-surface-2); filter: none; }
+  .btn--danger { background: var(--color-danger); color: #fff; }
+  .input, .select {
+    width: 100%; border: 1px solid var(--color-line);
+    border-radius: var(--radius-control); padding: .4rem .6rem;
+    font-size: var(--text-sm); background: var(--color-surface);
+    color: var(--color-ink); font: inherit;
+  }
+  .input:focus, .select:focus {
+    outline: 2px solid color-mix(in oklab, var(--color-accent) 55%, transparent);
+    outline-offset: 1px; border-color: var(--color-ink-3);
+  }
+  .label {
+    font-size: var(--text-sm); font-weight: 500; color: var(--color-ink-2);
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: .4em;
+    font-size: var(--text-xs); font-weight: 600; letter-spacing: .01em;
+    padding: .28em .7em; border-radius: 999px; white-space: nowrap;
+  }
+  .badge::before { content: ""; width: .5em; height: .5em; border-radius: 50%; background: currentColor; }
+  .badge--fresh   { color: var(--color-fresh);   background: var(--color-fresh-bg); }
+  .badge--stale   { color: var(--color-stale);   background: var(--color-stale-bg); }
+  .badge--unknown { color: var(--color-unknown); background: var(--color-unknown-bg); }
+  .badge--open    { color: var(--color-open);    background: var(--color-open-bg); }
+  .badge--closed, .badge--no-hours { color: var(--color-closed); background: var(--color-closed-bg); }
+  .badge--stale::before { animation: badge-pulse 2s ease-in-out infinite; }
+  @keyframes badge-pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .badge--stale::before { animation: none; } }
+
+  .table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+  .table th, .table td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--color-line); }
+  .table th { color: var(--color-ink-3); font-weight: 600; font-size: var(--text-xs); letter-spacing: .03em; text-transform: uppercase; }
+  .table tbody tr:hover { background: var(--color-surface-2); }
+
+  .flash { border-radius: var(--radius-control); padding: .5rem .75rem; font-size: var(--text-sm); }
+  .flash--ok  { background: var(--color-fresh-bg); color: var(--color-fresh); }
+  .flash--err { background: var(--color-danger-bg); color: var(--color-danger); }
+}

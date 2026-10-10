@@ -3,17 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>guzva — admin login</title>
-{{template "styles.html" .}}
+<title>guzva — admin</title>
+<link rel="stylesheet" href="/admin/app.css">
 </head>
-<body>
-<h1>guzva — admin</h1>
-{{if .Err}}<div class="err" style="background:#ffe0e0;color:#7a1414;padding:.4em .7em;border-radius:6px;">{{.Err}}</div>{{end}}
-<form method="post" action="/admin/login" class="formgrid" style="margin-top:1rem">
-  <label for="password">Password</label>
-  <input type="password" id="password" name="password" autofocus autocomplete="current-password">
-  <span></span><button type="submit">Sign in</button>
-</form>
-<p class="muted">Single-admin console. Sessions are HMAC cookies (§6.5); the raw camera image never appears here or on the public pages.</p>
+<body class="min-h-dvh grid place-items-center p-4 bg-[var(--color-bg)] text-[var(--color-ink)] font-sans">
+  <main class="w-full max-w-sm">
+    <h1 class="text-xl font-semibold tracking-tight mb-1">guzva</h1>
+    <p class="muted mb-5">Sign in to the admin console.</p>
+    {{if .Err}}<div class="flash flash--err mb-4" role="alert">{{.Err}}</div>{{end}}
+    <form method="post" action="/admin/login" class="card p-5 grid gap-3">
+      <div class="field">
+        <label for="password">Password</label>
+        <input class="input" type="password" id="password" name="password" autofocus autocomplete="current-password">
+      </div>
+      <button class="btn w-full" type="submit">Sign in</button>
+    </form>
+    <p class="muted mt-4 text-xs">Sessions are signed cookies (§6.5); the raw camera image never appears here or on public pages.</p>
+  </main>
 </body>
 </html>{{end}}

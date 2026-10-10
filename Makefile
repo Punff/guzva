@@ -9,6 +9,10 @@
 #   make logs | ssh        tail the journal / open a shell
 #   make backup            run one snapshot now (the timer does it nightly)
 #
+# The UI stylesheet is a third release artifact: `make css` runs the Tailwind
+# CLI over the templates when `make deploy` runs. `make test` fails CI if
+# web/app.css is stale (no hand-edits to it go in with the image).
+#
 # Override the target:  make SSH=root@other deploy
 
 SSH      ?= root@guzva
@@ -18,6 +22,8 @@ CUR      := $(APP_DIR)/current
 VERSION  := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 BIN      := dist/guzva
 LDFLAGS  := -s -w -X main.version=$(VERSION)
+
+include Makefile.web.mk
 
 .PHONY: test build deploy rollback logs ssh backup help
 
@@ -29,7 +35,12 @@ test: ## gofmt + vet + all unit tests
 	go vet ./...
 	go test ./...
 
-build: ## static release binary, version-stamped
+test: css-check ## gofmt + vet + unit tests (fails on stale UI or build drift)
+	gofmt -l cmd internal tools | grep . && exit 1 || true
+	go vet ./...
+	go test ./...
+
+build: css ## static release binary, version-stamped + design system
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/guzva
 	@echo "built $(BIN) version=$(VERSION)"
 

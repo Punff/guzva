@@ -5,39 +5,58 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>guzva — device {{.Device.Serial}}</title>
 <script src="/admin/static/htmx.min.js" defer></script>
-{{template "styles.html" .}}
+<link rel="stylesheet" href="/admin/app.css">
 </head>
-<body>
-<header style="display:flex;justify-content:space-between;align-items:baseline">
-  <h1><a href="/admin/">fleet</a> / <code>{{.Device.Serial}}</code></h1>
-  <form method="post" action="/admin/logout" class="inline">
-    <button type="submit">Sign out</button>
-  </form>
+<body class="bg-[var(--color-bg)] text-[var(--color-ink)] font-sans">
+<div class="wrap" style="max-width:52rem;margin-inline:auto;padding:1rem">
+<header class="flex items-center justify-between gap-4 py-2 mb-4">
+  <h1 class="text-xl font-semibold tracking-tight"><a href="/admin/" class="muted hover:underline">fleet</a> / <code class="font-mono">{{.Device.Serial}}</code></h1>
+  <form method="post" action="/admin/logout" class="inline"><button class="btn btn--ghost" type="submit">Sign out</button></form>
 </header>
 
-<div id="flash">{{if .Saved}}<span class="ok">Config saved as ver {{.Cfg.Ver}} — the device applies it on its next POST.</span>{{end}}</div>
+<div id="flash">
+  {{if .Saved}}<div class="flash flash--ok" role="status">Config saved as ver {{.Cfg.Ver}} — the device applies it on its next POST.</div>{{end}}
+</div>
 
-<p>Status <strong>{{.Device.Status}}</strong> · FW <code>{{.Device.FW}}</code> · RSSI {{.Device.RSSI}} dBm ·
-config wanted/applied
-<span {{if .Amber}}class="amber" title="read-back mismatch — device has not applied the latest config"{{end}}>{{.Cfg.Ver}}/{{.Device.CfgAppliedVer}}</span></p>
+<section class="card p-5 mb-5">
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div><div class="muted text-xs">Status</div><div style="color:{{if eq .Device.Status "active"}}var(--color-fresh){{else}}var(--color-stale){{end}}">{{.Device.Status}}</div></div>
+    <div><div class="muted text-xs">Firmware</div><div>{{.Device.FW}}</div></div>
+    <div><div class="muted text-xs">RSSI</div><div>{{.Device.RSSI}} dBm</div></div>
+    <div><div class="muted text-xs">Config</div><div class="sizeTxt"{{if .Amber}} style="color:var(--color-stale)" title="device has not applied the latest config"{{end}}>{{.Device.CfgVer}} / {{.Device.CfgAppliedVer}}</div></div>
+  </div>
+</section>
 
-<h2>desired_cfg</h2>
-<p class="muted">Every key is validated against the proto table before saving
-(unknown keys rejected, out-of-range rejected). Saving bumps <code>ver</code>;
-the board fetches it on its next POST — same gate as <code>guzva cfg -set</code>.</p>
-<form method="post" action="/admin/devices/{{.Device.ID}}/cfg">
-<table>
-  <tr><th>Key</th><th>Value</th><th>Range</th><th>Plane</th></tr>
-  {{range .Fields}}
-  <tr>
-    <td><code>{{.Key}}</code></td>
-    <td><input type="number" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}" style="width:6em"></td>
-    <td class="muted">{{.Min}}…{{.Max}}</td>
-    <td class="muted">{{if .Cadence}}cadence{{else}}sensor{{end}}</td>
-  </tr>
-  {{end}}
-</table>
-<p><button type="submit">Save config (bumps ver)</button></p>
-</form>
+<section class="card p-5">
+  <h2 class="text-lg font-semibold mb-2">desired_cfg</h2>
+  <p class="muted mb-4 text-sm">Rounds come from the same gate as <code class="font-mono">guzva cfg -set</code>. Anything out of range is rejected before it reaches a field unit. Saving bumps <code class="font-mono">ver</code>; the board fetches it on its next POST.</p>
+
+  <form method="post" action="/admin/devices/{{.Device.ID}}/cfg">
+    <h3 class="label mb-2 mt-1" style="text-transform:uppercase;letter-spacing:.03em">Cadence</h3>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+      {{range .Fields}}{{if .Cadence}}
+      <div class="field">
+        <label class="label" for="cfg-{{.Key}}">{{.Key}}</label>
+        <input class="input" type="number" id="cfg-{{.Key}}" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}">
+        <span class="muted text-xs">{{.Min}}</span>
+      </div>
+      {{end}}{{end}}
+    </div>
+
+    <h3 class="label mb-2 mt-1" style="text-transform:uppercase;letter-spacing:.03em">Sensor</h3>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+      {{range .Fields}}{{if not .Cadence}}
+      <div class="field">
+        <label class="label" for="cfg-{{.Key}}">{{.Key}}</label>
+        <input class="input" type="number" id="cfg-{{.Key}}" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}">
+        <span class="muted text-xs">{{.Min}}{{if gt .Max 9}}…{{.Max}}{{end}}</span>
+      </div>
+      {{end}}{{end}}
+    </div>
+
+    <button class="btn" type="submit">Save config (bumps ver)</button>
+  </form>
+</section>
+</div>
 </body>
 </html>{{end}}

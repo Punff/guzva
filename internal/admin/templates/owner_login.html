@@ -1,21 +1,28 @@
 {{define "owner_login.html"}}<!doctype html>
-<html lang="en">
+<html lang="hr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>guzva — owner sign in</title>
-{{template "styles.html" .}}
+<title>guzva — prijava</title>
+<link rel="stylesheet" href="/admin/app.css">
 </head>
-<body>
-<h1>guzva — venue owner</h1>
-{{if .Err}}<div class="err" style="background:#ffe0e0;color:#7a1414;padding:.4em .7em;border-radius:6px;">{{.Err}}</div>{{end}}
-<form method="post" action="/owner/login" class="formgrid" style="margin-top:1rem">
-  <label for="slug">Venue slug</label>
-  <input id="slug" name="slug" placeholder="jadro" autofocus autocomplete="username">
-  <label for="password">Password</label>
-  <input type="password" id="password" name="password" autocomplete="current-password">
-  <span></span><button type="submit">Sign in</button>
-</form>
-<p class="muted">Your venue login is issued by your guzva administrator. Device tokens and camera settings stay with them — this panel covers your venue's public details.</p>
+<body class="min-h-dvh grid place-items-center p-4 bg-[var(--color-bg)] text-[var(--color-ink)] font-sans">
+  <main class="w-full max-w-sm">
+    <h1 class="text-xl font-semibold tracking-tight mb-1">guzva</h1>
+    <p class="muted mb-5">Prijava vlasnika objekta.</p>
+    {{if .Err}}<div class="flash flash--err mb-4" role="alert">{{.Err}}</div>{{end}}
+    <form method="post" action="/owner/login" class="card p-5 grid gap-3">
+      <div class="field">
+        <label for="slug">Identifikator objekta</label>
+        <input class="input" id="slug" name="slug" placeholder="jadro" autofocus autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="password">Lozinka</label>
+        <input class="input" type="password" id="password" name="password" autocomplete="current-password">
+      </div>
+      <button class="btn w-full" type="submit">Prijava</button>
+    </form>
+    <p class="muted mt-4 text-xs">Pristup izdaje administrator. Tokeni uređaja i postavke kamere ostaju kod njega — ovaj panel pokriva podatke o objektu i stanje.</p>
+  </main>
 </body>
 </html>{{end}}

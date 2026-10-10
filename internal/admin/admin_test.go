@@ -267,7 +267,7 @@ func TestOwnerPanel(t *testing.T) {
 	// Unknown venue, unset password, wrong password: one generic message.
 	for _, tc := range [][2]string{{"nope", "x"}, {"other", "x"}, {"jadro", "wrong"}} {
 		w := ownerLogin(tc[0], tc[1])
-		if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "Wrong venue or password") {
+		if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "Pogrešan objekt ili lozinka") {
 			t.Fatalf("login %v = %d %q", tc, w.Code, w.Body.String())
 		}
 	}
