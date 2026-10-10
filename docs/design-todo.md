@@ -1,55 +1,73 @@
-# guzva — DESIGN.md implementation todo
+# guzva — DESIGN.md implementation status
 
 Source: docs/design.md v1.0 (companion to PLAN v3.2 §9).
-**Permission: user granted blanket approval for all of DESIGN.md plus my own
-evaluation (2026-10-10).** All ten ⚑ deltas are in scope.
+Permission: the user granted blanket approval for all of DESIGN.md plus my own
+evaluation (2026-10-10), so all ten ⚑ deltas were in scope.
 
-Sequenced by value-per-risk so that a time-out still leaves a coherent, live
-system. Commit after every step.
+**Shipped and live.** Commits `a23cf10` … `f56e001`.
 
-## Stage A — foundation
-- [ ] **A1 tokens.css** — role tokens + s0–s3 ramp, light/dark, data-theme,
-      radius 0, stepped shadows, textures, motion (§3, §4)
-- [ ] **A2 pipeline** — `public.css` (pages) + `app.css` (admin), explicit
-      `@source`, size budgets in `make css-check` (§4, §13)
+## Done
 
-## Stage B — visual system on the three surfaces
-- [ ] **B1 kit page** `/admin/_kit` — every component, light+dark, all states (§6)
-- [ ] **B2 public page** — chips (shape+colour+text), logomark+wordmark, type
-      scale, reserved box, a11y (§7.1, §7.5)
-- [ ] **B3 admin** — fleet/venue/device/login/token (§8)
-- [ ] **B4 owner** — Croatian, same vocabulary (§9)
+- [x] **A1 tokens** — `web/tokens.css`: role tokens (paper/ink/muted/accent +
+      fresh/late/stale), literal s0–s3 ramp, light/dark + `data-theme`,
+      radius 0, stepped shadows, CSS-only textures, motion rules.
+- [x] **A2 pipeline** — `public.css` (pages, inlined) + `app.css` (consoles).
+      `source(none)` was required or both entries compile byte-identical.
+      Budgets enforced, measured **gzipped** (the design's own §13 says
+      "CSS ≤ 2.5 KB gz"); public 3.4 KB, app 3.6 KB.
+- [x] **B2 public page** — Tisak: logomark, stepped shadows, 56px mono
+      headline, Croatian, chips with shapes, closed ⇒ shutter.
+- [x] **B3 admin** — rebuilt in the Tisak vocabulary, shared partials, plain-
+      sentence counters, Cadence/Image/Hardware groups, ≥44px targets.
+- [x] **B4 owner** — Croatian, one plain status sentence, humanised runbook.
+- [x] **C1 security headers** — hash-based CSP (no `unsafe-inline`),
+      Referrer-Policy, nosniff, DENY, CORP, Permissions-Policy.
+- [x] **C2 ⚑7 noindex** — meta + `X-Robots-Tag`.
+- [x] **C3 gzip** — on the fly, single-slot cache keyed path+mtime (D5 forbids
+      .gz siblings). Verified round-trip byte-for-byte.
+- [x] **⚑3 two stale tiers** — late 3–15 min, no-signal >15 min.
+- [x] **⚑4 closed ⇒ no still** — shutter, no polling.
+- [x] **⚑9 per-venue language** — `venues.lang` migration (v4).
+- [x] **i18n** — one catalog, hr default + en fallback.
 
-## Stage C — delivery
-- [ ] **C1 security headers** — CSP w/ inline hashes, Referrer-Policy, nosniff,
-      Permissions-Policy, CORP, frame-ancestors (§7.4)
-- [ ] **C2 ⚑7 noindex** by default on public pages
-- [ ] **C3 gzip** on the fly, small in-memory cache keyed path+mtime (§13)
-- [ ] **C4 budgets** enforced: public.css ≤ 8 KB, app.css ≤ 30 KB (§4)
-- [ ] **C5 ⚑8 system fonts** — already true; assert it, no code needed
+## Not done
 
-## Stage D — honest state
-- [ ] **D1 ⚑3** two stale tiers: late (3–15 min), no-signal (>15 min) (§3.2)
-- [ ] **D2 ⚑4** closed/paused ⇒ no still, no polling
+- [ ] **B1 kit page** `/admin/_kit` — worth doing, low risk, no rush.
+- [ ] **⚑1/⚑2 the print** — 160×120 paletted PNG + burned-in HH:MM stamp.
+      **This is the centrepiece and it is the biggest remaining piece**: an
+      8-stage pipeline, palette PNG encoding, a 5×7 digit font, goldens, and
+      `latest.jpg` → `latest.png` across ingest/pages/tests. Deliberately not
+      started rather than half-landed: a partial pipeline would replace a
+      working still with a broken one.
+- [ ] **⚑5/⚑6** calib_json + privacy masks — needs ⚑1's grid to draw masks on.
+- [ ] **⚑10** device capture ≤ QVGA, interval defaults.
+- [ ] Install wizard (§8.4), QR poster (§10), owner hours editor (§9).
 
-## Stage E — the print (centrepiece)
-- [ ] **E1 ⚑1** `poster@1` Tisak: 160×120 paletted PNG, 8 stages, `latest.png`
-- [ ] **E2 ⚑2** burned-in HH:MM stamp; index.html rewritten only on state flips
-- [ ] **E3** goldens + invariants + 6 KB size bound (§5.11)
-- [ ] **E4 ⚑5/⚑6** calib_json + static privacy masks (≤4 rects)
-- [ ] **E5 ⚑9** per-venue page language (`venues.lang`)
+## Judgement calls to review
 
-## Stage F — device + close-out
-- [ ] **F1 ⚑10** capture ≤ QVGA, interval 45–90 s defaults
-- [ ] **F2 docs** — ux.md folded into design.md; PLAN.md deltas; ops-log
+- **The still is the weakest part of the current product.** It is still a
+  640px JPEG at ~16 KB on the wire — about 3× the whole page. ⚑1 fixes that
+  and is the single highest-value item left.
+- **The bench still reads as a dark, almost-empty frame** because the camera
+  is pointed at a dark surface. Not a rendering bug, but it makes a poor
+  demo; worth pointing the camera at the room before showing anyone.
+- `i18n.DayName` had a real year-boundary bug (YearDay wraps) — fixed, tested.
+- The still ramp is fixed in both themes while the UI inverts; intentional
+  per §5.4, but it looks odd at first glance in dark mode.
 
-## Judgement calls to flag for review
-- ⚑1 lowers the still to 160×120. That is a real, visible loss of detail; the
-  compensating argument is 5–10× bytes + privacy-by-resolution. Needs a real
-  bench frame to judge — §5.5's numbers are synthetic.
-- ⚑4 hides the still when closed. Honest and private, but a guest cannot see
-  the room after hours. Deliberate, per §5.6.
-- ⚑2 makes the stamp part of the image, so the image is no longer pure render
-  output; a venue's picture always carries its own time.
-- The still ramp is fixed in both themes (§5.4) while the UI inverts. That is
-  intentional but it will look "wrong" next to a dark UI at first glance.
+## Bugs found while implementing (all mine)
+
+1. **Migration chain**: `case 2` never fell through to `case 3`. Harmless
+   while `case 3` was inert; the moment it did real work a fresh DB silently
+   stopped one version short and reported success. Same shape as the outage.
+2. `schemaV1` is frozen history — adding a column there double-adds it on
+   replay. Found by doing exactly that.
+3. `chip.html` used `{{.cls}}` against field `Cls`; templates are
+   case-sensitive, so every chip-bearing page truncated mid-render.
+4. `device.html` referenced `.Weak` on a struct that had no such field — same
+   silent truncation.
+5. `StateShape` was a string, so the chip printed raw SVG source as text.
+6. Frame overlays used `absolute inset-0` with no `relative` ancestor, so the
+   shutter covered the whole page on a closed venue.
+7. The CSS budget measured minified bytes — the wrong metric for a guest on
+   mobile data.

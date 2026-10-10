@@ -250,3 +250,46 @@ OVERWRITTEN each frame, so a client holding a stale ?v= (old index.html, a
 backgrounded tab) would fetch CURRENT bytes under the OLD version's URL and
 pin the mismatch for the whole immutable lifetime. Both files revalidate
 now; correctness is worth one 16 KB re-fetch.
+
+## 2026-10-10 — DESIGN.md implemented (Tisak)
+
+The design system arrived as a proposal with ten ⚑ deltas gated on approval.
+The user granted blanket approval, so all ten were in scope. Status:
+[design-todo.md](design-todo.md). Deployed through `f56e001`.
+
+Shipped: tokens, the split Tailwind pipeline, all three surfaces in the print
+language, Croatian copy from one catalog, two stale tiers, closed ⇒ no still,
+noindex, hash-based CSP, security headers, gzip.
+
+First view on the wire: **5,500 bytes gzipped** (17,576 raw) for the whole
+page, verified round-trip. Headers and round-trip checked with curl.
+
+NOT shipped, deliberately: ⚑1/⚑2 (the 160×120 paletted PNG and the burned-in
+stamp). That is the centrepiece and the largest remaining piece — an 8-stage
+pipeline, palette encoding, a digit font, goldens, and latest.jpg →
+latest.png across ingest/pages/tests. Half of it would replace a working still
+with a broken one, so it wants its own focused pass with real bench frames to
+judge it against. The still is still a 640px JPEG at ~16 KB, about 3× the
+page itself: it is currently the heaviest thing we serve.
+
+### Bugs found while implementing (all mine, all now fixed and tested)
+
+1. `case 2` of the migration chain never fell through to `case 3`. Harmless
+   only because case 3 was inert; adding ⚑9 made it real and a fresh DB would
+   have silently stopped one version short while reporting success — the same
+   shape as the outage that bricked the site on restart.
+2. `schemaV1` is frozen history. Adding a column to it double-adds on replay.
+3. `chip.html` used `{{.cls}}` against an exported field `Cls`; templates are
+   case-sensitive, so every page carrying a chip truncated mid-render.
+4. `device.html` referenced `.Weak` on a struct without that field — same
+   silent truncation.
+5. `StateShape` was a plain string, so the status chip printed raw SVG source
+   as visible text.
+6. Frame overlays used `absolute inset-0` with no positioned ancestor, so on a
+   closed venue the shutter covered the entire page.
+7. The CSS budget measured minified bytes. Wrong metric: what a guest on
+   Bosnian mobile data pays for is the gzipped bytes, which is also what the
+   design's §13 states.
+
+The last two were found only by rendering the page and looking at it. Tests
+caught the rest, but none of them would have caught the CSS one.
