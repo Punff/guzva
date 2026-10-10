@@ -63,7 +63,7 @@
 
   <!-- The still. The box is reserved before the bytes land, so nothing shifts
        (§7.7): width/height attributes plus an explicit aspect-ratio. -->
-  <main class="border-2 border-ink bg-s3 shadow-step"
+  <main class="relative border-2 border-ink bg-s3 shadow-step"
         id="frame"
         style="aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}}"
         {{if .HasFrame}}data-ver="{{.StillVer}}"{{else}}data-empty="1"{{end}}>
