@@ -253,14 +253,14 @@
     background-image: repeating-linear-gradient(
       135deg,
       transparent 0 3px,
-      color-mix(in oklab, var(--s1) 45%, transparent) 3px 4px
+      rgba(51, 96, 127, 0.45) 3px 4px
     );
   }
   .tx-hatch-light {
     background-image: repeating-linear-gradient(
       135deg,
       transparent 0 3px,
-      color-mix(in oklab, var(--s1) 22%, transparent) 3px 4px
+      rgba(51, 96, 127, 0.22) 3px 4px
     );
   }
   /* Dither — skeletons and empty states. Static by design (§3.6). */
