@@ -89,3 +89,52 @@
   (alt text, aria-live, reduced-motion), and page metadata.
 - ACTION: verify the page by eye in a browser (the harness had no attached
   browser this session) — particularly the dark mode and the in-place swap.
+
+## 2026-10-10 — overnight: design system (D6), console UX, soak data
+
+Baseline before this block: `e7db280` (PLAN v3.2 + docs/ux.md).
+
+### Ingest journal: the two soak gaps (`0f7feee`)
+
+- `render_ms` on the per-ingest line — the Phase 1 exit gate wants "render
+  ms on the e2-micro" and the metric it used to read was dropped in v3.1.
+  A sub-millisecond render reads 0.1, never absent. Health-only beats carry
+  no field (nothing rendered).
+- `reject=` on 422s. Chasing the standing "2×422, reason unexamined" action:
+  they were `bad_meta`, `capture_id=""`, zero counters, at 16:07/16:25/
+  18:44/18:46 — all inside the buggy `tlsReadUntil` window, before the
+  firmware fix. **Historical, not a live fault.** The reason lived only in
+  quarantine.jsonl; the journal now answers it on its own.
+
+### Design system + consoles (`98133e9`, `1a27c08`, `624dfeb`)
+
+- Tailwind CLI v4.3.3 standalone, vendored as an on-demand download (111 MB
+  would bloat git; `tools/bin/` is gitignored, one pinned version for
+  everyone). `web/input.css` → `internal/webui/app.css` via `make css`;
+  `make css-check` fails the build when the compiled sheet drifts from the
+  tokens or templates, so a hand-edited app.css cannot ship.
+- Consoles serve it embedded at `/admin/app.css` (ETag); the public page
+  *inlines the same bytes*, because D5 allows exactly two files in the web
+  root. Verified unescaped (16 KB inlined, no `ZgotmplZ`), and a test now
+  fails if the public page ever links the console sheet instead.
+- fleet: venue cards with badge/age/edit, device table with hover, RSSI
+  below the −65 install gate called out by name, revoke behind a confirm.
+- device: the 21-row config table is now two labelled groups (Cadence /
+  Sensor) with ranges, and status/FW/RSSI/read-back as a 4-tile summary.
+- Owner panel is Croatian (PLAN §13): dash, login, and the error strings.
+- Bug fixed en route: `/<slug>` without the trailing slash resolved the
+  relative `latest.jpg` to `/latest.jpg` → broken image on the one page a
+  guest sees. Now 301s to the canonical form, query string preserved.
+- Own slip, caught by `make test`: a duplicate `test:` target made make
+  silently run the *first* recipe with a warning. Removed.
+
+### Open
+
+- ACTION: eyeball the live public page and both consoles in a real browser
+  — no browser was attached to this session. Dark mode, in-place swap, and
+  the grouped config form all need human eyes once.
+- ACTION: fleet "needs attention" ordering (stale-first) is designed but
+  not implemented — §11.
+- ACTION: venue description/contact on the public page needs a store
+  migration (v4). Every migration must add its `case N+1` *and* keep
+  `TestReopenCurrentDatabase` green — that gap killed the site once.
