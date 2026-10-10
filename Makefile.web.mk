@@ -17,10 +17,14 @@ TAILWIND_URL     := https://github.com/tailwindlabs/tailwindcss/releases/downloa
 PUBLIC_CSS := internal/webui/public.css
 APP_CSS    := internal/webui/app.css
 
-# Budgets in bytes, minified. DESIGN.md §4 / §13: CI fails above these, so
-# a regression cannot quietly triple the page weight.
-BUDGET_PUBLIC := 8192
-BUDGET_APP    := 30720
+# Budgets are GZIPPED bytes, because that is what a guest on Bosnian mobile
+# data actually pays for and waits on. DESIGN.md §13 states the intent as
+# "CSS ≤ 2.5 KB gz" and "first view ≈ 11 KB" — an uncompressed budget would
+# measure the wrong thing (Tailwind's own preflight alone is several KB and
+# compresses ~4:1). CI fails above these, so a regression cannot quietly
+# triple the page weight.
+BUDGET_PUBLIC_GZ := 4096
+BUDGET_APP_GZ    := 12288
 
 .PHONY: css css-out css-budget
 
@@ -36,14 +40,15 @@ $(TAILWIND):
 	@chmod +x $@
 
 .PHONY: css-budget
-css-budget: ## fail if either stylesheet is over its DESIGN.md budget
+css-budget: ## fail if either stylesheet is over its DESIGN.md gzipped budget
 	@ok=1; \
-	p=$$(wc -c < $(PUBLIC_CSS)); a=$$(wc -c < $(APP_CSS)); \
-	if [ $$p -gt $(BUDGET_PUBLIC) ]; then \
-	  echo "FAIL public.css $$p B > $(BUDGET_PUBLIC) B budget (DESIGN.md §4)"; ok=0; fi; \
-	if [ $$a -gt $(BUDGET_APP) ]; then \
-	  echo "FAIL app.css $$a B > $(BUDGET_APP) B budget (DESIGN.md §4)"; ok=0; fi; \
-	[ $$ok -eq 1 ] && echo "css budgets ok (public $$p B / $(BUDGET_PUBLIC), app $$a B / $(BUDGET_APP))"; \
+	p=$$(gzip -9 -c $(PUBLIC_CSS) | wc -c); a=$$(gzip -9 -c $(APP_CSS) | wc -c); \
+	pm=$$(wc -c < $(PUBLIC_CSS)); am=$$(wc -c < $(APP_CSS)); \
+	if [ $$p -gt $(BUDGET_PUBLIC_GZ) ]; then \
+	  echo "FAIL public.css $$p B gz > $(BUDGET_PUBLIC_GZ) B budget (DESIGN.md §4/§13)"; ok=0; fi; \
+	if [ $$a -gt $(BUDGET_APP_GZ) ]; then \
+	  echo "FAIL app.css $$a B gz > $(BUDGET_APP_GZ) B budget (DESIGN.md §4/§13)"; ok=0; fi; \
+	[ $$ok -eq 1 ] && echo "css budgets ok (public $$pm B raw / $$p B gz of $(BUDGET_PUBLIC_GZ); app $$am B raw / $$a B gz of $(BUDGET_APP_GZ))"; \
 	exit $$((1-ok))
 
 .PHONY: css-check

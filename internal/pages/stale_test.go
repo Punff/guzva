@@ -8,45 +8,40 @@ import (
 	"testing"
 )
 
-// The stale-image bug, pinned.
+// The stale-image bug, pinned — and the fact that the fix has since changed
+// shape. There WAS a "still arriving" veil: a shimmering ::after overlay
+// cleared by a load listener attached AFTER the node was inserted, so a
+// cache-hit image (event already fired) left it spinning forever, and the
+// server-rendered veil had no listener at all until the first successful swap.
 //
-// Two defects made the public page look stuck, both found by watching a real
-// browser for four minutes rather than by reading the code:
-//
-//  1. The "still arriving" veil was cleared by a load listener attached AFTER
-//     the node was inserted, so a cache-hit image (event already fired) left
-//     it spinning; and the server-rendered data-loading="1" had no listener at
-//     all until the first successful swap, so a first-time visitor saw a
-//     permanently shimmering photo.
-//  2. index.html was cached for 30s, so a freshly deployed build (new inlined
-//     CSS, new JS) could stay invisible for up to half a minute.
-func TestPublicPageShipsTheVeilClearer(t *testing.T) {
+// DESIGN.md §3.6 then removed the shimmer entirely — skeletons are a STATIC
+// dither — so there is no veil left to get stuck. The regression that matters
+// is therefore not "the veil clears" but "there is no time-based overlay
+// state at all": the box is reserved by geometry, and only a real state class
+// or a new frame may change it.
+func TestPublicPageHasNoStuckOverlayState(t *testing.T) {
 	f := newFixture(t)
 	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {
 		t.Fatal(err)
 	}
 	idx := f.readIndex(t)
-	// The initial image must be settled on arrival...
-	if !strings.Contains(idx, `settle(document.getElementById('still'))`) {
-		t.Error("page load never settles the server-rendered loading veil")
+	if strings.Contains(idx, "data-loading") {
+		t.Error("page reintroduced a loading veil; §3.6 uses a static dither")
 	}
-	// ...and settle() must handle both already-complete and not-yet-loaded.
-	for _, want := range []string{
-		"function settle(img)",
-		"if (img.complete)",
-		`img.addEventListener('load'`,
-		`img.addEventListener('error'`,
-	} {
-		if !strings.Contains(idx, want) {
-			t.Errorf("veil handling missing %q", want)
-		}
+	// The box is reserved by geometry, so the image never shifts the layout.
+	if !strings.Contains(idx, "aspect-ratio:") {
+		t.Error("frame box is not reserved before the still loads")
+	}
+	// The waiting state is a static dither, not a shimmer (§3.6).
+	if !strings.Contains(idx, "tx-dither") {
+		t.Error("waiting state does not use the static dither")
+	}
+	// Nothing loops forever: the only animation is the 240ms frame blink.
+	if strings.Contains(idx, "infinite") {
+		t.Error("page contains an infinitely looping animation")
 	}
 }
 
-// The cache policy the two files need is opposite, and a single policy for
-// both was the root cause: index.html must revalidate (it is rewritten on
-// every state change and inlines the CSS and JS), while latest.jpg is
-// addressed by a unique ?v= and can therefore be cached forever.
 // The meta refresh must never reach a JS-enabled visitor: with it plainly in
 // <head>, Chrome arms the timer at parse time and neither rewriting the delay
 // nor removing the element afterwards disarms it, so the document reloaded

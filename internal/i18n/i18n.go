@@ -15,6 +15,7 @@ package i18n
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -67,11 +68,11 @@ var hr = &Catalog{
 		"when.today":    "danas",
 		"when.tomorrow": "sutra",
 
-		"late.detail":    "Zadnja slika je iz {time}.",
-		"stale.detail":   "Zadnja slika je iz {time}. Ne mora prikazivati trenutno stanje.",
-		"net.offline":    "Nema internetske veze. Pokušavamo ponovno…",
-		"idle.paused":    "Osvježavanje je pauzirano.",
-		"idle.resume":    "Nastavi",
+		"late.detail":  "Zadnja slika je iz {time}.",
+		"stale.detail": "Zadnja slika je iz {time}. Ne mora prikazivati trenutno stanje.",
+		"net.offline":  "Nema internetske veze. Pokušavamo ponovno…",
+		"idle.paused":  "Osvježavanje je pauzirano.",
+		"idle.resume":  "Nastavi",
 
 		"alt.still":    "Stilizirana slika prostora {venue}, snimljena u {time}",
 		"alt.nowframe": "Stilizirana slika prostora {venue}",
@@ -79,11 +80,11 @@ var hr = &Catalog{
 		"privacy.line": "Slika je namjerno grubo stilizirana radi privatnosti. Izvorne fotografije se ne pohranjuju.",
 		"privacy.note": "Stylised render — the raw camera image is never stored or published.",
 
-		"hours.title": "Radno vrijeme",
+		"hours.title":  "Radno vrijeme",
 		"hours.closed": "Zatvoreno",
 
-		"owner.save":   "Spremi promjene",
-		"owner.saved":  "Promjene su spremljene",
+		"owner.save":       "Spremi promjene",
+		"owner.saved":      "Promjene su spremljene",
 		"owner.health.old": "Slika je stara — što učiniti?",
 	},
 	weekdays: [7]string{
@@ -106,10 +107,10 @@ var en = &Catalog{
 		"state.paused":   "On a break",
 		"state.waiting":  "Waiting for the first picture…",
 
-		"open.until":   "Open until {time}",
-		"open.now":     "Open",
-		"closed.opens": "Opens {when} at {time}",
-		"when.today":   "today",
+		"open.until":    "Open until {time}",
+		"open.now":      "Open",
+		"closed.opens":  "Opens {when} at {time}",
+		"when.today":    "today",
 		"when.tomorrow": "tomorrow",
 
 		"late.detail":  "The last picture is from {time}.",
@@ -124,11 +125,11 @@ var en = &Catalog{
 		"privacy.line": "The picture is deliberately coarsely stylised for privacy. The original photos are not stored.",
 		"privacy.note": "Stylised render — the raw camera image is never stored or published.",
 
-		"hours.title": "Opening hours",
+		"hours.title":  "Opening hours",
 		"hours.closed": "Closed",
 
-		"owner.save":   "Save changes",
-		"owner.saved":  "Changes saved",
+		"owner.save":       "Save changes",
+		"owner.saved":      "Changes saved",
 		"owner.health.old": "The picture is old — what to do?",
 	},
 	weekdays:   [7]string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"},
@@ -200,14 +201,17 @@ func (c *Catalog) Time(t time.Time) string {
 	return t.Format("15:04")
 }
 
-// DayName is the headline's day word: danas/jučer, or a date (§7.3).
+// DayName is the headline's day word: danas/jučer, or a date (DESIGN.md §7.3).
+//
+// Compares calendar days by rounding, not by YearDay: the day number wraps at
+// the new year, so 31 Dec → 1 Jan looked like a 364-day gap and rendered a
+// date instead of "jučer". Rounding also absorbs the 23h/25h days a DST change
+// makes, which Europe/Sarajevo has twice a year.
 func (c *Catalog) DayName(then, now time.Time) string {
-	y, n := then.YearDay(), now.YearDay()
-	sameYear := then.Year() == now.Year()
-	switch {
-	case sameYear && y == n:
+	switch daysApart(then, now) {
+	case 0:
 		return c.Get("when.today")
-	case sameYear && y == n-1:
+	case 1:
 		if c == en {
 			return "yesterday"
 		}
@@ -215,4 +219,13 @@ func (c *Catalog) DayName(then, now time.Time) string {
 	default:
 		return then.Format("02.01.2006.")
 	}
+}
+
+// daysApart is the number of calendar days from then to now in their own
+// locations. Negative when then is in the future.
+func daysApart(then, now time.Time) int {
+	mid := func(t time.Time) time.Time {
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	}
+	return int(math.Round(mid(now).Sub(mid(then)).Hours() / 24))
 }

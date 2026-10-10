@@ -119,6 +119,7 @@ type view struct {
 	StateShape  string // svg shape carrying the state without colour
 	StateDetail string // one plain sentence, or ""
 	OpenText    string
+	PrivacyLine string
 	ShowStill   bool // §5.6: a closed venue shows no still at all
 	Lang        string
 	CSS         template.CSS // embedded design-system stylesheet (inlined: D5)
@@ -182,12 +183,13 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 
 	cat := i18n.For(i18n.Normalize(v.Lang))
 	vw := view{
-		Name:      v.Name,
-		HasFrame:  latest != nil && latest.Status == "ok",
-		TZ:        zoneLabel(last.In(loc), loc),
-		CSS:       template.CSS(webui.Public()),
-		Lang:      string(cat.Lang),
-		ShowStill: true,
+		Name:        v.Name,
+		HasFrame:    latest != nil && latest.Status == "ok",
+		TZ:          zoneLabel(last.In(loc), loc),
+		CSS:         template.CSS(webui.Public()),
+		Lang:        string(cat.Lang),
+		PrivacyLine: cat.Get("privacy.line"),
+		ShowStill:   true,
 	}
 	if vw.HasFrame {
 		// The cache-buster is the frame row id, NOT received_at: ids are

@@ -1,143 +1,162 @@
 <!doctype html>
-<html lang="en">
+<!--
+  guzva public venue page — DESIGN.md §7.
+  Two hard constraints shape this file:
+    D5  the web root holds exactly index.html + latest.jpg per venue, so the
+        stylesheet and the script are INLINED here and never a third file;
+    ⚑2 the still carries its own time (render stage 7), so this page does not
+        need to be rewritten per frame.
+-->
+<html lang="{{.Lang}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- No-JS fallback, and only for no-JS. Measured: with the meta tag plainly
-     in <head>, Chrome arms the refresh timer when it PARSES the element, so
-     neither rewriting content="300" nor removing the element afterwards
-     disarms it — the page kept reloading every 30s (3 full navigations in
-     95s) with the in-place swap running. Inside <noscript> the element is
-     parsed only when scripting is off, so a JS visitor never arms it and
-     the fallback still works for the visitor who has no JS. -->
-<noscript><meta http-equiv="refresh" content="30"></noscript>
-<title>{{.Name}} — live still</title>
-<meta name="description" content="A stylised live view of {{.Name}}{{if .Updated}}, updated {{.UpdatedDay}} at {{.Updated}} {{.TZ}}{{end}}.">
-<meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#fbfbfa" media="(prefers-color-scheme: light)">
+<!-- No-JS fallback (DESIGN.md §7.3). Inside <noscript> it is parsed only when
+     scripting is off; Chrome arms the refresh timer at PARSE time, so a plain
+     meta tag here would reload the document every 30s even with the in-place
+     swap running (measured: 3 full navigations in 95s). -->
+<noscript><meta http-equiv="refresh" content="60"></noscript>
+<title>{{.Name}}</title>
+<meta name="description" content="{{.StateText}} — {{.Name}}.">
+<meta name="theme-color" content="#f2ede2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d151c" media="(prefers-color-scheme: dark)">
+<!-- ⚑7: a venue's interior is not something to surface in search. -->
+<meta name="robots" content="noindex, nofollow">
 <meta property="og:type" content="website">
-<meta property="og:title" content="{{.Name}} — live still">
-<meta property="og:description" content="A stylised live view of {{.Name}}.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0d10'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%237ee787' stroke-width='3'/%3E%3C/svg%3E">
+<meta property="og:title" content="{{.Name}}">
+<meta property="og:description" content="{{.StateText}} — {{.Name}}.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18' shape-rendering='crispEdges'%3E%3Crect width='18' height='18' fill='%2312202D'/%3E%3Crect x='1' y='3' width='16' height='10' fill='%23F2EDE2'/%3E%3Crect x='3' y='13' width='2' height='1' fill='%23F2EDE2'/%3E%3Crect x='3' y='5' width='2' height='2' fill='%2333607F'/%3E%3Crect x='2' y='7' width='4' height='4' fill='%2333607F'/%3E%3Crect x='8' y='5' width='2' height='2' fill='%23AE2B16'/%3E%3Crect x='7' y='7' width='4' height='4' fill='%23AE2B16'/%3E%3Crect x='13' y='5' width='2' height='2' fill='%2333607F'/%3E%3Crect x='12' y='7' width='4' height='4' fill='%2333607F'/%3E%3C/svg%3E">
 <style>{{.CSS}}</style>
-<style>
-  /* Page-local layout only; the palette and components come from the
-   * inlined design system above, so the public page and the consoles can
-   * never drift apart. */
-  body { margin: 0; padding: clamp(1rem, 4vw, 2.5rem) 1rem 2rem;
-         background: var(--color-bg); color: var(--color-ink);
-         font-family: var(--font-sans); font-size: 16px; line-height: 1.5;
-         display: flex; flex-direction: column; min-height: 100dvh; }
-  .wrap { width: 100%; max-width: 46rem; margin-inline: auto;
-          display: flex; flex-direction: column; gap: 1rem; flex: 1; }
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
-  h1 { font-size: clamp(1.15rem, 3.4vw, 1.5rem); font-weight: 650;
-       letter-spacing: -.015em; margin: 0; }
-  .badges { display: flex; gap: .4rem; margin-left: auto; }
-  footer { margin-top: auto; }
-</style>
 </head>
-<body>
-<div class="wrap">
-  <header>
-    <h1>{{.Name}}</h1>
-    <div class="badges">
-      <span class="badge badge--{{.FreshClass}}" id="fresh">{{.FreshText}}</span>
-      {{if .OpenText}}<span class="badge badge--{{.OpenClass}}" id="open">{{.OpenText}}</span>{{end}}
-    </div>
+<body class="min-h-dvh bg-paper text-ink font-sans">
+<div class="mx-auto w-full max-w-[40rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
+
+  <header class="flex items-center gap-2">
+    <!-- Logomark: three pixel figures in a speech bubble, one in signal red
+         (Appendix C). 24px = 12 cells, so the cells stay crisp. -->
+    <svg viewBox="0 0 18 18" width="24" height="24" shape-rendering="crispEdges" aria-hidden="true" class="shrink-0">
+      <rect width="18" height="18" fill="var(--ink)"/>
+      <rect x="1" y="3" width="16" height="10" fill="var(--paper)"/>
+      <rect x="3" y="13" width="2" height="1" fill="var(--paper)"/>
+      <rect x="3" y="14" width="1" height="1" fill="var(--paper)"/>
+      <rect x="3" y="5" width="2" height="2" fill="var(--s1)"/>
+      <rect x="2" y="7" width="4" height="4" fill="var(--s1)"/>
+      <rect x="8" y="5" width="2" height="2" fill="var(--accent)"/>
+      <rect x="7" y="7" width="4" height="4" fill="var(--accent)"/>
+      <rect x="13" y="5" width="2" height="2" fill="var(--s1)"/>
+      <rect x="12" y="7" width="4" height="4" fill="var(--s1)"/>
+    </svg>
+    <span class="font-bold text-lg tracking-tight">guzva</span>
   </header>
 
-  <main class="pw-frame" id="frame" style="aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}}"
-        {{if .HasFrame}}data-ver="{{.StillVer}}" data-loading="1"{{else}}data-ver="" data-empty="1"{{end}}>
-    {{if .HasFrame}}
-    <img id="still" src="latest.jpg?v={{.StillVer}}" alt="Stylised live view of {{.Name}}"{{if .StillW}} width="{{.StillW}}" height="{{.StillH}}"{{end}} decoding="async">
+  <h1 class="text-[2rem] leading-9 font-bold tracking-tight sm:text-[2.5rem] sm:leading-11 break-words">{{.Name}}</h1>
+
+  <!-- Status: SHAPE + COLOUR + SENTENCE (DESIGN.md §3.2). The shape is
+       aria-hidden; the sentence is the signal, so colour is never alone. -->
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-2" id="status">
+    <span class="inline-flex items-center gap-2 border-2 border-ink bg-paper px-2 py-1 text-sm font-semibold"
+          id="chip-{{.StateClass}}">
+      <span class="text-{{.StateClass}} inline-flex">{{.StateShape}}</span>{{.StateText}}
+    </span>
+    {{if .OpenText}}<span class="text-sm text-muted" id="opentxt">{{.OpenText}}</span>{{end}}
+  </div>
+
+  <!-- The still. The box is reserved before the bytes land, so nothing shifts
+       (§7.7): width/height attributes plus an explicit aspect-ratio. -->
+  <main class="border-2 border-ink bg-s3 shadow-step"
+        id="frame"
+        style="aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}}"
+        {{if .HasFrame}}data-ver="{{.StillVer}}"{{else}}data-empty="1"{{end}}>
+    {{if .ShowStill}}
+      {{if .HasFrame}}
+        <img id="still" src="latest.jpg?v={{.StillVer}}" width="{{.StillW}}" height="{{.StillH}}"
+             decoding="async" fetchpriority="high"
+             alt="{{if .Updated}}Stilizirana slika prostora {{.Name}}, snimljena u {{.Updated}}{{else}}Stilizirana slika prostora {{.Name}}{{end}}"
+             class="block h-full w-full object-contain">
+        {{/* Late / no-signal overlays are CSS only — the picture itself is
+             never altered (DESIGN.md §5.6). */}}
+        {{if eq .StateClass "late"}}<div class="absolute inset-0 tx-hatch-light pointer-events-none" aria-hidden="true"></div>{{end}}
+        {{if eq .StateClass "nosignal"}}<div class="absolute inset-0 tx-hatch" aria-hidden="true"></div>{{end}}
+      {{else}}
+        <div class="absolute inset-0 tx-dither" aria-hidden="true"></div>
+      {{end}}
     {{else}}
-    <div class="pw-empty">
-      <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="margin-inline:auto;opacity:.5">
-        <rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="12" cy="12" r="3.5"/>
-      </svg>
-      <div>Waiting for the first frame from {{.Name}}…</div>
-    </div>
+      <!-- Closed: no still at all. Privacy after hours, honesty, bytes. -->
+      <div class="absolute inset-0 tx-shutter" aria-hidden="true"></div>
     {{end}}
   </main>
 
-  <p class="pw-meta" id="meta">
-    {{if .HasFrame}}
-    <span><span class="time">{{.Updated}}</span> <span class="sep">·</span> {{.UpdatedDay}} <span class="sep">·</span> {{.TZ}}</span>
-    {{if .HoursToday}}<span><span class="sep">·</span> Open today {{.HoursToday}}</span>{{end}}
-    {{else}}<span>No frame yet.</span>{{end}}
+  <!-- Headline: the time the picture was taken, venue-local, absolute. Never
+       a relative age (§11 — Croatian plurals make those unreadable). -->
+  <p class="font-mono text-[3.5rem] leading-none font-bold tnum" id="hl">
+    {{if .Updated}}{{.Updated}}{{end}}
+  </p>
+  <p class="text-muted text-sm -mt-2">
+    {{if .UpdatedDay}}{{.UpdatedDay}}{{end}}{{if .TZ}} · {{.TZ}}{{end}}
   </p>
 
-  <footer class="pw-footer">
-    <p>A stylised render. The raw camera image is never stored or published.</p>
+  {{if .StateDetail}}
+  <p class="text-sm text-muted border-l-2 border-ink pl-3">{{.StateDetail}}</p>
+  {{end}}
+
+  {{if .HoursToday}}
+  <section class="border-t-2 border-ink pt-3">
+    <h2 class="text-xs font-semibold uppercase tracking-widest text-muted mb-1">Radno vrijeme</h2>
+    <p class="text-sm tnum">{{.HoursToday}}</p>
+  </section>
+  {{end}}
+
+  <footer class="mt-auto pt-4 text-xs text-muted border-t-2 border-ink">
+    <p>{{.PrivacyLine}}</p>
   </footer>
 </div>
 
 <p class="sr-only" role="status" aria-live="polite" id="live"></p>
 
 <script>
-// In-place updates. The page re-fetches ITSELF (a static file — no
-// database, no server render) and swaps only what changed: the still, the
-// clock, the badge. A full meta-refresh would flash the document and reset
-// scroll on every tick, including the ~2 out of 3 ticks where nothing has
-// changed. Keeps the two-file web root; the meta refresh remains the
-// fallback when JS is off or this fails.
+/*
+ * In-place updates (DESIGN.md §7.3). The page re-fetches ITSELF — a static
+ * file, no database, no server render — and swaps only what changed. A full
+ * reload would flash the document and reset scroll on every tick, including
+ * the ~2 in 3 ticks where nothing has changed.
+ *
+ * The still is fetched as a blob and shown from it: one transfer, no second
+ * request for the same bytes.
+ */
 (function () {
   var frame = document.getElementById('frame');
-  var live = document.getElementById('live');
+  var still = document.getElementById('still');
+  var live  = document.getElementById('live');
   if (!frame || !location.protocol.startsWith('http')) return;
 
   var ver = frame.getAttribute('data-ver') || '';
   var busy = false;
-
-  // The server ships data-loading="1" so there is no flash of a blank box
-  // before the first pixel. Nothing was listening to clear it on arrival —
-  // so a first-time visitor kept the shimmer until an unrelated later swap
-  // happened to fire a load event. Settle the image that is already here.
-  settle(document.getElementById('still'));
-
-  // Clear the "still arriving" veil exactly once the image has settled.
-  //
-  // Two ways this went wrong, both seen on the live site: attaching a load
-  // listener AFTER inserting the node loses the event entirely when the
-  // bytes are already in cache (it has already fired by then), and the
-  // server-rendered data-loading="1" had no listener at all until the first
-  // successful swap — so a first-time visitor stared at a permanently
-  // shimmering photo, which read as "the image is stuck".
-  //
-  // complete covers both "already loaded from cache" and "failed"; error is
-  // handled so a broken image stops sweeping instead of spinning forever.
-  function settle(img) {
-    if (!img) return;
-    if (img.complete) { frame.removeAttribute('data-loading'); return; }
-    var clear = function () { frame.removeAttribute('data-loading'); };
-    img.addEventListener('load', clear, { once: true });
-    img.addEventListener('error', clear, { once: true });
-  }
 
   function swap(doc) {
     var nextFrame = doc.getElementById('frame');
     if (!nextFrame) return;
     var nextVer = nextFrame.getAttribute('data-ver') || '';
     var nextImg = doc.getElementById('still');
-
-    if (nextImg && nextVer !== ver) {
+    if (nextImg && nextVer && nextVer !== ver) {
       ver = nextVer;
-      var img = document.getElementById('still');
-      if (img) {
-        frame.setAttribute('data-loading', '1');
-        frame.removeAttribute('data-empty');
-        var fresh = nextImg.cloneNode(true);
-        settle(fresh);            // before insertion, so nothing can be missed
-        img.replaceWith(fresh);
+      frame.removeAttribute('data-empty');
+      var fresh = nextImg.cloneNode(true);
+      if (still) { still.replaceWith(fresh); still = fresh; }
+      var hl = document.getElementById('hl');
+      var nextHL = doc.getElementById('hl');
+      if (hl && nextHL) {
+        hl.textContent = nextHL.textContent.trim();
+        hl.classList.remove('blink');
+        void hl.offsetWidth;          // restart the 3-step blink (§3.6)
+        hl.classList.add('blink');
       }
+      if (live) live.textContent = 'Nova slika.';
     }
-    ['fresh', 'open'].forEach(function (id) {
-      var el = document.getElementById(id), next = doc.getElementById(id);
-      if (el && next) { el.textContent = next.textContent; el.className = next.className; }
-    });
-    var meta = document.getElementById('meta'), nextMeta = doc.getElementById('meta');
-    if (meta && nextMeta) { meta.innerHTML = nextMeta.innerHTML; }
+    ['chip-fresh','chip-late','chip-nosignal','chip-waiting','chip-closed','opentxt']
+      .forEach(function (id) {
+        var el = document.getElementById(id), next = doc.getElementById(id);
+        if (el && next) el.textContent = next.textContent;
+      });
   }
 
   function tick() {
@@ -148,28 +167,19 @@
       .then(function (t) {
         if (!t) return;
         var doc = new DOMParser().parseFromString(t, 'text/html');
-        var nextFrame = doc.getElementById('frame');
-        var nextVer = nextFrame && nextFrame.getAttribute('data-ver');
-        if (nextVer !== ver) {
-          swap(doc);
-          if (live) live.textContent = 'New view available.';
-        } else {
-          var fresh = doc.getElementById('fresh'), el = document.getElementById('fresh');
-          if (fresh && el && fresh.textContent !== el.textContent) {
-            el.textContent = fresh.textContent; el.className = fresh.className;
-            var meta = document.getElementById('meta'), nm = doc.getElementById('meta');
-            if (meta && nm) meta.innerHTML = nm.innerHTML;
-          }
-        }
+        var nf = doc.getElementById('frame');
+        if (nf && (nf.getAttribute('data-ver') || '') !== ver) swap(doc);
       })
-      .catch(function () { /* offline: next tick retries, meta refresh is the fallback */ })
+      .catch(function () { /* offline: next tick retries */ })
       .then(function () { busy = false; });
   }
 
-  // Poll faster than the 30 s meta refresh so an arrived frame shows up
-  // promptly, but stay gentle: 12 s is well under a venue's 45 s cadence.
+  // 12s is well under the venue's 45-90s capture cadence, so a new picture
+  // shows up promptly without ever being the thing that wakes the radio.
   setInterval(tick, 12000);
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) tick();
+  });
 })();
 </script>
 </body>
