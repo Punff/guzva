@@ -114,10 +114,10 @@ type view struct {
 
 	// DESIGN.md §3.2: a state is a SHAPE, a COLOUR and a SENTENCE. Colour is
 	// never the only signal, so all three travel together.
-	StateClass  string // fresh | late | nosignal | waiting | closed
-	StateText   string // Croatian (or per-venue English) from internal/i18n
-	StateShape  string // svg shape carrying the state without colour
-	StateDetail string // one plain sentence, or ""
+	StateClass  string        // fresh | late | nosignal | waiting | closed
+	StateText   string        // Croatian (or per-venue English) from internal/i18n
+	StateShape  template.HTML // svg shape carrying the state without colour
+	StateDetail string        // one plain sentence, or ""
 	OpenText    string
 	PrivacyLine string
 	ShowStill   bool // §5.6: a closed venue shows no still at all
