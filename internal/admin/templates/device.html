@@ -7,7 +7,7 @@
 </head>
 <body class="bg-paper text-ink font-sans">
 <div class="mx-auto w-full max-w-[52rem] px-4 py-6 sm:px-6">
-{{template "page-head.html" dict "title" .Device.Serial "signOut" "/admin/logout"}}
+{{template "page-head.html" dict "title" .Device.Serial "trailHref" "/admin/" "trailText" "fleet" "signOut" "/admin/logout"}}
 
 <div id="flash">
   {{if .Saved}}<div class="card card--inset text-sm" role="status">Config saved as ver {{.Cfg.Ver}} — the device applies it on its next POST.</div>{{end}}

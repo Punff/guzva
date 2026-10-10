@@ -7,7 +7,7 @@
 </head>
 <body class="bg-paper text-ink font-sans">
 <div class="mx-auto w-full max-w-[44rem] px-4 py-6 sm:px-6">
-{{template "page-head.html" dict "title" .Venue.Name "signOut" "/admin/logout"}}
+{{template "page-head.html" dict "title" .Venue.Name "trailHref" "/admin/" "trailText" "fleet" "signOut" "/admin/logout"}}
 
 <div id="flash">
   {{if .Saved}}<div class="card card--inset text-sm" role="status">Saved — live on the next device POST where applicable.</div>{{end}}
