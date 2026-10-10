@@ -172,6 +172,12 @@ func serveMain(args []string) int {
 		log.Error("admin init", "err", err.Error())
 		return 1
 	}
+	// GUZVA_KIT=1 enables the component gallery at /admin/_kit (dev builds
+	// only — never on the production box).
+	if os.Getenv("GUZVA_KIT") == "1" {
+		adm.Kit = true
+		log.Info("component kit enabled at /admin/_kit")
+	}
 
 	started := time.Now()
 	mux := newMux(ing, adm, pub.Root(), healthzHandler(*dataDir, started))

@@ -515,3 +515,32 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// The kit gallery is dev-only: without the flag the route 404s even for a
+// logged-in admin, because a gallery of all states is a confusing surface to
+// leave on a production box.
+func TestKitGated(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	ck := f.login(t)
+	w := f.do(t, http.MethodGet, "/admin/_kit", nil, ck, false)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("kit without flag = %d, want 404", w.Code)
+	}
+	f.s.Kit = true
+	w = f.do(t, http.MethodGet, "/admin/_kit", nil, ck, false)
+	body := w.Body.String()
+	if w.Code != http.StatusOK {
+		t.Fatalf("kit with flag = %d", w.Code)
+	}
+	// Every component renders: chips in all four states, cards, buttons,
+	// inputs, table, textures. A missing partial fails here, not on the box.
+	for _, want := range []string{
+		"Svježa slika", "Slika kasni", "Nema nove slike", "Čekamo prvu sliku",
+		"card--raised", "card--inset", "btn--primary", "btn--danger",
+		"tbl", "tx-hatch", "tx-dither", "tx-shutter",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("kit page missing %q", want)
+		}
+	}
+}

@@ -34,9 +34,13 @@ type Server struct {
 	loginLim  *auth.Limiter
 	passHash  string
 	secure    bool // cookie Secure flag: only when the listener speaks TLS
-	tmpl      *template.Template
-	log       *slog.Logger
-	now       func() time.Time
+	// Kit enables the component gallery at /admin/_kit (DESIGN.md §6/B1).
+	// Dev builds only: it exists so a solo builder can eyeball every state,
+	// not as a product surface. Set from GUZVA_KIT=1.
+	Kit  bool
+	tmpl *template.Template
+	log  *slog.Logger
+	now  func() time.Time
 }
 
 // New builds the admin server. passHash is the bcrypt hash from
@@ -50,7 +54,10 @@ func New(st *store.Store, passHash string, secret []byte, secure bool, log *slog
 	// partial like page-head can be called with named values instead of a
 	// positional soup. It panics on a bad call at TEMPLATE EXECUTION time,
 	// so the pairings are unit-tested rather than discovered in production.
-	funcs := template.FuncMap{"dict": dict, "appCSS": webui.AppPath}
+	// shape resolves a status class to its silhouette (DESIGN.md §3.2). One
+	// source of truth: the fleet, the owner panel and the kit gallery all
+	// render through it, so a class can never gain the wrong shape.
+	funcs := template.FuncMap{"dict": dict, "appCSS": webui.AppPath, "shape": shape}
 	tmpl, err := template.New("").Funcs(funcs).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("admin: parse templates: %w", err)
@@ -96,6 +103,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/devices/{id}", s.require(s.devicePage))
 	mux.HandleFunc("POST /admin/devices/{id}/cfg", s.require(s.updateDeviceCfg))
 	mux.HandleFunc("POST /admin/devices/{id}/revoke", s.require(s.revokeDevice))
+	mux.HandleFunc("GET /admin/_kit", s.require(s.kit))
 	s.registerOwner(mux)
 }
 
@@ -224,9 +232,8 @@ type venueView struct {
 // (DESIGN.md §3.2). Shape is markup and must not be escaped; text is the
 // signal a screen reader reads, so the state never depends on colour.
 type chip struct {
-	Cls   string
-	Shape template.HTML
-	Text  string
+	Cls  string
+	Text string
 }
 
 type fleetModel struct {
@@ -275,13 +282,13 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 		}
 		switch venue.Classify(v.LastFrameAt, now) {
 		case venue.Fresh:
-			vv.Fresh = chip{"fresh", shapeFresh, "Fresh"}
+			vv.Fresh = chip{"fresh", "Fresh"}
 		case venue.Late:
-			vv.Fresh = chip{"late", shapeLate, "Late"}
+			vv.Fresh = chip{"late", "Late"}
 		case venue.Stale:
-			vv.Fresh = chip{"stale", shapeNoSignal, "No signal"}
+			vv.Fresh = chip{"stale", "No signal"}
 		default:
-			vv.Fresh = chip{"unknown", shapeWaiting, "No frame yet"}
+			vv.Fresh = chip{"unknown", "No frame yet"}
 		}
 		model.Venues = append(model.Venues, vv)
 	}
@@ -720,4 +727,36 @@ func dict(pairs ...any) map[string]any {
 		m[k] = pairs[i+1]
 	}
 	return m
+}
+
+// kit renders the component gallery (DESIGN.md §6/B1): every component, both
+// themes, each state — the visual regression check for a solo builder. Gated
+// on Server.Kit (GUZVA_KIT=1): without it the route 404s, because a gallery
+// of all states is a confusing surface to leave on a production box.
+func (s *Server) kit(w http.ResponseWriter, r *http.Request) {
+	if !s.Kit {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if err := s.tmpl.ExecuteTemplate(w, "kit.html", nil); err != nil {
+		s.log.Error("admin: render kit", "err", err.Error())
+	}
+}
+
+// shape maps a status class to its silhouette. Unknown classes get the
+// waiting dither — a missing shape must read as "unknown", never as a blank
+// chip that implies a state it does not have.
+func shape(cls string) template.HTML {
+	switch cls {
+	case "fresh":
+		return shapeFresh
+	case "late":
+		return shapeLate
+	case "stale", "closed":
+		return shapeNoSignal
+	default:
+		return shapeWaiting
+	}
 }

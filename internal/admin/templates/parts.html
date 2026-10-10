@@ -36,5 +36,7 @@
 
 {{define "flash.html"}}{{if .}}<div class="card card--inset text-sm mb-4" role="alert">{{.}}</div>{{end}}{{end}}
 
-{{/* Status chip. Call with admin.chip (Cls, Shape, Text). */}}
-{{define "chip.html"}}<span class="chip"><span class="inline-flex text-{{.Cls}}" aria-hidden="true">{{.Shape}}</span>{{.Text}}</span>{{end}}
+{{/* Status chip. Call with Cls + Text (admin.chip, or a dict in the kit
+     gallery); the shape is looked up from the class so text and silhouette
+     can never disagree. */}}
+{{define "chip.html"}}<span class="chip"><span class="inline-flex text-{{.Cls}}" aria-hidden="true">{{shape .Cls}}</span>{{.Text}}</span>{{end}}

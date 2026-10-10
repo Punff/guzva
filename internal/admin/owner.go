@@ -145,16 +145,16 @@ func (s *Server) ownerDash(w http.ResponseWriter, r *http.Request, v *store.Venu
 	}
 	switch {
 	case v.LastFrameAt.IsZero():
-		m.State = chip{"unknown", shapeWaiting, cat.Get("state.waiting")}
+		m.State = chip{"unknown", cat.Get("state.waiting")}
 		m.Summary = cat.Get("state.waiting")
 	case fresh == venue.Fresh:
-		m.State = chip{"fresh", shapeFresh, cat.Get("state.fresh")}
+		m.State = chip{"fresh", cat.Get("state.fresh")}
 		m.Summary = cat.F("owner.fresh", clock)
 	case fresh == venue.Late:
-		m.State = chip{"late", shapeLate, cat.Get("state.late")}
+		m.State = chip{"late", cat.Get("state.late")}
 		m.Summary = cat.F("owner.late", clock)
 	default:
-		m.State = chip{"stale", shapeNoSignal, cat.Get("state.nosignal")}
+		m.State = chip{"stale", cat.Get("state.nosignal")}
 		m.Summary = cat.F("owner.stale", clock)
 	}
 

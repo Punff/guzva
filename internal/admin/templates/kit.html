@@ -1,0 +1,83 @@
+{{define "kit.html"}}<!doctype html>
+<html lang="en">
+<head>
+{{template "shell-head.html" .}}
+<title>guzva — component kit</title>
+</head>
+<body class="bg-paper text-ink font-sans">
+<div class="mx-auto w-full max-w-[56rem] px-4 py-6 sm:px-6">
+{{template "page-head.html" dict "title" "Component kit" "trailHref" "/admin/" "trailText" "fleet" "signOut" "/admin/logout"}}
+
+<p class="text-sm text-muted mb-8">Every component, both themes (toggle your system), each state. If something looks off here, it is off everywhere — fix the component, not the page. <span class="tnum">app.css gz: budgets enforced by make css.</span></p>
+
+<section class="mb-8">
+{{template "section-head.html" "Status chips (shape + colour + sentence)"}}
+<div class="flex flex-wrap gap-2">
+  {{template "chip.html" dict "Cls" "fresh" "Text" "Svježa slika"}}
+  {{template "chip.html" dict "Cls" "late" "Text" "Slika kasni"}}
+  {{template "chip.html" dict "Cls" "stale" "Text" "Nema nove slike"}}
+  {{template "chip.html" dict "Cls" "unknown" "Text" "Čekamo prvu sliku…"}}
+</div>
+</section>
+
+<section class="mb-8">
+{{template "section-head.html" "Cards"}}
+<div class="grid gap-4 sm:grid-cols-2">
+  <div class="card card--raised"><strong>Raised card.</strong> The one thing a page is about.</div>
+  <div class="card card--inset"><strong>Inset card.</strong> Secondary surfaces: forms, panels, empty states.</div>
+  <div class="card"><strong>Flat card.</strong> Grouping without depth.</div>
+  <div class="card card--inset"><div class="tx-dither h-16 mb-2" aria-hidden="true"></div><span class="text-sm text-muted">Empty state: dither + one sentence + one action.</span></div>
+</div>
+</section>
+
+<section class="mb-8">
+{{template "section-head.html" "Buttons"}}
+<div class="flex flex-wrap gap-2 items-center">
+  <button class="btn btn--primary" type="button">Primary</button>
+  <button class="btn" type="button">Secondary</button>
+  <button class="btn btn--danger" type="button">Danger</button>
+  <button class="btn btn--quiet" type="button">Quiet</button>
+</div>
+<p class="text-xs text-muted mt-2">44 px targets. Press collapses the shadow 2 px. Focus ring: 3 px accent + paper gap.</p>
+</section>
+
+<section class="mb-8">
+{{template "section-head.html" "Inputs"}}
+<div class="grid gap-3 max-w-xl">
+  <div class="fieldset"><label class="lbl" for="k-text">Label</label><input class="inp" id="k-text" value="Europe/Sarajevo"></div>
+  <div class="fieldset"><label class="lbl" for="k-sel">Select</label><select class="inp" id="k-sel"><option>Tisak (4 tones)</option><option>Šablon (2 tones)</option></select></div>
+  <div class="fieldset"><label class="lbl" for="k-err">With error</label><input class="inp" id="k-err" value="Mo-Fr 25:00" aria-invalid="true" style="border-color:var(--accent)"><span class="text-sm" style="color:var(--accent)">Friday closes at 25:00 — hours are 00:00–24:00.</span></div>
+</div>
+</section>
+
+<section class="mb-8">
+{{template "section-head.html" "Table"}}
+<table class="tbl tbl--bare">
+  <thead><tr><th>Venue</th><th>State</th><th class="tnum">Signal</th></tr></thead>
+  <tbody>
+    <tr><td class="font-mono">bench</td><td style="color:var(--fresh)">active</td><td class="tnum">−74 dBm</td></tr>
+    <tr><td class="font-mono">jadro</td><td class="text-muted">revoked</td><td class="tnum">—</td></tr>
+  </tbody>
+</table>
+<p class="text-xs text-muted mt-2">Stripes + header from .tbl. Numbers tabular, always shown beside words.</p>
+</section>
+
+<section class="mb-8">
+{{template "section-head.html" "Textures"}}
+<div class="grid grid-cols-3 gap-2">
+  <div class="border-2 border-ink h-16 tx-hatch" title="hatch"></div>
+  <div class="border-2 border-ink h-16 tx-dither" title="dither"></div>
+  <div class="border-2 border-ink h-16 tx-shutter" title="shutter"></div>
+</div>
+<p class="text-xs text-muted mt-2">Hatch (stale overlay) · dither (skeleton) · shutter (closed). CSS only, ~100 B each, static.</p>
+</section>
+
+<section class="mb-8">
+{{template "section-head.html" "Flash"}}
+<div class="card card--inset text-sm" role="status">Promjene su spremljene.</div>
+</section>
+
+{{template "shell-foot.html" .}}
+</div>
+</body>
+</html>{{end}}
