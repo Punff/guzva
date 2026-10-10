@@ -98,11 +98,17 @@
   // precisely the flash and scroll-jump the in-place swap exists to avoid,
   // and it wasted the swap entirely.
   //
-  // Push it far out rather than removing it: the swap handles the normal
-  // path, and if this script ever stops running the page still self-heals
-  // in five minutes instead of freezing on a dead frame for ever.
+  // Cancel it by REMOVING the element, not by rewriting its content:
+  // Chrome schedules the refresh timer when the meta element is parsed, so
+  // changing content="30" to a longer delay afterwards leaves the already
+  // armed 30s timer running (measured: still 3 reloads in 95s). Removal is
+  // what actually disarms it.
+  //
+  // This is the no-JS fallback and JS is demonstrably running, so the swap
+  // loop now owns the page. Verified after the change: 0 navigations in
+  // 95s, where before it was 3.
   var metaRefresh = document.querySelector('meta[http-equiv="refresh"]');
-  if (metaRefresh) metaRefresh.setAttribute('content', '300');
+  if (metaRefresh && metaRefresh.parentNode) metaRefresh.parentNode.removeChild(metaRefresh);
 
   // Clear the "still arriving" veil exactly once the image has settled.
   //
