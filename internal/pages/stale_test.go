@@ -129,7 +129,7 @@ func TestPageSecurityHeadersAndCSP(t *testing.T) {
 	if strings.Contains(csp, "unsafe-inline") || strings.Contains(csp, "unsafe-eval") {
 		t.Errorf("CSP relies on unsafe-inline, which makes it decorative: %s", csp)
 	}
-	for _, want := range []string{"default-src 'none'", "style-src 'sha256-", "script-src 'sha256-", "frame-ancestors 'none'", "base-uri 'none'"} {
+	for _, want := range []string{"default-src 'none'", "style-src", "script-src", "sha256-", "frame-ancestors 'none'", "base-uri 'none'"} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CSP missing %q: %s", want, csp)
 		}
@@ -140,6 +140,16 @@ func TestPageSecurityHeadersAndCSP(t *testing.T) {
 		sum := sha256.Sum256([]byte(inlineBody(t, f.readIndex(t), tag)))
 		if !strings.Contains(csp, base64.StdEncoding.EncodeToString(sum[:])) {
 			t.Errorf("CSP hash for <%s> does not match the served page", tag)
+		}
+	}
+	// The inline style ATTRIBUTE needs 'unsafe-hashes' AND its own hash; the
+	// frame box's aspect-ratio is the one style attribute on the page.
+	if !strings.Contains(csp, "'unsafe-hashes'") {
+		t.Error("CSP cannot authorise the frame box's inline aspect-ratio")
+	}
+	for _, h := range styleAttrHashes([]byte(f.readIndex(t))) {
+		if !strings.Contains(csp, h) {
+			t.Errorf("CSP is missing the hash for a style attribute: %s", h)
 		}
 	}
 }

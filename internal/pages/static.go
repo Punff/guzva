@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -193,13 +194,34 @@ func buildCSP(page []byte) string {
 	var sb strings.Builder
 	sb.WriteString("default-src 'none'; img-src 'self' data:; connect-src 'self'; " +
 		"base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
-	for _, tag := range []string{"style", "script"} {
-		for _, h := range inlineHashes(page, tag) {
-			sb.WriteString("; " + tag + "-src 'sha256-" + h + "'")
-		}
+	// 'unsafe-hashes' is required for hashes to apply to style ATTRIBUTES;
+	// without it the browser rejects the page's one inline style (the frame
+	// box's aspect-ratio) and logs a violation. The value still has to match,
+	// so this is not a blanket allow — it is the hash list that decides.
+	sb.WriteString("; style-src 'unsafe-hashes'")
+	for _, h := range append(inlineHashes(page, "style"), styleAttrHashes(page)...) {
+		sb.WriteString(" 'sha256-" + h + "'")
+	}
+	sb.WriteString("; script-src 'unsafe-hashes'")
+	for _, h := range inlineHashes(page, "script") {
+		sb.WriteString(" 'sha256-" + h + "'")
 	}
 	return sb.String()
 }
+
+// styleAttrHashes returns the base64 sha256 of every style="" value, which
+// CSP needs alongside 'unsafe-hashes'. The page has exactly one (the frame
+// box's aspect-ratio) and it is derived from the render's dimensions.
+func styleAttrHashes(page []byte) []string {
+	var out []string
+	for _, m := range styleAttrRe.FindAllSubmatch(page, -1) {
+		sum := sha256.Sum256(m[1])
+		out = append(out, base64.StdEncoding.EncodeToString(sum[:]))
+	}
+	return out
+}
+
+var styleAttrRe = regexp.MustCompile(`(?s)style="([^"]*)"`)
 
 // inlineHashes returns the base64 sha256 of every <tag>…</tag> body in page.
 func inlineHashes(page []byte, tag string) []string {

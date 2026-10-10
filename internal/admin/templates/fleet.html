@@ -28,7 +28,7 @@
     <a class="inline-flex items-center justify-center border-2 border-ink bg-paper px-3 min-h-11 text-sm font-semibold shadow-step-sm tap" href="/admin/venues/{{.ID}}">Edit</a>
   </div>
   {{if .Devices}}
-  <div class="overflow-x-auto">
+  <div class="hidden md:block">
   <table class="w-full text-sm border-2 border-ink">
     <thead>
       <tr class="bg-paper-2 text-left">
@@ -69,6 +69,32 @@
     </tbody>
   </table>
   </div>
+
+  <div class="grid gap-2 md:hidden">
+    {{range .Devices}}
+    <div class="border-2 border-ink bg-paper-2 p-3">
+      <div class="flex items-baseline justify-between gap-2">
+        <a class="font-mono font-bold hover:underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a>
+        <span class="text-sm font-semibold" style="color:{{if eq .Status "active"}}var(--fresh){{else}}var(--muted){{end}}">{{.Status}}</span>
+      </div>
+      <div class="text-sm text-muted mt-1 flex flex-wrap gap-x-3 gap-y-1">
+        {{if .FW}}<span>fw {{.FW}}</span>{{end}}
+        <span class="tnum"{{if .Weak}} style="color:var(--accent)"{{end}}>{{.RSSIText}}</span>
+        <span>{{.SeenAge}}</span>
+        <span class="tnum"{{if .Amber}} style="color:var(--late)"{{end}}>config {{.CfgVer}}/{{.CfgApplied}}</span>
+      </div>
+      <div class="text-xs text-muted mt-1">
+        {{.Counters.JoinFail}} wifi · {{.Counters.PostFail}} upload · {{.Counters.TLSFail}} tls
+        <span class="block">failed since last boot</span>
+      </div>
+      {{if eq .Status "active"}}
+      <form class="mt-2" method="post" hx-post="/admin/devices/{{.ID}}/revoke" hx-confirm="Revoke {{.Serial}}? It stops being able to post.">
+        <button class="inline-flex items-center justify-center border-2 border-accent text-accent px-4 min-h-11 w-full text-sm font-semibold tap" type="submit">Revoke</button>
+      </form>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
   {{else}}
   <div class="tx-dither border-2 border-ink p-4 text-sm text-muted">No devices yet — mint one below.</div>
   {{end}}
@@ -92,7 +118,7 @@
       <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-name">Name</label>
       <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-name" name="name" placeholder="Jadro" required>
     </div>
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <div class="grid gap-1">
         <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-tz">Timezone</label>
         <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-tz" name="tz" value="Europe/Sarajevo">
