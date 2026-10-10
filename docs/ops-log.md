@@ -155,3 +155,61 @@ Checked against the running box, not the local build:
 
 Note: `/owner/<slug>` is not a route — the owner login is one page at
 `/owner/login` with the slug as a form field. A 404 there is correct.
+
+## 2026-10-10 — browser verification + stale-image fix
+
+No browser is attached to this session (the Code Mode `browser` namespace and
+OpenChamber's `browser.*` actions are both absent, and no MCP server exposes
+one). Worked around rather than waited on: Chrome 153 from
+`~/.cache/puppeteer` driven over the DevTools protocol with
+`/tmp/opencode/cdp.mjs` — dark-mode emulation, authenticated screenshots,
+console errors, failed requests. Reusable; no install.
+
+### What looking at it found (`593b0a1`, deployed + verified)
+
+- Config range hints printed ONE bound ("30" under interval_s, "4" under
+  quality, which read as a fourth option). Now `min…max` from one place.
+- A board that had never checked in rendered "0 dBm" — a perfect reading for
+  a device that had never spoken. Now "—", and gate styling keys off a Weak
+  flag so an absent reading cannot be graded.
+- Every console load 404'd on /favicon.ico.
+
+### Stale images (`620a4ea`, deployed + verified)
+
+Reported as "stale images, struggles picking it up again after a new deploy".
+Reproduced by watching a real browser for four minutes instead of curl:
+
+- The bytes WERE current, but `data-loading` stayed "1" on nearly every
+  sample — including samples with `complete=true, naturalWidth=640`. The
+  photo was up to date and *veiled*, which reads as stuck.
+  - the load listener was attached AFTER insertion, so a cache-hit image
+    (event already fired) left the veil on;
+  - the server renders `data-loading="1"` to avoid a blank-box flash, and
+    NOTHING settled it on arrival, so a first-time visitor kept the shimmer
+    until an unrelated later swap fired a load.
+  Fixed with a `settle()` helper (complete / load / error).
+- One cache policy for two file kinds, wrong for both:
+  - index.html `public,max-age=30` — it is rewritten on every state change
+    and inlines the CSS and JS, so that window is "the deploy is invisible".
+    Now `no-cache` (revalidates; the common case is a cheap 304).
+  - latest.jpg is addressed by a unique ?v=, so its bytes can never change
+    under that URL. Now `immutable` for a year.
+- The cache-buster was received_at in SECONDS. Under a year-long immutable
+  cache, two frames in the same second would pin a stale photo permanently.
+  It is now the frame row id — unique, monotonic, collision impossible.
+
+Re-verified cold: first sample is `loading=null` (was `1`), headers are
+`no-cache` / `immutable`. The swap path could not be re-verified live
+because the board went silent at 09:18:37 (RSSI −71…−78, the known marginal
+bench link) — the page correctly held the last frame and flipped to STALE,
+which is the system being honest rather than broken.
+
+- ACTION: owner password for `bench` is set in the DB but `bench-owner-01`
+  no longer authenticates — rotated at some point. Needs the real value, or
+  permission to reset it. Owner DASHBOARD is therefore still unverified.
+- ACTION: bench board post_fail/tls_fail climb steadily (p44 t42 since boot
+  211). Consistent with the weak link; a real install must clear the
+  RSSI ≥ −65 gate.
+- ACTION: mobile public page has a large gap between the timestamp and the
+  footer (footer pinned to viewport bottom). Design call, not a bug —
+  confirm it is wanted.
