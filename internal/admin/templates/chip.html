@@ -1,8 +1,0 @@
-{{define "chip.html"}}
-{{/* A state is SHAPE + COLOUR + SENTENCE (DESIGN.md §3.2). The shape is
-     aria-hidden; the words carry the state, so colour is never alone.
-     Call with admin.chip, whose fields are exported: Cls, Shape, Text. */}}
-<span class="inline-flex items-center gap-2 border-2 border-ink bg-paper px-2 py-1 text-sm font-semibold">
-  <span class="inline-flex text-{{.Cls}}" aria-hidden="true">{{.Shape}}</span>{{.Text}}
-</span>
-{{- end}}

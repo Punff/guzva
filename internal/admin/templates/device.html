@@ -7,23 +7,18 @@
 </head>
 <body class="bg-paper text-ink font-sans">
 <div class="mx-auto w-full max-w-[52rem] px-4 py-6 sm:px-6">
-<header class="flex flex-wrap items-center justify-between gap-3 py-2 mb-5">
-  <h1 class="text-2xl font-bold tracking-tight"><a href="/admin/" class="text-muted hover:underline">fleet</a> / <code class="font-mono">{{.Device.Serial}}</code></h1>
-  <form method="post" action="/admin/logout" class="inline">
-    <button class="inline-flex items-center justify-center border-2 border-ink bg-paper px-4 min-h-11 text-sm font-semibold shadow-step-sm tap" type="submit">Sign out</button>
-  </form>
-</header>
+{{template "page-head.html" dict "title" .Device.Serial "signOut" "/admin/logout"}}
 
 <div id="flash">
-  {{if .Saved}}<div class="border-2 border-ink bg-paper px-3 py-2 text-sm" role="status">Config saved as ver {{.Cfg.Ver}} — the device applies it on its next POST.</div>{{end}}
+  {{if .Saved}}<div class="card card--inset text-sm" role="status">Config saved as ver {{.Cfg.Ver}} — the device applies it on its next POST.</div>{{end}}
 </div>
 
 <section class="border-2 border-ink bg-paper shadow-step p-4 mb-5">
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-    <div><div class="text-xs font-semibold uppercase tracking-widest text-muted">Status</div><div class="font-semibold" style="color:{{if eq .Device.Status "active"}}var(--fresh){{else}}var(--muted){{end}}">{{.Device.Status}}</div></div>
-    <div><div class="text-xs font-semibold uppercase tracking-widest text-muted">Firmware</div><div>{{if .Device.FW}}{{.Device.FW}}{{else}}—{{end}}</div></div>
-    <div><div class="text-xs font-semibold uppercase tracking-widest text-muted">Signal</div><div class="tnum"{{if .Weak}} style="color:var(--accent)" title="Below the −65 dBm install gate"{{end}}>{{if not .Seen}}—{{else}}{{.Device.RSSI}} dBm{{end}}</div></div>
-    <div><div class="text-xs font-semibold uppercase tracking-widest text-muted">Config</div><div class="tnum"{{if .Amber}} style="color:var(--late)" title="device has not applied the latest config"{{end}}>{{.Device.CfgVer}} / {{.Device.CfgAppliedVer}}</div></div>
+    <div><div class="lbl">Status</div><div class="font-semibold" style="color:{{if eq .Device.Status "active"}}var(--fresh){{else}}var(--muted){{end}}">{{.Device.Status}}</div></div>
+    <div><div class="lbl">Firmware</div><div>{{if .Device.FW}}{{.Device.FW}}{{else}}—{{end}}</div></div>
+    <div><div class="lbl">Signal</div><div class="tnum"{{if .Weak}} style="color:var(--accent)" title="Below the −65 dBm install gate"{{end}}>{{if not .Seen}}—{{else}}{{.Device.RSSI}} dBm{{end}}</div></div>
+    <div><div class="lbl">Config</div><div class="tnum"{{if .Amber}} style="color:var(--late)" title="device has not applied the latest config"{{end}}>{{.Device.CfgVer}} / {{.Device.CfgAppliedVer}}</div></div>
   </div>
 </section>
 
@@ -31,46 +26,46 @@
   <h2 class="text-lg font-bold mb-2">Failures since boot</h2>
   <p class="text-sm text-muted mb-3">Counters reset when the board reboots, so read them as "since the last restart", not "since forever".</p>
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-    <div><div class="text-xs font-semibold uppercase tracking-widest text-muted">WiFi joins failed</div><div class="tnum text-lg font-bold">{{.Device.Counters.JoinFail}}</div></div>
-    <div><div class="text-xs font-semibold uppercase tracking-widest text-muted">Uploads failed</div><div class="tnum text-lg font-bold">{{.Device.Counters.PostFail}}</div></div>
-    <div><div class="text-xs font-semibold uppercase tracking-widest text-muted">TLS connects failed</div><div class="tnum text-lg font-bold">{{.Device.Counters.TLSFail}}</div></div>
-    <div><div class="text-xs font-semibold uppercase tracking-widest text-muted">Power dips</div><div class="tnum text-lg font-bold">{{.Device.Counters.Brownout}}</div></div>
+    <div><div class="lbl">WiFi joins failed</div><div class="tnum text-lg font-bold">{{.Device.Counters.JoinFail}}</div></div>
+    <div><div class="lbl">Uploads failed</div><div class="tnum text-lg font-bold">{{.Device.Counters.PostFail}}</div></div>
+    <div><div class="lbl">TLS connects failed</div><div class="tnum text-lg font-bold">{{.Device.Counters.TLSFail}}</div></div>
+    <div><div class="lbl">Power dips</div><div class="tnum text-lg font-bold">{{.Device.Counters.Brownout}}</div></div>
   </div>
 </section>
 
-<section class="border-2 border-ink bg-paper shadow-step p-4">
+<section class="card card--raised">
   <h2 class="text-lg font-bold mb-2">desired_cfg</h2>
   <p class="text-sm text-muted mb-4">Ranges come from the same table as <code class="font-mono text-ink">guzva cfg -set</code>. Out-of-range values never reach a field unit. Saving bumps <code class="font-mono text-ink">ver</code>; the board fetches it on its next POST.</p>
 
   <form method="post" action="/admin/devices/{{.Device.ID}}/cfg">
-    <h3 class="text-xs font-semibold uppercase tracking-widest text-muted mb-2 mt-1">Cadence</h3>
+    <h3 class="lbl mb-2 mt-1">Cadence</h3>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
       {{range .Fields}}{{if .Cadence}}
-      <div class="grid gap-1">
-        <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="cfg-{{.Key}}">{{.Key}}</label>
-        <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base tnum" type="number" id="cfg-{{.Key}}" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}">
+      <div class="fieldset">
+      <label class="lbl" for="cfg-{{.Key}}">{{.Key}}</label>
+        <input class="inp tnum" type="number" id="cfg-{{.Key}}" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}">
         <span class="text-xs text-muted tnum">{{.Range}}</span>
       </div>
       {{end}}{{end}}
     </div>
 
-    <h3 class="text-xs font-semibold uppercase tracking-widest text-muted mb-2 mt-1">Image</h3>
+    <h3 class="lbl mb-2 mt-1">Image</h3>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
       {{range .Fields}}{{if .Image}}
-      <div class="grid gap-1">
-        <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="cfg-{{.Key}}">{{.Key}}</label>
-        <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base tnum" type="number" id="cfg-{{.Key}}" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}">
+      <div class="fieldset">
+      <label class="lbl" for="cfg-{{.Key}}">{{.Key}}</label>
+        <input class="inp tnum" type="number" id="cfg-{{.Key}}" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}">
         <span class="text-xs text-muted tnum">{{.Range}}</span>
       </div>
       {{end}}{{end}}
     </div>
 
-    <h3 class="text-xs font-semibold uppercase tracking-widest text-muted mb-2 mt-1">Hardware</h3>
+    <h3 class="lbl mb-2 mt-1">Hardware</h3>
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
       {{range .Fields}}{{if .Hardware}}
-      <div class="grid gap-1">
-        <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="cfg-{{.Key}}">{{.Key}}</label>
-        <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base tnum" type="number" id="cfg-{{.Key}}" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}">
+      <div class="fieldset">
+      <label class="lbl" for="cfg-{{.Key}}">{{.Key}}</label>
+        <input class="inp tnum" type="number" id="cfg-{{.Key}}" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}">
         <span class="text-xs text-muted tnum">{{.Range}}</span>
       </div>
       {{end}}{{end}}

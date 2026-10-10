@@ -46,7 +46,12 @@ func New(st *store.Store, passHash string, secret []byte, secure bool, log *slog
 	if log == nil {
 		log = slog.Default()
 	}
-	tmpl, err := template.ParseFS(assets, "templates/*.html")
+	// dict builds the small option structs the shared partials take, so a
+	// partial like page-head can be called with named values instead of a
+	// positional soup. It panics on a bad call at TEMPLATE EXECUTION time,
+	// so the pairings are unit-tested rather than discovered in production.
+	funcs := template.FuncMap{"dict": dict}
+	tmpl, err := template.New("").Funcs(funcs).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("admin: parse templates: %w", err)
 	}
@@ -692,3 +697,22 @@ const (
 	shapeNoSignal = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><rect width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"/><path d="M0 3h12M0 6h12M0 9h12" stroke="currentColor" stroke-width="2"/></svg>`
 	shapeWaiting  = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><path d="M0 0h4v4H0zM8 0h4v4H8zM4 4h4v4H4zM0 8h4v4H0zM8 8h4v4H8z" fill="currentColor"/></svg>`
 )
+
+// dict builds a map from alternating key/value pairs, for partials that take
+// named options. Panicking is right here: a mistyped key in a template is a
+// programming error, and failing loudly at the point of use beats a blank
+// element on a page nobody is looking at during a deploy.
+func dict(pairs ...any) map[string]any {
+	if len(pairs)%2 != 0 {
+		panic("dict: odd number of arguments")
+	}
+	m := make(map[string]any, len(pairs)/2)
+	for i := 0; i < len(pairs); i += 2 {
+		k, ok := pairs[i].(string)
+		if !ok {
+			panic("dict: key must be a string")
+		}
+		m[k] = pairs[i+1]
+	}
+	return m
+}

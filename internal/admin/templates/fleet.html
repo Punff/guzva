@@ -8,59 +8,47 @@
 <body class="bg-paper text-ink font-sans">
 <div class="mx-auto w-full max-w-[56rem] px-4 py-6 sm:px-6">
 
-<header class="flex flex-wrap items-center justify-between gap-3 py-2 mb-5">
-  <h1 class="text-2xl font-bold tracking-tight">Fleet</h1>
-  <form method="post" action="/admin/logout" class="inline">
-    <button class="inline-flex items-center justify-center border-2 border-ink bg-paper px-4 min-h-11 text-sm font-semibold shadow-step-sm tap" type="submit">Sign out</button>
-  </form>
-</header>
+{{template "page-head.html" dict "title" "Fleet" "signOut" "/admin/logout"}}
 
-<div id="flash">{{if .ShowCreated}}<div class="border-2 border-ink bg-paper px-3 py-2 text-sm" role="status">Venue created.</div>{{end}}</div>
+<div id="flash">{{if .ShowCreated}}<div class="card card--inset text-sm" role="status">Venue created.</div>{{end}}</div>
 
 <section class="grid gap-4">
 {{range .Venues}}
-<article class="border-2 border-ink bg-paper shadow-step p-4">
+<article class="card card--raised">
   <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3">
     <a class="text-lg font-bold tracking-tight hover:underline" href="/{{.Slug}}/" target="_blank" rel="noreferrer">{{.Name}}</a>
     <code class="text-sm text-muted font-mono">/{{.Slug}}/</code>
     {{template "chip.html" .Fresh}}
-    <span class="text-sm text-muted" style="margin-left:auto">{{.LastAge}}</span>
+    <span class="text-sm text-muted" class="push">{{.LastAge}}</span>
     <a class="inline-flex items-center justify-center border-2 border-ink bg-paper px-3 min-h-11 text-sm font-semibold shadow-step-sm tap" href="/admin/venues/{{.ID}}">Edit</a>
   </div>
   {{if .Devices}}
   <div class="hidden md:block">
-  <table class="w-full text-sm border-2 border-ink">
+  <table class="tbl">
     <thead>
-      <tr class="bg-paper-2 text-left">
-        <th class="px-2 py-1 font-semibold text-xs uppercase tracking-widest text-muted">Serial</th>
-        <th class="px-2 py-1 font-semibold text-xs uppercase tracking-widest text-muted">State</th>
-        <th class="px-2 py-1 font-semibold text-xs uppercase tracking-widest text-muted">FW</th>
-        <th class="px-2 py-1 font-semibold text-xs uppercase tracking-widest text-muted">Signal</th>
-        <th class="px-2 py-1 font-semibold text-xs uppercase tracking-widest text-muted">Last seen</th>
-        <th class="px-2 py-1 font-semibold text-xs uppercase tracking-widest text-muted" title="WiFi joins failed / uploads failed / TLS failed since boot">Failures</th>
-        <th class="px-2 py-1 font-semibold text-xs uppercase tracking-widest text-muted">Config</th>
+      <tr> <th>Serial</th> <th>State</th> <th>FW</th> <th>Signal</th> <th>Last seen</th> <th title="WiFi joins failed / uploads failed / TLS failed since boot">Failures</th> <th>Config</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
       {{range .Devices}}
-      <tr class="odd:bg-paper-2"{{if .Amber}} title="read-back mismatch — desired {{.CfgVer}}, applied {{.CfgApplied}}"{{end}}>
-        <td class="px-2 py-1 font-mono"><a class="hover:underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a></td>
-        <td class="px-2 py-1">{{if eq .Status "active"}}<span class="text-fresh font-semibold">active</span>{{else}}<span class="text-muted">revoked</span>{{end}}</td>
-        <td class="px-2 py-1">{{if .FW}}{{.FW}}{{else}}—{{end}}</td>
-        <td class="px-2 py-1 tnum"{{if .Weak}} style="color:var(--accent)" title="Below the −65 dBm install gate — move the camera or add an access point"{{end}}>{{.RSSIText}}</td>
-        <td class="px-2 py-1">{{.SeenAge}}</td>
+      <tr{{if .Amber}} title="read-back mismatch — desired {{.CfgVer}}, applied {{.CfgApplied}}"{{end}}>
+        <td class="font-mono"><a class="hover:underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a></td>
+        <td>{{if eq .Status "active"}}<span class="text-fresh font-semibold">active</span>{{else}}<span class="text-muted">revoked</span>{{end}}</td>
+        <td>{{if .FW}}{{.FW}}{{else}}—{{end}}</td>
+        <td class="tnum"{{if .Weak}} style="color:var(--accent)" title="Below the −65 dBm install gate — move the camera or add an access point"{{end}}>{{.RSSIText}}</td>
+        <td>{{.SeenAge}}</td>
         {{/* Plain sentences, never a counter soup like b181·bo4·j0 (§8.1) */}}
-        <td class="px-2 py-1 text-muted">
+        <td class="text-muted">
           <span title="WiFi joins that failed since boot">{{.Counters.JoinFail}} wifi</span> ·
           <span title="Uploads that failed">{{.Counters.PostFail}} upload</span> ·
           <span title="TLS connections that failed">{{.Counters.TLSFail}} tls</span>
         </td>
-        <td class="px-2 py-1 tnum"{{if .Amber}} style="color:var(--late)"{{end}}>{{.CfgVer}}/{{.CfgApplied}}</td>
-        <td class="px-2 py-1">
+        <td class="tnum"{{if .Amber}} style="color:var(--late)"{{end}}>{{.CfgVer}}/{{.CfgApplied}}</td>
+        <td>
           {{if eq .Status "active"}}
           <form class="inline" method="post" hx-post="/admin/devices/{{.ID}}/revoke" hx-confirm="Revoke {{.Serial}}? It stops being able to post.">
-            <button class="inline-flex items-center justify-center border-2 border-accent text-accent px-3 min-h-11 text-xs font-semibold tap" type="submit">Revoke</button>
+            <button class="btn btn--danger" type="submit">Revoke</button>
           </form>
           {{else}}<span class="text-muted text-xs">revoked</span>{{end}}
         </td>
@@ -110,32 +98,32 @@
 <section class="mt-6">
   <h2 class="text-lg font-bold mb-3">New venue</h2>
   <form class="border-2 border-ink bg-paper shadow-step p-4 grid gap-3 max-w-xl" hx-post="/admin/venues" hx-target="#flash" hx-swap="innerHTML">
-    <div class="grid gap-1">
-      <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-slug">Slug</label>
-      <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-slug" name="slug" placeholder="jadro" required pattern="[a-z0-9][a-z0-9-]{0,39}">
+    <div class="fieldset">
+      <label class="lbl" for="v-slug">Slug</label>
+      <input class="inp" id="v-slug" name="slug" placeholder="jadro" required pattern="[a-z0-9][a-z0-9-]{0,39}">
     </div>
-    <div class="grid gap-1">
-      <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-name">Name</label>
-      <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-name" name="name" placeholder="Jadro" required>
+    <div class="fieldset">
+      <label class="lbl" for="v-name">Name</label>
+      <input class="inp" id="v-name" name="name" placeholder="Jadro" required>
     </div>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <div class="grid gap-1">
-        <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-tz">Timezone</label>
-        <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-tz" name="tz" value="Europe/Sarajevo">
+      <div class="fieldset">
+      <label class="lbl" for="v-tz">Timezone</label>
+        <input class="inp" id="v-tz" name="tz" value="Europe/Sarajevo">
       </div>
-      <div class="grid gap-1">
-        <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-style">Style</label>
-        <select class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-style" name="style">
+      <div class="fieldset">
+      <label class="lbl" for="v-style">Style</label>
+        <select class="inp" id="v-style" name="style">
           <option value="poster">Tisak (4 tones)</option>
           <option value="mono">Šablon (2 tones)</option>
         </select>
       </div>
     </div>
-    <div class="grid gap-1">
-      <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-hours">Hours</label>
-      <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-hours" name="hours" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (empty = no badge)">
+    <div class="fieldset">
+      <label class="lbl" for="v-hours">Hours</label>
+      <input class="inp" id="v-hours" name="hours" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (empty = no badge)">
     </div>
-    <button class="inline-flex items-center justify-center border-2 border-ink bg-accent text-paper px-4 min-h-11 font-semibold shadow-step-sm tap w-max" type="submit">Create venue</button>
+    <button class="btn btn--primary" type="submit">Create venue</button>
   </form>
 </section>
 
@@ -143,17 +131,17 @@
   <h2 class="text-lg font-bold mb-3">New device</h2>
   {{if .DeviceOpts}}
   <form class="border-2 border-ink bg-paper shadow-step p-4 grid gap-3 max-w-xl" hx-post="/admin/devices" hx-target="#token-out" hx-swap="innerHTML">
-    <div class="grid gap-1">
-      <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="d-venue">Venue</label>
-      <select class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="d-venue" name="venue_id">
+    <div class="fieldset">
+      <label class="lbl" for="d-venue">Venue</label>
+      <select class="inp" id="d-venue" name="venue_id">
         {{range .DeviceOpts}}<option value="{{.ID}}">{{.Name}} (/{{.Slug}}/)</option>{{end}}
       </select>
     </div>
-    <div class="grid gap-1">
-      <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="d-serial">Serial</label>
-      <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="d-serial" name="serial" placeholder="esp32-… (empty = random)">
+    <div class="fieldset">
+      <label class="lbl" for="d-serial">Serial</label>
+      <input class="inp" id="d-serial" name="serial" placeholder="esp32-… (empty = random)">
     </div>
-    <button class="inline-flex items-center justify-center border-2 border-ink bg-accent text-paper px-4 min-h-11 font-semibold shadow-step-sm tap w-max" type="submit">Mint device token</button>
+    <button class="btn btn--primary" type="submit">Mint device token</button>
   </form>
   {{else}}<p class="text-sm text-muted">Create a venue first.</p>{{end}}
   <div id="token-out" class="mt-3"></div>

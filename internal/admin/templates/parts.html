@@ -1,23 +1,40 @@
+{{/* Shared shell. One spacing rhythm for all three consoles: 4px grid,
+     1rem card padding, 2rem between sections, 1.5rem page padding. */}}
+
 {{define "shell-head.html"}}<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18' shape-rendering='crispEdges'%3E%3Crect width='18' height='18' fill='%2312202D'/%3E%3Crect x='1' y='3' width='16' height='10' fill='%23F2EDE2'/%3E%3Crect x='3' y='13' width='2' height='1' fill='%23F2EDE2'/%3E%3Crect x='3' y='5' width='2' height='2' fill='%2333607F'/%3E%3Crect x='2' y='7' width='4' height='4' fill='%2333607F'/%3E%3Crect x='8' y='5' width='2' height='2' fill='%23AE2B16'/%3E%3Crect x='7' y='7' width='4' height='4' fill='%23AE2B16'/%3E%3Crect x='13' y='5' width='2' height='2' fill='%2333607F'/%3E%3Crect x='12' y='7' width='4' height='4' fill='%2333607F'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18' shape-rendering='crispEdges'%3E%3Crect width='18' height='18' fill='%2312202D'/%3E%3Crect x='1' y='3' width='16' height='10' fill='%23F2EDE2'/%3E%3Crect x='3' y='13' width='2' height='1' fill='%23F2EDE2'/%3E%3Crect x='3' y='5' width='2' height='2' fill='%2333607F'/%3E%3Crect x='2' y='7' width='4' height='4' fill='%2333607F'/%3E%3Crect x='8' y='5' width='2' height='2' fill='%23AE2B16'/%3E%3Crect x='7' y='7' width='4' height='4' fill='%23AE2B16'/%3E%3Crect x='13' y='5' width='2' height='2' fill='%233607F'/%3E%3Crect x='12' y='7' width='4' height='4' fill='%2333607F'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/admin/app.css">
 {{- end}}
 
+{{define "page-head.html"}}
+{{/* One header for every console page: title, optional trail link, and the
+     sign-out on the right. Hand-rolling this four times is how the spacing
+     and the type scale drifted apart. Call with a dict:
+       title, trailHref, trailText, signOut */}}
+<header class="flex flex-wrap items-center gap-x-3 gap-y-2 mb-8">
+  <h1 class="text-2xl font-bold tracking-tight">
+    {{if .trailHref}}<a href="{{.trailHref}}" class="text-muted hover:underline">{{.trailText}}</a><span class="text-muted"> / </span>{{end}}{{.title}}
+  </h1>
+  {{if .signOut}}
+  <form method="post" action="{{.signOut}}" class="push">
+    <button class="btn" type="submit">Sign out</button>
+  </form>
+  {{end}}
+</header>
+{{- end}}
+
+{{define "section-head.html"}}<h2 class="text-lg font-bold mb-4">{{.}}</h2>{{end}}
+
 {{define "shell-foot.html"}}
-<footer class="mt-8 pt-3 border-t-2 border-ink text-xs text-muted">
+<footer class="mt-8 pt-4 border-t-2 border-ink text-xs text-muted">
   guzva — stylised renders only. Raw frames live in RAM for one Process call (PLAN D1).
 </footer>
+</div>
 </body>
 </html>{{end}}
 
-{{define "flash.html"}}{{if .}}<div class="border-2 border-ink bg-paper-2 px-3 py-2 text-sm" role="alert">{{.}}</div>{{end}}{{end}}
+{{define "flash.html"}}{{if .}}<div class="card card--inset text-sm mb-4" role="alert">{{.}}</div>{{end}}{{end}}
 
-{{define "field.html"}}
-{{/* Call with: label, name, value, type, extra */}}
-<div class="grid gap-1">
-  <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="{{.name}}">{{.label}}</label>
-  <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" type="{{if .type}}{{.type}}{{else}}text{{end}}"
-         id="{{.name}}" name="{{.name}}" value="{{.value}}" {{if .extra}}{{.extra}}{{end}}>
-</div>
-{{- end}}
+{{/* Status chip. Call with admin.chip (Cls, Shape, Text). */}}
+{{define "chip.html"}}<span class="chip"><span class="inline-flex text-{{.Cls}}" aria-hidden="true">{{.Shape}}</span>{{.Text}}</span>{{end}}

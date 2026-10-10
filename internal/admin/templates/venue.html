@@ -7,16 +7,11 @@
 </head>
 <body class="bg-paper text-ink font-sans">
 <div class="mx-auto w-full max-w-[44rem] px-4 py-6 sm:px-6">
-<header class="flex flex-wrap items-center justify-between gap-3 py-2 mb-5">
-  <h1 class="text-2xl font-bold tracking-tight"><a href="/admin/" class="text-muted hover:underline">fleet</a> / {{.Venue.Name}}</h1>
-  <form method="post" action="/admin/logout" class="inline">
-    <button class="inline-flex items-center justify-center border-2 border-ink bg-paper px-4 min-h-11 text-sm font-semibold shadow-step-sm tap" type="submit">Sign out</button>
-  </form>
-</header>
+{{template "page-head.html" dict "title" .Venue.Name "signOut" "/admin/logout"}}
 
 <div id="flash">
-  {{if .Saved}}<div class="border-2 border-ink bg-paper px-3 py-2 text-sm" role="status">Saved — live on the next device POST where applicable.</div>{{end}}
-  {{if .OwnerSet}}<div class="border-2 border-ink bg-paper px-3 py-2 text-sm" role="status">Owner password set.</div>{{end}}
+  {{if .Saved}}<div class="card card--inset text-sm" role="status">Saved — live on the next device POST where applicable.</div>{{end}}
+  {{if .OwnerSet}}<div class="card card--inset text-sm" role="status">Owner password set.</div>{{end}}
 </div>
 
 <nav class="flex flex-wrap gap-2 mb-5" aria-label="Sections">
@@ -28,40 +23,40 @@
   <h2 class="text-lg font-bold mb-1">Details</h2>
   <p class="text-sm text-muted mb-3">Slug <code class="font-mono text-ink">/{{.Venue.Slug}}/</code> is identity and never changes.</p>
   <form class="grid gap-3" hx-post="/admin/venues/{{.Venue.ID}}" hx-target="#flash" hx-swap="innerHTML">
-    <div class="grid gap-1">
-      <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-name">Name</label>
-      <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-name" name="name" value="{{.Venue.Name}}" required>
+    <div class="fieldset">
+      <label class="lbl" for="v-name">Name</label>
+      <input class="inp" id="v-name" name="name" value="{{.Venue.Name}}" required>
     </div>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <div class="grid gap-1">
-        <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-tz">Timezone</label>
-        <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-tz" name="tz" value="{{.Venue.TZ}}">
+      <div class="fieldset">
+      <label class="lbl" for="v-tz">Timezone</label>
+        <input class="inp" id="v-tz" name="tz" value="{{.Venue.TZ}}">
       </div>
-      <div class="grid gap-1">
-        <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-style">Picture style</label>
-        <select class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-style" name="style">
+      <div class="fieldset">
+      <label class="lbl" for="v-style">Picture style</label>
+        <select class="inp" id="v-style" name="style">
           <option value="poster"{{if eq .Venue.Style "poster"}} selected{{end}}>Tisak (4 tones)</option>
           <option value="mono"{{if eq .Venue.Style "mono"}} selected{{end}}>Šablon (2 tones)</option>
         </select>
       </div>
     </div>
-    <div class="grid gap-1">
-      <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-hours">Hours</label>
-      <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-hours" name="hours" value="{{.HoursSpec}}" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (empty = no badge)">
+    <div class="fieldset">
+      <label class="lbl" for="v-hours">Hours</label>
+      <input class="inp" id="v-hours" name="hours" value="{{.HoursSpec}}" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (empty = no badge)">
     </div>
-    <button class="inline-flex items-center justify-center border-2 border-ink bg-accent text-paper px-4 min-h-11 font-semibold shadow-step-sm tap w-max" type="submit">Save details</button>
+    <button class="btn btn--primary" type="submit">Save details</button>
   </form>
 </section>
 
-<section class="border-2 border-ink bg-paper shadow-step p-4">
+<section class="card card--raised">
   <h2 class="text-lg font-bold mb-1">Owner login</h2>
   {{if .HasOwner}}<p class="text-sm text-muted mb-3">Enabled. A new password replaces the old one.</p>{{else}}<p class="text-sm text-muted mb-3">Not set yet — set one to give the venue owner their own panel.</p>{{end}}
   <form class="grid gap-3" method="post" action="/admin/venues/{{.Venue.ID}}/ownerpw">
-    <div class="grid gap-1">
-      <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="o-pw">New owner password</label>
-      <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" type="password" id="o-pw" name="password" autocomplete="new-password" minlength="10" required>
+    <div class="fieldset">
+      <label class="lbl" for="o-pw">New owner password</label>
+      <input class="inp" type="password" id="o-pw" name="password" autocomplete="new-password" minlength="10" required>
     </div>
-    <button class="inline-flex items-center justify-center border-2 border-ink bg-accent text-paper px-4 min-h-11 font-semibold shadow-step-sm tap w-max" type="submit">Set owner password (≥10 chars)</button>
+    <button class="btn btn--primary" type="submit">Set owner password (≥10 chars)</button>
   </form>
   <p class="text-xs text-muted mt-3">Hand the password out-of-band. It is hashed on save and never shown again.</p>
 </section>
