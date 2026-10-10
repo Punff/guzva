@@ -71,7 +71,12 @@ func TestPublicPageFallsBackOnlyWithoutJS(t *testing.T) {
 	}
 }
 
-func TestStaticCachePolicyPerFile(t *testing.T) {
+// Both files must revalidate. index.html inlines the CSS and JS, so a cached
+// copy is a visitor on an old build — the "struggles to pick it up after a
+// deploy" symptom. latest.jpg sits behind a mutable file even though ?v= is
+// unique per frame, so immutable would let a stale ?v= pin current bytes
+// under an old version's URL for a year.
+func TestStaticRevalidatesBothFiles(t *testing.T) {
 	f := newFixture(t)
 	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {
 		t.Fatal(err)
@@ -86,16 +91,11 @@ func TestStaticCachePolicyPerFile(t *testing.T) {
 	}
 
 	h := Static(f.w.Root())
-	get := func(path string) *httptest.ResponseRecorder {
+	for _, path := range []string{"/jadro/index.html", "/jadro/latest.jpg?v=" + v} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
-		return w
-	}
-
-	if cc := get("/jadro/index.html").Header().Get("Cache-Control"); cc != "no-cache" {
-		t.Errorf("index.html Cache-Control = %q, want no-cache (a cached page hides a new deploy)", cc)
-	}
-	if cc := get("/jadro/latest.jpg?v=" + v).Header().Get("Cache-Control"); cc != "public, max-age=31536000, immutable" {
-		t.Errorf("latest.jpg Cache-Control = %q, want immutable (unique URL per frame)", cc)
+		if cc := w.Header().Get("Cache-Control"); cc != "no-cache" {
+			t.Errorf("%s Cache-Control = %q, want no-cache", path, cc)
+		}
 	}
 }

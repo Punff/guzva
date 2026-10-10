@@ -63,24 +63,20 @@ func Static(dir string) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		// Cache policy differs by which of the two files this is, and
-		// getting it wrong is what made the page look stuck.
+		// One policy for both files: revalidate.
 		//
-		// index.html is re-fetched on every tick and is rewritten on every
-		// state change, so a cached copy means the visitor can be looking at
-		// an old page — old freshness badge, old inlined CSS, and above all
-		// old JS. After a deploy that is exactly the "it struggles to pick
-		// it up again" symptom. Revalidate every time: no-cache still allows
-		// the cheap conditional GET, so the common case is a 304, not a
-		// re-download.
+		// latest.jpg is NOT served immutable even though ?v= is unique per
+		// frame, because the file behind that URL is mutable: it is
+		// overwritten by the next frame. A client holding a stale ?v= (an
+		// old index.html, a backgrounded tab) would fetch CURRENT bytes
+		// under the OLD version's URL and pin the mismatch for the whole
+		// immutable lifetime. Correctness beats saving one 16 KB re-fetch.
+		//
+		// index.html additionally inlines the CSS and JS, so a cached copy
+		// is a visitor running an old build — that is the "it struggles to
+		// pick it up after a deploy" symptom. no-cache still allows the
+		// cheap conditional GET, so the common case is a 304.
 		w.Header().Set("Cache-Control", "no-cache")
-		if filepath.Base(full) == "latest.jpg" {
-			// latest.jpg is addressed by ?v=<received-at>, which is unique
-			// per frame, so this URL's bytes will never change again. Cache
-			// it hard: a repeat view costs nothing, and because the URL
-			// changes, "cached" can never mean "stale".
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		}
 		http.ServeContent(w, r, filepath.Base(full), fi.ModTime(), f)
 	})
 }

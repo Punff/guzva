@@ -213,3 +213,40 @@ which is the system being honest rather than broken.
 - ACTION: mobile public page has a large gap between the timestamp and the
   footer (footer pinned to viewport bottom). Design call, not a bug —
   confirm it is wanted.
+
+### Stale-image investigation, continued (measured, not guessed)
+
+The page reloaded itself every 30s (3 full navigations in 95s, navType
+"reload") even with the in-place swap running. Two dead ends, both mine,
+recorded because the measurements are the useful part:
+
+- d1fc1ad rewrote the meta refresh to content="300". The attribute DID change
+  on the wire; the reloads continued at the identical cadence.
+- b653a2e removed the element from the DOM. Same identical 3 reloads.
+- Control: the 404 root (no meta refresh) = 0 navigations in 95s. That is
+  what proved the meta refresh was the cause and the two fixes above were
+  ineffective.
+- Rig control: a plain meta refresh=5 with JS disabled = 4 reloads in 22s,
+  so the harness does detect refreshes.
+
+Chrome arms the refresh timer when the element is PARSED, so neither
+rewriting nor removing it afterwards disarms the timer. 9cfde4f moves it
+inside <noscript>, which is parsed only when scripting is off. Verified with
+JS on: 0 navigations in 95s, down from 3.
+
+KNOWN GAP: the no-JS arm of that fallback is UNVERIFIED, not proven. A probe
+showed <noscript> content is not parsed as elements even under Chrome's
+--disable-javascript, so this rig cannot exercise a genuinely JS-less
+browser either way. Spec says it should work; do not record it as proven.
+
+### latest.jpg is mutable — so it must not be immutable
+
+A sync monitor (db frame id == page ?v= == sha(latest.jpg) == sha(newest
+render) == sha(served bytes)) ran across a real version-changing restart:
+zero desync samples.
+
+But serving latest.jpg as immutable for a year was unsafe: the file is
+OVERWRITTEN each frame, so a client holding a stale ?v= (old index.html, a
+backgrounded tab) would fetch CURRENT bytes under the OLD version's URL and
+pin the mismatch for the whole immutable lifetime. Both files revalidate
+now; correctness is worth one 16 KB re-fetch.
