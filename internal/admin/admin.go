@@ -186,6 +186,8 @@ type deviceView struct {
 	Status     string
 	FW         string
 	RSSI       int
+	RSSIText   string // "−76 dBm", or "—" when the board has never been heard from
+	Weak       bool   // below the −65 dBm install gate (§10)
 	SeenAge    string // "never" | "2 min ago" (live board — relative is fine)
 	Counters   proto.Counters
 	CfgVer     int
@@ -223,12 +225,23 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 	now := s.now().UTC()
 	byVenue := map[int64][]deviceView{}
 	for _, d := range devices {
-		byVenue[d.VenueID] = append(byVenue[d.VenueID], deviceView{
+		// A board that has never checked in has no reading. Printing its
+		// zero-value RSSI as "0 dBm" reads as a perfect signal; "—" is the
+		// honest answer, and it keeps it clear of the install-gate styling.
+		seen := !d.LastSeenAt.IsZero()
+		dv := deviceView{
 			ID: d.ID, Serial: d.Serial, Status: d.Status, FW: d.FW, RSSI: d.RSSI,
 			SeenAge: age(now, d.LastSeenAt), Counters: d.Counters,
 			CfgVer: d.CfgVer, CfgApplied: d.CfgAppliedVer,
 			Amber: d.Status == "active" && d.CfgAppliedVer != d.CfgVer,
-		})
+		}
+		if seen {
+			dv.RSSIText = fmt.Sprintf("%d dBm", d.RSSI)
+			dv.Weak = d.RSSI <= -65
+		} else {
+			dv.RSSIText = "—"
+		}
+		byVenue[d.VenueID] = append(byVenue[d.VenueID], dv)
 	}
 	model := fleetModel{DeviceOpts: venues, ShowCreated: r.URL.Query().Get("created") != ""}
 	for _, v := range venues {
@@ -506,7 +519,8 @@ type cfgField struct {
 	Key      string
 	Val      int
 	Min, Max int
-	Cadence  bool // interval_s/quality: the cadence trio, not sensor keys
+	Range    string // "30…90" — always both ends, never a bare bound
+	Cadence  bool   // interval_s/quality: the cadence trio, not sensor keys
 }
 
 type deviceModel struct {
@@ -533,7 +547,13 @@ func deviceFields(cfg proto.DesiredCfg) []cfgField {
 		case "quality":
 			val, cadence = cfg.Quality, true
 		}
-		out = append(out, cfgField{Key: k, Val: val, Min: spec.Min, Max: spec.Max, Cadence: cadence})
+		// Always print both bounds. A bare "30" under a 45 was unreadable —
+		// you could not tell min from max, and a lone "4" under quality
+		// looked like a fourth option rather than a ceiling.
+		out = append(out, cfgField{
+			Key: k, Val: val, Min: spec.Min, Max: spec.Max, Cadence: cadence,
+			Range: fmt.Sprintf("%d…%d", spec.Min, spec.Max),
+		})
 	}
 	return out
 }

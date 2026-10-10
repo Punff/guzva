@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"testing"
 
 	"guzva/internal/auth"
+	"guzva/internal/proto"
 	"guzva/internal/store"
 )
 
@@ -442,5 +444,37 @@ func TestSuperAdminEdits(t *testing.T) {
 	}
 	if w := f.do(t, http.MethodGet, "/admin/devices/999", nil, ck, false); w.Code != http.StatusNotFound {
 		t.Fatalf("missing device = %d", w.Code)
+	}
+}
+
+// Two presentation bugs a browser found that the assertions above could not:
+// a config hint that printed one bound instead of both, and a never-heard
+// board rendered as a perfect "0 dBm" signal.
+func TestConfigRangeAlwaysShowsBothBounds(t *testing.T) {
+	for _, f := range deviceFields(proto.DesiredCfg{IntervalS: 45, Quality: 12}) {
+		want := fmt.Sprintf("%d…%d", f.Min, f.Max)
+		if f.Range != want {
+			t.Errorf("%s: Range = %q, want %q", f.Key, f.Range, want)
+		}
+	}
+}
+
+func TestNeverSeenDeviceHasNoSignalReading(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	ck := f.login(t)
+	f.do(t, http.MethodPost, "/admin/venues", url.Values{
+		"slug": {"jadro"}, "name": {"Jadro"}, "style": {"poster"},
+	}, ck, true)
+	f.do(t, http.MethodPost, "/admin/devices", url.Values{
+		"venue_id": {"1"}, "serial": {"never-seen"},
+	}, ck, true)
+
+	w := f.do(t, http.MethodGet, "/admin/", nil, ck, false)
+	body := w.Body.String()
+	if strings.Contains(body, "0 dBm") {
+		t.Error("fleet board printed 0 dBm for a board that never checked in")
+	}
+	if !strings.Contains(body, "never-seen") || !strings.Contains(body, "—") {
+		t.Errorf("fleet board missing the never-seen row:\n%s", body)
 	}
 }
