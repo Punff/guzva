@@ -1,60 +1,41 @@
 package render
 
-import "image"
-
 // Preset is one public style. Implementations must be pure and
-// deterministic: same input pixels → same output bytes, no clock, no
-// randomness, no globals (§7). A new style = one file + one registry line +
-// one golden test.
+// deterministic: same input grid → same output levels, no clock, no
+// randomness, no globals (§7). A new style = one registry line + one golden
+// test.
 //
 // There is no raw preset — ever (§7). The registry simply has no entry that
 // would pass frames through unstyled.
+//
+// Display names live in the UI (Tisak/Šablon); the registry keeps the stable
+// IDs "poster"/"mono" so old rows keep their meaning (DESIGN.md §5.8).
 type Preset interface {
 	Name() string
-	// Version bumps whenever Render's output changes for the same input;
-	// frames record preset@version so a style change never rewrites meaning
-	// (D2).
+	// Version bumps whenever the output changes for the same input; frames
+	// record preset@version so a style change never rewrites meaning (D2).
 	Version() int
-	// Render transforms src in place (it owns the scratch buffer) and
-	// returns the result.
-	Render(src *image.RGBA) *image.RGBA
+	// Levels is the tone count: 4 for the print, 2 for the stencil.
+	Levels() int
 }
 
-// quant4 maps a channel value onto 4 evenly spaced levels
-// {0, 85, 170, 255} with rounding (posterization).
-func quant4(v uint8) uint8 {
-	return uint8((int(v)*3 + 127) / 255 * 85)
-}
+// TisakPreset: the 4-tone print (DESIGN.md §5, poster@2).
+//
+// Version 2, not 1: the previous poster v1 rendered a 640-wide colour JPEG,
+// and D2 requires a bump whenever the output changes for the same input.
+// DESIGN.md §5.8 numbers the new pipeline "poster@1", but the PLAN contract
+// outranks the design doc's numbering — old rows on disk are v1 JPEGs and
+// new rows are v2 PNGs, and the sidecar must tell them apart.
+type TisakPreset struct{}
 
-// PosterPreset: colour posterization to 4 levels per channel (§7).
-type PosterPreset struct{}
+func (TisakPreset) Name() string { return "poster" }
+func (TisakPreset) Version() int { return 2 }
+func (TisakPreset) Levels() int  { return 4 }
 
-func (PosterPreset) Name() string { return "poster" }
-func (PosterPreset) Version() int { return 1 }
+// SablonPreset: the 2-tone stencil (DESIGN.md §5, mono@2). Same version
+// reasoning as Tisak: the old mono v1 was a 640-wide greyscale JPEG.
+type SablonPreset struct{}
 
-func (PosterPreset) Render(src *image.RGBA) *image.RGBA {
-	pix := src.Pix
-	for i := 0; i < len(pix); i += 4 {
-		pix[i] = quant4(pix[i])
-		pix[i+1] = quant4(pix[i+1])
-		pix[i+2] = quant4(pix[i+2])
-		// pix[i+3] stays opaque; renders are never transparent.
-	}
-	return src
-}
-
-// MonoPreset: grayscale, then the same 4-level posterization (§7).
-type MonoPreset struct{}
-
-func (MonoPreset) Name() string { return "mono" }
-func (MonoPreset) Version() int { return 1 }
-
-func (MonoPreset) Render(src *image.RGBA) *image.RGBA {
-	pix := src.Pix
-	for i := 0; i < len(pix); i += 4 {
-		lum := (int(pix[i])*77 + int(pix[i+1])*150 + int(pix[i+2])*29) >> 8
-		q := quant4(uint8(lum))
-		pix[i], pix[i+1], pix[i+2] = q, q, q
-	}
-	return src
-}
+func (SablonPreset) Name() string { return "mono" }
+func (SablonPreset) Version() int { return 2 }
+func (SablonPreset) Levels() int  { return 2 }

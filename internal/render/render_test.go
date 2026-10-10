@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -99,13 +100,10 @@ func TestProcessNormalizesAndStyles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	if out.Width != PublicWidth {
-		t.Errorf("width = %d, want %d", out.Width, PublicWidth)
+	if out.Width != GW || out.Height != GH {
+		t.Errorf("dims = %dx%d, want %dx%d", out.Width, out.Height, GW, GH)
 	}
-	if out.Height != 480 { // 240 * 640/320
-		t.Errorf("height = %d, want 480", out.Height)
-	}
-	if out.Preset != "poster" || out.PresetVer != 1 {
+	if out.Preset != "poster" || out.PresetVer != 2 {
 		t.Errorf("preset = %s@%d", out.Preset, out.PresetVer)
 	}
 	if !out.ReceivedAt.Equal(testNow) {
@@ -114,12 +112,18 @@ func TestProcessNormalizesAndStyles(t *testing.T) {
 	if len(out.SHA256) != 64 {
 		t.Errorf("sha256 = %q", out.SHA256)
 	}
-	cfg, err := jpeg.DecodeConfig(bytes.NewReader(out.JPEG))
+	cfg, err := png.DecodeConfig(bytes.NewReader(out.PNG))
 	if err != nil {
 		t.Fatalf("decode output: %v", err)
 	}
-	if cfg.Width != PublicWidth {
-		t.Errorf("output width = %d", cfg.Width)
+	if cfg.Width != GW || cfg.Height != GH {
+		t.Errorf("output dims = %dx%d", cfg.Width, cfg.Height)
+	}
+	// The stamp is ReceivedAt in UTC by default (no venue loc passed): the
+	// fixed clock reads 12:00, so the burned-in time and the stored instant
+	// are the same by construction.
+	if out.Stamped != "12:00" {
+		t.Errorf("stamped = %q, want 12:00", out.Stamped)
 	}
 }
 
@@ -163,7 +167,7 @@ func TestEXIFStripped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	if hasAPP1(out.JPEG) {
+	if hasAPP1(out.PNG) {
 		t.Fatal("output still carries EXIF/APP1")
 	}
 }
@@ -199,7 +203,7 @@ func TestDeterminism100(t *testing.T) {
 		if err != nil {
 			t.Fatalf("run %d: %v", i, err)
 		}
-		sum := sha256Hex(out.JPEG)
+		sum := sha256Hex(out.PNG)
 		if i == 0 {
 			want = sum
 		} else if sum != want {
@@ -216,7 +220,7 @@ func TestGoldenPoster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	goldenCheck(t, "poster", out.JPEG)
+	goldenCheck(t, "poster", out.PNG)
 }
 
 func TestGoldenMono(t *testing.T) {
@@ -225,7 +229,7 @@ func TestGoldenMono(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	goldenCheck(t, "mono", out.JPEG)
+	goldenCheck(t, "mono", out.PNG)
 }
 
 func goldenCheck(t *testing.T, name string, got []byte) {
@@ -307,10 +311,10 @@ func TestPresetsDifferAndAgreeOnShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Equal(poster.JPEG, mono.JPEG) {
+	if bytes.Equal(poster.PNG, mono.PNG) {
 		t.Fatal("poster and mono must differ")
 	}
-	if mono.Preset != "mono" || mono.PresetVer != 1 {
+	if mono.Preset != "mono" || mono.PresetVer != 2 {
 		t.Errorf("mono metadata = %s@%d", mono.Preset, mono.PresetVer)
 	}
 }
@@ -345,7 +349,7 @@ func sha256Hex(b []byte) string {
 
 // JSON round trip guard for Output used in debug logging elsewhere.
 func TestOutputJSONShape(t *testing.T) {
-	out := Output{Preset: "poster", PresetVer: 1, Width: 640, Height: 480}
+	out := Output{Preset: "poster", PresetVer: 2, Width: GW, Height: GH}
 	b, err := json.Marshal(out)
 	if err != nil {
 		t.Fatal(err)

@@ -1,7 +1,7 @@
 // Package render implements the server-side image pipeline (PLAN §7, D1):
 //
-//	decode (4 MiB cap) → validate → normalize (bilinear to 640 w) →
-//	Preset.Render (pure, versioned) → encode public 640 w q68 → output
+//	decode (4 MiB cap) → validate → luma grid 160×120 → masks → blur →
+//	quantise → mode filter → masks again → HH:MM stamp → paletted PNG
 //
 // The raw JPEG exists only inside one Process call: it is never written, and
 // the input buffer is zeroed on return (privacy proof: input-zeroed test).
@@ -14,7 +14,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"image/jpeg"
 	"time"
 
@@ -23,16 +22,15 @@ import (
 
 // Tunables for the pipeline.
 const (
-	PublicWidth   = 640 // public renders are normalized to this width
-	PublicQuality = 68  // JPEG quality of the public output (§7)
-
 	// Bounds on accepted source frames. QQVGA 160x120 (bench favorite) is
-	// fine; the OV2640 tops out at UXGA 1600x1200.
+	// fine; the OV2640 tops out at UXGA 1600x1200. Aspect must be exactly
+	// 4:3 — the grid is 4:3, and stretching anything else onto it would
+	// silently change what a cell means (non-4:3 is a dims reject).
 	MinDim = 96
 	MaxDim = 4096
 
-	// DarkMeanLuma: mean luma (0-255) below this quarantines the frame as
-	// "dark" — the bench produced 1884-byte all-black frames (§7).
+	// DarkMeanLuma: mean grid luma (0-255) below this quarantines the frame
+	// as "dark" — the bench produced 1884-byte all-black frames (§7).
 	DarkMeanLuma = 6
 )
 
@@ -54,18 +52,28 @@ type FrameIn struct {
 	CaptureID string
 	Preset    string // venue style; unknown names fall back to the default
 	Raw       []byte // the JPEG exactly as it arrived off the wire
+	// StampLoc is the venue's timezone for the burned-in HH:MM stamp
+	// (DESIGN.md ⚑2). Nil renders UTC. The engine formats ReceivedAt in this
+	// location itself rather than taking a preformatted string, so the stamp
+	// can never disagree with the stored timestamp by a minute-boundary skew
+	// between two clock reads.
+	StampLoc *time.Location
+	// Calib is the venue's render calibration: thresholds, bias, invert and
+	// static privacy masks (DESIGN.md ⚑5/⚑6). Zero value = defaults, no masks.
+	Calib Calib
 }
 
 // Output is the result of a successful Process.
 type Output struct {
-	JPEG       []byte // public stylised render, 640 w q68
-	Width      int
-	Height     int
+	PNG        []byte // public stylised render, 160×120 paletted PNG
+	Width      int    // always GW (160)
+	Height     int    // always GH (120)
 	SHA256     string // sha256 of Raw before zeroing — idempotency guard (§1)
 	RawBytes   int    // size of the raw input (metadata only)
 	Preset     string
 	PresetVer  int
 	ReceivedAt time.Time // server clock, canonical freshness (§1)
+	Stamped    string    // HH:MM burned into the render, venue-local
 }
 
 // RejectError marks a frame the pipeline refused. Reason is one of the
@@ -107,12 +115,12 @@ func NewEngine(clock Clock, maxConcurrent int) *Engine {
 	}
 	e := &Engine{
 		presets:  make(map[string]Preset),
-		fallback: PosterPreset{}.Name(),
+		fallback: TisakPreset{}.Name(),
 		clock:    clock,
 		sem:      make(chan struct{}, maxConcurrent),
 	}
-	e.Register(PosterPreset{})
-	e.Register(MonoPreset{})
+	e.Register(TisakPreset{})
+	e.Register(SablonPreset{})
 	return e
 }
 
@@ -184,28 +192,48 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 		return Output{}, Reject("truncated")
 	}
 
-	// --- normalize: bilinear to 640 w in one pass that also computes the
-	// validation stats (dark / dead-sensor), so the image is touched once. ---
-	dst, stats, err := normalize(img, PublicWidth)
+	// --- normalize to the luma grid, computing dark/dead-sensor stats on the
+	// unmasked grid in the same pass (masks must not move the mean: a venue
+	// with a big mask over a bright window is not a dark room). ---
+	g, err := lumaGrid(img)
 	if err != nil {
 		return Output{}, err
 	}
-	if stats.meanLuma < DarkMeanLuma {
+	if mean, uniform := gridStats(g); mean < DarkMeanLuma {
 		return Output{}, Reject("dark")
-	}
-	if stats.uniform {
+	} else if uniform {
 		return Output{}, Reject("dead")
 	}
 
-	// --- preset render: pure + deterministic ---
-	dst = preset.Render(dst)
-
-	// --- encode public output ---
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: PublicQuality}); err != nil {
-		return Output{}, fmt.Errorf("encode public render: %w", err)
+	// --- the print: masks → blur → quantise → mode → masks → stamp → PNG.
+	// All eight stages live in Pipeline; the stamp time is ReceivedAt in the
+	// venue's location, so the burned-in time and the stored timestamp are
+	// the same instant by construction, never two clock reads apart.
+	loc := in.StampLoc
+	if loc == nil {
+		loc = time.UTC
 	}
-	out.JPEG = buf.Bytes()
-	out.Width, out.Height = dst.Rect.Dx(), dst.Rect.Dy()
+	out.Stamped = out.ReceivedAt.In(loc).Format("15:04")
+	pngBytes, err := renderGrid(g, preset.Levels(), in.Calib, out.Stamped)
+	if err != nil {
+		return Output{}, err
+	}
+	out.PNG = pngBytes
+	out.Width, out.Height = GW, GH
 	return out, nil
+}
+
+// gridStats returns the mean luma and whether every cell is identical.
+// Computed on the unmasked grid so installer masks cannot fake a dark room.
+func gridStats(g []uint8) (mean float64, uniform bool) {
+	var sum uint64
+	first := g[0]
+	uniform = true
+	for _, v := range g {
+		sum += uint64(v)
+		if v != first {
+			uniform = false
+		}
+	}
+	return float64(sum) / float64(len(g)), uniform && len(g) > 1
 }

@@ -302,9 +302,9 @@ func mode3(q []uint8, levels int) []uint8 {
 // rows of digits. Bottom-left with a 2-cell margin, so the stamp never touches
 // the frame edge and the rect is stable enough to assert against.
 const (
-	StampCols, StampRows = 29, 7
+	StampCols, StampRows     = 29, 7
 	StampPlateW, StampPlateH = 29, 11
-	StampX, StampY = 2, GH - 2 - StampPlateH
+	StampX, StampY           = 2, GH - 2 - StampPlateH
 )
 
 // stampRect is the plate rectangle, for the "stamp cells only in the stamp
@@ -394,9 +394,18 @@ func Pipeline(img image.Image, levels int, cal Calib, hhmm string) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	applyMasks(g, cal.Masks)
-	g = blur121(g)
-	q := quant(g, levels, cal.thresholds(), cal.Bias, cal.Invert)
+	return renderGrid(g, levels, cal, hhmm)
+}
+
+// renderGrid runs stages 3–8 from an already-built grid, so callers that
+// needed the grid for validation stats (dark/dead-sensor) do not pay for it
+// twice. The grid is the caller's to keep mutating afterwards — renderGrid
+// copies before the blur overwrites anything.
+func renderGrid(g []uint8, levels int, cal Calib, hhmm string) ([]byte, error) {
+	work := append([]uint8(nil), g...)
+	applyMasks(work, cal.Masks)
+	work = blur121(work)
+	q := quant(work, levels, cal.thresholds(), cal.Bias, cal.Invert)
 	q = mode3(q, levels)
 	applyMasks(q, cal.Masks)
 	stamp(q, hhmm)
