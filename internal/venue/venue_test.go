@@ -1,6 +1,7 @@
 package venue
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -145,3 +146,108 @@ func TestSpecMultiRangeReparses(t *testing.T) {
 		t.Fatalf("unstable: %q → %q", spec, h2.Spec())
 	}
 }
+
+// Hours editor round-trip (DESIGN.md §9): structured fields parse to the same
+// Hours the spec string produces, and every error names the day.
+func TestParseHoursForm(t *testing.T) {
+	names := [7]string{"Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"}
+	get := func(v map[string]string) func(string) string {
+		return func(k string) string { return v[k] }
+	}
+	// One interval Monday, closed Sunday, split shift Wednesday.
+	h, herr := ParseHoursForm(get(map[string]string{
+		"h0_open1": "09:00", "h0_close1": "17:00",
+		"h1_open1": "09:00", "h1_close1": "17:00",
+		"h2_open1": "09:00", "h2_close1": "12:00",
+		"h2_open2": "14:00", "h2_close2": "18:00",
+		"h3_open1": "09:00", "h3_close1": "17:00",
+		"h4_open1": "09:00", "h4_close1": "17:00",
+		"h5_open1": "10:00", "h5_close1": "14:00",
+		"h6_closed": "1",
+	}), names, false)
+	if herr != nil {
+		t.Fatalf("valid form: %+v", herr)
+	}
+	if len(h[1]) != 1 || h[1][0] != (Range{OpenMin: 540, CloseMin: 1020}) {
+		t.Fatalf("Monday = %+v", h[1])
+	}
+	if len(h[3]) != 2 {
+		t.Fatalf("Wednesday split = %+v", h[3])
+	}
+	if len(h[0]) != 0 {
+		t.Fatalf("Sunday should be closed: %+v", h[0])
+	}
+	// Round-trips through the editor model.
+	model := EditModel(h, names)
+	if model[0].Open1 != "09:00" || model[0].Close1 != "17:00" {
+		t.Fatalf("Monday model = %+v", model[0])
+	}
+	if !model[6].Closed {
+		t.Fatalf("Sunday model should be closed: %+v", model[6])
+	}
+	if model[2].Open2 != "14:00" {
+		t.Fatalf("Wednesday second shift = %+v", model[2])
+	}
+
+	// Errors name the day. fill makes every row valid except the ones the
+	// case sets, so only the target row can fail.
+	fill := func(except map[string]string) map[string]string {
+		f := map[string]string{}
+		for k, v := range except {
+			f[k] = v
+		}
+		touched := map[int]bool{}
+		for k := range except {
+			var d int
+			if _, err := fmt.Sscanf(k, "h%d_", &d); err == nil {
+				touched[d] = true
+			}
+		}
+		for d := 0; d < 7; d++ {
+			if touched[d] {
+				continue
+			}
+			f["h"+itoa(d)+"_open1"] = "09:00"
+			f["h"+itoa(d)+"_close1"] = "17:00"
+		}
+		return f
+	}
+	for _, tc := range []struct {
+		fields map[string]string
+		want   string // day name
+		code   string
+	}{
+		{map[string]string{"h0_close1": "17:00"}, "Mo", "clock"},                          // close without open
+		{map[string]string{"h1_open1": "17:00", "h1_close1": "09:00"}, "Tu", "backwards"}, // backwards
+		{map[string]string{"h2_open1": "25:00", "h2_close1": "26:00"}, "We", "clock"},     // not a clock
+		{map[string]string{"h0_closed": "1", "h0_open1": "09:00"}, "Mo", "closed_times"},  // closed + times
+	} {
+		if _, herr := ParseHoursForm(get(fill(tc.fields)), names, false); herr == nil || herr.DayName != tc.want || herr.Code != tc.code {
+			t.Errorf("fields %v: err %+v, want %s/%s", tc.fields, herr, tc.want, tc.code)
+		}
+	}
+	// An untouched row is refused, naming the first offender.
+	if _, herr := ParseHoursForm(get(map[string]string{}), names, false); herr == nil || herr.DayName != "Mo" || herr.Code != "untouched" {
+		t.Errorf("empty form: err %+v, want untouched Mo", herr)
+	}
+
+	// Copy-Monday spreads Monday over Tue–Fri, leaving Sat/Sun alone.
+	h2, herr := ParseHoursForm(get(map[string]string{
+		"h0_open1": "08:00", "h0_close1": "20:00",
+		"h5_open1": "10:00", "h5_close1": "14:00",
+		"h6_closed": "1",
+	}), names, true)
+	if herr != nil {
+		t.Fatalf("copy-monday: %+v", herr)
+	}
+	for _, dow := range []int{2, 3, 4, 5} {
+		if len(h2[dow]) != 1 || h2[dow][0] != (Range{OpenMin: 480, CloseMin: 1200}) {
+			t.Errorf("dow %d after copy = %+v", dow, h2[dow])
+		}
+	}
+	if len(h2[6]) != 1 {
+		t.Errorf("Saturday changed by copy-monday: %+v", h2[6])
+	}
+}
+
+func itoa(n int) string { return string(rune('0' + n)) }

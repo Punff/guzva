@@ -363,3 +363,131 @@ func (h Hours) NextOpen(t time.Time) (time.Time, bool) {
 	}
 	return time.Time{}, false
 }
+
+// DayForm is one row of the hours editor (DESIGN.md §9): two intervals
+// (split shifts), a closed checkbox, and the weekday index in Go convention
+// (Sunday-first) so the handler never has to think about display order.
+type DayForm struct {
+	// Dow is time.Sunday..time.Saturday as int, matching Hours indexing.
+	Dow    int
+	Name   string // display name from the catalog (nominative, not accusative)
+	Open1  string // "09:00" or ""
+	Close1 string
+	Open2  string
+	Close2 string
+	Closed bool
+}
+
+// EditModel renders Hours as seven Mo-first rows for the editor. Days with
+// no ranges come back unchecked and un-closed — the editor, not this
+// function, decides what an untouched row means.
+func EditModel(h Hours, names [7]string) [7]DayForm {
+	// Display order is Mo-first; Go weekday index is Su-first.
+	order := []int{1, 2, 3, 4, 5, 6, 0}
+	var out [7]DayForm
+	for i, dow := range order {
+		d := DayForm{Dow: dow, Name: names[i]}
+		rs := h[dow]
+		if len(rs) == 0 {
+			d.Closed = true
+		} else {
+			d.Open1, d.Close1 = mins(rs[0].OpenMin), mins(rs[0].CloseMin)
+			if len(rs) > 1 {
+				d.Open2, d.Close2 = mins(rs[1].OpenMin), mins(rs[1].CloseMin)
+			}
+		}
+		out[i] = d
+	}
+	return out
+}
+
+func mins(m int) string { return fmt.Sprintf("%02d:%02d", m/60, m%60) }
+
+// ParseHoursForm reads the editor's fields back into Hours. Field names are
+// h<d>_open1, h<d>_close1, h<d>_open2, h<d>_close2, h<d>_closed with d = 0..6
+// Mo-first. copyMon copies Monday's intervals onto Tue–Fri before parsing
+// (the "copy Monday to weekdays" button). Errors name the day, because
+// "Bad hours: group 3" helps nobody behind a bar.
+//
+// An untouched row (no times, unchecked) is an error naming the day —
+// "closed" is a checkbox, not an empty field, so ambiguity is refused rather
+// than guessed.
+// HoursError is a structured hours-form failure: the day (Mo-first index
+// and display name) plus a code the caller localizes. Error STRINGS are not
+// built here, because the owner panel is Croatian and the console is English
+// — half-localized sentences are worse than consistent ones.
+type HoursError struct {
+	Day     int    // Mo-first day index
+	DayName string // display name, already localized by the caller
+	Code    string // "clock" | "backwards" | "closed_times" | "untouched"
+	Second  bool   // the second (split-shift) interval
+	Open    string // for "backwards"
+	Close   string
+}
+
+func ParseHoursForm(get func(string) string, names [7]string, copyMon bool) (Hours, *HoursError) {
+	var noErr *HoursError
+	type iv struct{ open, close string }
+	rows := make([][2]iv, 7)
+	closed := make([]bool, 7)
+	for d := 0; d < 7; d++ {
+		p := fmt.Sprintf("h%d_", d)
+		rows[d][0] = iv{strings.TrimSpace(get(p + "open1")), strings.TrimSpace(get(p + "close1"))}
+		rows[d][1] = iv{strings.TrimSpace(get(p + "open2")), strings.TrimSpace(get(p + "close2"))}
+		closed[d] = get(p+"closed") == "1"
+	}
+	if copyMon {
+		for d := 1; d < 5; d++ {
+			rows[d] = rows[0]
+			closed[d] = closed[0]
+		}
+	}
+	var h Hours
+	order := []int{1, 2, 3, 4, 5, 6, 0}
+	for i, dow := range order {
+		name := names[i]
+		if closed[i] {
+			if rows[i][0].open != "" || rows[i][0].close != "" || rows[i][1].open != "" || rows[i][1].close != "" {
+				return h, &HoursError{Day: i, DayName: name, Code: "closed_times"}
+			}
+			continue
+		}
+		var rs []Range
+		for k, v := range rows[i] {
+			if v.open == "" && v.close == "" {
+				continue
+			}
+			o, ok1 := parseClock(v.open)
+			c, ok2 := parseClock(v.close)
+			if !ok1 || !ok2 {
+				return h, &HoursError{Day: i, DayName: name, Code: "clock", Second: k == 1}
+			}
+			if c <= o {
+				return h, &HoursError{Day: i, DayName: name, Code: "backwards", Second: k == 1, Open: v.open, Close: v.close}
+			}
+			rs = append(rs, Range{OpenMin: o, CloseMin: c})
+		}
+		if len(rs) == 0 {
+			return h, &HoursError{Day: i, DayName: name, Code: "untouched"}
+		}
+		h[dow] = rs
+	}
+	return h, noErr
+}
+
+// parseClock parses "HH:MM" in 24 h time. 24:00 is not accepted here — the
+// editor writes closing times explicitly, and "24:00" in a time input is a
+// typo for "00:00" next day, which same-day ranges cannot express.
+func parseClock(s string) (int, bool) {
+	var hh, mm int
+	if _, err := fmt.Sscanf(s, "%d:%d", &hh, &mm); err != nil {
+		return 0, false
+	}
+	if hh < 0 || hh > 23 || mm < 0 || mm > 59 {
+		return 0, false
+	}
+	if len(s) != 5 || s[2] != ':' {
+		return 0, false
+	}
+	return hh*60 + mm, true
+}

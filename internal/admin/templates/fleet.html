@@ -120,8 +120,8 @@
       </div>
     </div>
     <div class="fieldset">
-      <label class="lbl" for="v-hours">Hours</label>
-      <input class="inp" id="v-hours" name="hours" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (empty = no badge)">
+      <span class="lbl mb-2">Hours</span>
+      {{template "hours-editor.html" dict "days" .Days "closed" "closed" "copy" "Copy Monday to weekdays"}}
     </div>
     <button class="btn btn--primary" type="submit">Create venue</button>
   </form>

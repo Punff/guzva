@@ -18,6 +18,39 @@ import (
 	"guzva/internal/store"
 )
 
+func itoa(n int) string { return string(rune('0' + n)) }
+
+// hoursWeek posts a full valid week in the editor's structured fields:
+// weekdays 09:00–17:00, weekend closed. Overrides replace individual keys.
+func hoursWeek(over map[string]string) url.Values {
+	v := url.Values{}
+	for d := 0; d < 5; d++ {
+		v.Set("h"+itoa(d)+"_open1", "09:00")
+		v.Set("h"+itoa(d)+"_close1", "17:00")
+	}
+	v.Set("h5_closed", "1")
+	v.Set("h6_closed", "1")
+	for k, val := range over {
+		v.Set(k, val)
+	}
+	return v
+}
+
+// withHours merges base form values with a week of hours. Overrides
+// replace keys; drop removes default keys the override supersedes (e.g. the
+// default h5_closed when Saturday gets times) — Set alone cannot unsend a key.
+func withHours(base url.Values, over map[string]string, drop ...string) url.Values {
+	for k, vals := range hoursWeek(over) {
+		for _, val := range vals {
+			base.Set(k, val)
+		}
+	}
+	for _, k := range drop {
+		base.Del(k)
+	}
+	return base
+}
+
 type fixture struct {
 	s   *Server
 	st  *store.Store
@@ -143,10 +176,10 @@ func TestVenueDeviceLifecycle(t *testing.T) {
 	ck := f.login(t)
 
 	// Create venue (htmx form → HX-Redirect reload).
-	w := f.do(t, http.MethodPost, "/admin/venues", url.Values{
+	w := f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{
 		"slug": {"jadro"}, "name": {"Jadro"}, "tz": {"Europe/Sarajevo"},
-		"style": {"poster"}, "hours": {"Mo-Fr 09:00-17:00"},
-	}, ck, true)
+		"style": {"poster"},
+	}, nil), ck, true)
 	if w.Code != http.StatusOK || w.Header().Get("HX-Redirect") == "" {
 		t.Fatalf("create venue = %d hx-redirect %q body %q", w.Code, w.Header().Get("HX-Redirect"), w.Body.String())
 	}
@@ -240,10 +273,10 @@ func TestOwnerPanel(t *testing.T) {
 
 	// Two venues; only jadro gets an owner password.
 	for _, vs := range []struct{ slug, name string }{{"jadro", "Jadro"}, {"other", "Other"}} {
-		w := f.do(t, http.MethodPost, "/admin/venues", url.Values{
+		w := f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{
 			"slug": {vs.slug}, "name": {vs.name}, "tz": {"Europe/Sarajevo"},
-			"style": {"poster"}, "hours": {"Mo-Fr 09:00-17:00"},
-		}, ck, true)
+			"style": {"poster"},
+		}, nil), ck, true)
 		if w.Header().Get("HX-Redirect") == "" {
 			t.Fatalf("create %s: %q", vs.slug, w.Body.String())
 		}
@@ -295,10 +328,19 @@ func TestOwnerPanel(t *testing.T) {
 	}
 
 	// Owner edits own venue details (incl. hours).
-	w = f.do(t, http.MethodPost, "/owner/venue", url.Values{
+	weekend := map[string]string{}
+	for d := 0; d < 5; d++ {
+		weekend["h"+itoa(d)+"_closed"] = "1"
+	}
+	weekend["h5_open1"], weekend["h5_close1"] = "10:00", "14:00"
+	weekend["h6_open1"], weekend["h6_close1"] = "10:00", "14:00"
+	weekendDrop := []string{"h5_closed", "h6_closed"}
+	for d := 0; d < 5; d++ {
+		weekendDrop = append(weekendDrop, "h"+itoa(d)+"_open1", "h"+itoa(d)+"_close1")
+	}
+	w = f.do(t, http.MethodPost, "/owner/venue", withHours(url.Values{
 		"name": {"Jadro Grad"}, "style": {"mono"}, "tz": {"Europe/Zagreb"},
-		"hours": {"Sa-Su 10:00-14:00"},
-	}, ock, true)
+	}, weekend, weekendDrop...), ock, true)
 	if w.Header().Get("HX-Redirect") == "" {
 		t.Fatalf("owner update = %q", w.Body.String())
 	}
@@ -317,10 +359,10 @@ func TestOwnerPanel(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "Name is required") {
 		t.Fatalf("empty name = %q", w.Body.String())
 	}
-	w = f.do(t, http.MethodPost, "/owner/venue", url.Values{
-		"name": {"Jadro"}, "style": {"poster"}, "hours": {"nonsense"},
-	}, ock, true)
-	if !strings.Contains(w.Body.String(), "Bad hours") {
+	w = f.do(t, http.MethodPost, "/owner/venue", withHours(url.Values{
+		"name": {"Jadro"}, "style": {"poster"},
+	}, map[string]string{"h0_open1": "17:00", "h0_close1": "09:00"}), ock, true)
+	if !strings.Contains(w.Body.String(), "Ponedjeljak") {
 		t.Fatalf("bad hours = %q", w.Body.String())
 	}
 
@@ -352,10 +394,20 @@ func TestSuperAdminEdits(t *testing.T) {
 	ck := f.login(t)
 	ctx := t.Context()
 
-	w := f.do(t, http.MethodPost, "/admin/venues", url.Values{
+	// All-closed is the explicit form of the old empty-hours create: no
+	// ranges configured, so no open/closed badge at all.
+	closed := map[string]string{}
+	closedDrop := []string{}
+	for d := 0; d < 7; d++ {
+		closed["h"+itoa(d)+"_closed"] = "1"
+	}
+	for d := 0; d < 5; d++ {
+		closedDrop = append(closedDrop, "h"+itoa(d)+"_open1", "h"+itoa(d)+"_close1")
+	}
+	w := f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{
 		"slug": {"jadro"}, "name": {"Jadro"}, "tz": {"Europe/Sarajevo"},
-		"style": {"poster"}, "hours": {""},
-	}, ck, true)
+		"style": {"poster"},
+	}, closed, closedDrop...), ck, true)
 	if w.Header().Get("HX-Redirect") == "" {
 		t.Fatalf("create: %q", w.Body.String())
 	}
@@ -372,10 +424,9 @@ func TestSuperAdminEdits(t *testing.T) {
 	}
 
 	// Update details.
-	w = f.do(t, http.MethodPost, "/admin/venues/1", url.Values{
+	w = f.do(t, http.MethodPost, "/admin/venues/1", withHours(url.Values{
 		"name": {"Jadro Grad"}, "style": {"mono"}, "tz": {"Europe/Zagreb"},
-		"hours": {"Mo-Fr 09:00-17:00"},
-	}, ck, true)
+	}, nil), ck, true)
 	if w.Header().Get("HX-Redirect") == "" {
 		t.Fatalf("update venue = %q", w.Body.String())
 	}
@@ -464,9 +515,9 @@ func TestConfigRangeAlwaysShowsBothBounds(t *testing.T) {
 func TestNeverSeenDeviceHasNoSignalReading(t *testing.T) {
 	f := newFixture(t, mustHash(t, "sekret"))
 	ck := f.login(t)
-	f.do(t, http.MethodPost, "/admin/venues", url.Values{
+	f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{
 		"slug": {"jadro"}, "name": {"Jadro"}, "style": {"poster"},
-	}, ck, true)
+	}, nil), ck, true)
 	f.do(t, http.MethodPost, "/admin/devices", url.Values{
 		"venue_id": {"1"}, "serial": {"never-seen"},
 	}, ck, true)
@@ -487,10 +538,9 @@ func TestNeverSeenDeviceHasNoSignalReading(t *testing.T) {
 func TestNoDuplicateClassAttributes(t *testing.T) {
 	f := newFixture(t, mustHash(t, "sekret"))
 	ck := f.login(t)
-	f.do(t, http.MethodPost, "/admin/venues", url.Values{
+	f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{
 		"slug": {"jadro"}, "name": {"Jadro"}, "style": {"poster"},
-		"hours": {"Mo-Fr 09:00-17:00"},
-	}, ck, true)
+	}, nil), ck, true)
 	f.do(t, http.MethodPost, "/admin/devices", url.Values{
 		"venue_id": {"1"}, "serial": {"cam1"},
 	}, ck, true)
@@ -552,9 +602,9 @@ func TestKitGated(t *testing.T) {
 func TestSetCalib(t *testing.T) {
 	f := newFixture(t, mustHash(t, "sekret"))
 	ck := f.login(t)
-	f.do(t, http.MethodPost, "/admin/venues", url.Values{
+	f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{
 		"slug": {"jadro"}, "name": {"Jadro"}, "style": {"poster"},
-	}, ck, true)
+	}, nil), ck, true)
 
 	set := func(v url.Values) *httptest.ResponseRecorder {
 		return f.do(t, http.MethodPost, "/admin/venues/1/calib", v, ck, true)

@@ -1,0 +1,31 @@
+{{/* Hours editor (DESIGN.md §9): seven rows, one thumb each. Two intervals
+     per day (split shifts), native time pickers, "closed" as a checkbox —
+     never an empty field. Validation names the day.
+     Call with a dict: "days" ([7]venue.DayForm, Mo-first), "closed"
+     (closed-checkbox label), "copy" (copy-button label).
+     Field names h<i>_open1/close1/open2/close2/closed, i = 0..6 Mo-first —
+     the exact keys venue.ParseHoursForm reads. */}}
+{{define "hours-editor.html"}}
+<div class="grid gap-2">
+  {{range $i, $d := .days}}
+  <div class="grid gap-1 border-2 border-ink bg-paper p-3 sm:grid-cols-[7rem_1fr_1fr] sm:items-center sm:gap-3">
+    <div class="flex items-center justify-between sm:block">
+      <span class="font-semibold">{{$d.Name}}</span>
+      <label class="text-sm text-muted flex items-center gap-2 sm:mt-1">
+        <input type="checkbox" name="h{{$i}}_closed" value="1"{{if $d.Closed}} checked{{end}} class="w-6 h-6 accent-[var(--accent)]">
+        <span class="lbl">{{$.closed}}</span>
+      </label>
+    </div>
+    <div class="grid grid-cols-2 gap-2">
+      <input class="inp tnum" type="time" name="h{{$i}}_open1" value="{{$d.Open1}}">
+      <input class="inp tnum" type="time" name="h{{$i}}_close1" value="{{$d.Close1}}">
+    </div>
+    <div class="grid grid-cols-2 gap-2">
+      <input class="inp tnum" type="time" name="h{{$i}}_open2" value="{{$d.Open2}}">
+      <input class="inp tnum" type="time" name="h{{$i}}_close2" value="{{$d.Close2}}">
+    </div>
+  </div>
+  {{end}}
+</div>
+<button class="btn mt-3" type="submit" name="copy_mon" value="1">{{.copy}}</button>
+{{- end}}

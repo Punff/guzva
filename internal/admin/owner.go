@@ -110,6 +110,7 @@ func (s *Server) ownerLogout(w http.ResponseWriter, r *http.Request, v *store.Ve
 type ownerDashModel struct {
 	Venue     store.Venue
 	HoursSpec string
+	Days      [7]venue.DayForm
 	OpenState string
 	State     chip
 	Summary   string
@@ -132,7 +133,7 @@ func (s *Server) ownerDash(w http.ResponseWriter, r *http.Request, v *store.Venu
 	now := s.now().UTC()
 	loc := venueLoc(v.TZ)
 	cat := i18n.For(i18n.Normalize(v.Lang))
-	m := ownerDashModel{Venue: *v, HoursSpec: h.Spec(), Cat: cat,
+	m := ownerDashModel{Venue: *v, HoursSpec: h.Spec(), Days: venue.EditModel(h, cat.DayNames()), Cat: cat,
 		OpenState: h.ClassifyOpen(now.In(loc)).String(),
 		Saved:     r.URL.Query().Get("saved") != ""}
 
@@ -184,10 +185,16 @@ func (s *Server) ownerDash(w http.ResponseWriter, r *http.Request, v *store.Venu
 
 func (s *Server) ownerUpdateVenue(w http.ResponseWriter, r *http.Request, v *store.Venue) {
 	r.ParseForm()
-	tz, h, ferr := parseVenueForm(
-		r.FormValue("name"), r.FormValue("style"), r.FormValue("tz"), r.FormValue("hours"))
+	tz, ferr := parseVenueForm(
+		r.FormValue("name"), r.FormValue("style"), r.FormValue("tz"))
 	if ferr != "" {
 		s.flash(w, ferr)
+		return
+	}
+	cat := i18n.For(i18n.Normalize(v.Lang))
+	h, hferr := parseHours(r, cat)
+	if hferr != "" {
+		s.flash(w, hferr)
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))

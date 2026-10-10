@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"guzva/internal/auth"
+	"guzva/internal/i18n"
 	"guzva/internal/proto"
 	"guzva/internal/render"
 	"guzva/internal/store"
@@ -243,6 +244,7 @@ type fleetModel struct {
 	Venues      []venueView
 	DeviceOpts  []store.Venue // for the create-device <select>
 	ShowCreated bool
+	Days        [7]venue.DayForm // create-form hours, Mo-Fr 09-17 prefilled
 }
 
 func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
@@ -277,7 +279,9 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 		}
 		byVenue[d.VenueID] = append(byVenue[d.VenueID], dv)
 	}
-	model := fleetModel{DeviceOpts: venues, ShowCreated: r.URL.Query().Get("created") != ""}
+	defHours, _ := venue.ParseSpec("Mo-Fr 09:00-17:00")
+	model := fleetModel{DeviceOpts: venues, ShowCreated: r.URL.Query().Get("created") != "",
+		Days: venue.EditModel(defHours, i18n.For(i18n.EN).DayNames())}
 	for _, v := range venues {
 		vv := venueView{
 			ID: v.ID, Slug: v.Slug, Name: v.Name,
@@ -328,29 +332,38 @@ var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
 // parseVenueForm validates the editable site-plane fields. It is the one
 // validator for venue create (super-admin), venue update (super-admin) and
 // the owner panel — three forms, one rule, so an owner can never save what
-// the console would refuse. Returns tz + parsed hours, or a user-facing
-// error. Slug is identity and is never editable.
-func parseVenueForm(name, style, tz, hoursSpec string) (string, venue.Hours, string) {
+// the console would refuse. Returns the timezone or a user-facing error;
+// hours arrive as structured editor fields and are parsed separately, so the
+// spec-string format is one input shape among others, not the contract.
+// Slug is identity and is never editable.
+func parseVenueForm(name, style, tz string) (string, string) {
 	name = strings.TrimSpace(name)
 	tz = strings.TrimSpace(tz)
-	hoursSpec = strings.TrimSpace(hoursSpec)
 	switch {
 	case name == "":
-		return "", venue.Hours{}, "Name is required."
+		return "", "Name is required."
 	case style != "poster" && style != "mono":
-		return "", venue.Hours{}, "Style must be poster or mono."
+		return "", "Style must be poster or mono."
 	}
 	if tz == "" {
 		tz = store.DefaultTZ
 	}
 	if _, err := time.LoadLocation(tz); err != nil {
-		return "", venue.Hours{}, "Unknown timezone: " + tz
+		return "", "Unknown timezone: " + tz
 	}
-	h, err := venue.ParseSpec(hoursSpec)
-	if err != nil {
-		return "", venue.Hours{}, "Bad hours: " + err.Error()
+	return tz, ""
+}
+
+// parseHours validates the structured editor fields (DESIGN.md §9) with the
+// given catalog's day names. copyMon is the "copy Monday to weekdays"
+// button. Errors come back already sentenced in the catalog's language.
+func parseHours(r *http.Request, cat *i18n.Catalog) (venue.Hours, string) {
+	names := cat.DayNames()
+	h, herr := venue.ParseHoursForm(r.FormValue, names, r.FormValue("copy_mon") == "1")
+	if herr != nil {
+		return h, cat.HoursErrorText(herr)
 	}
-	return tz, h, ""
+	return h, ""
 }
 
 func (s *Server) createVenue(w http.ResponseWriter, r *http.Request) {
@@ -360,10 +373,15 @@ func (s *Server) createVenue(w http.ResponseWriter, r *http.Request) {
 		s.flash(w, "Slug must be lowercase letters, digits or dashes (≤40).")
 		return
 	}
-	tz, h, ferr := parseVenueForm(
-		r.FormValue("name"), r.FormValue("style"), r.FormValue("tz"), r.FormValue("hours"))
+	tz, ferr := parseVenueForm(
+		r.FormValue("name"), r.FormValue("style"), r.FormValue("tz"))
 	if ferr != "" {
 		s.flash(w, ferr)
+		return
+	}
+	h, hferr := parseHours(r, i18n.For(i18n.EN))
+	if hferr != "" {
+		s.flash(w, hferr)
 		return
 	}
 	id, err := s.st.CreateVenue(r.Context(), store.Venue{
@@ -452,6 +470,7 @@ func (s *Server) internal(w http.ResponseWriter, op string, err error) {
 
 type venueEditModel struct {
 	Venue     store.Venue
+	Days      [7]venue.DayForm
 	HoursSpec string
 	HasOwner  bool
 	Saved     bool
@@ -492,7 +511,7 @@ func (s *Server) venuePage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	cal := store.ParseCalib(v.CalibJSON)
-	m := venueEditModel{Venue: *v, HoursSpec: h.Spec(), HasOwner: v.OwnerHash != "",
+	m := venueEditModel{Venue: *v, HoursSpec: h.Spec(), Days: venue.EditModel(h, i18n.For(i18n.EN).DayNames()), HasOwner: v.OwnerHash != "",
 		Saved: r.URL.Query().Get("saved") != "", OwnerSet: r.URL.Query().Get("owner") != "",
 		CalibSet: r.URL.Query().Get("calib") != "", Calib: cal}
 	if cal.T != [3]uint8{} {
@@ -514,10 +533,15 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.ParseForm()
-	tz, h, ferr := parseVenueForm(
-		r.FormValue("name"), r.FormValue("style"), r.FormValue("tz"), r.FormValue("hours"))
+	tz, ferr := parseVenueForm(
+		r.FormValue("name"), r.FormValue("style"), r.FormValue("tz"))
 	if ferr != "" {
 		s.flash(w, ferr)
+		return
+	}
+	h, hferr := parseHours(r, i18n.For(i18n.EN))
+	if hferr != "" {
+		s.flash(w, hferr)
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))

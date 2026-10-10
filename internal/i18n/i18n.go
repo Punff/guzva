@@ -15,6 +15,8 @@ package i18n
 
 import (
 	"fmt"
+
+	"guzva/internal/venue"
 	"math"
 	"strings"
 	"time"
@@ -45,9 +47,10 @@ type Catalog struct {
 	Lang Lang
 	msg  map[string]string
 	// weekdays are the accusative forms used after "u" (hr) and the plain
-	// names (en).
+	// names (en). daysNom is nominative, Mo-first, for editor labels.
 	weekdays   [7]string
 	weekdaysEn [7]string
+	daysNom    [7]string
 }
 
 var hr = &Catalog{
@@ -86,9 +89,22 @@ var hr = &Catalog{
 		"owner.save":       "Spremi promjene",
 		"owner.saved":      "Promjene su spremljene",
 		"owner.health.old": "Slika je stara — što učiniti?",
+
+		"hours.err.clock":        "{day}{shift}: upiši vrijeme kao 09:00",
+		"hours.err.backwards":    "{day}{shift}: zatvara u {close}, a otvara u {open}",
+		"hours.err.closed_times": "{day}: označeno je zatvoreno, a ima upisano vrijeme — obriši jedno",
+		"hours.err.untouched":    "{day}: upiši vrijeme ili označi zatvoreno",
+		"hours.err.second":       " (druga smjena)",
+		"hours.copy":             "Kopiraj ponedjeljak na radne dane",
 	},
 	weekdays: [7]string{
 		"ponedjeljak", "utorak", "srijedu", "četvrtak", "petak", "subotu", "nedjelju",
+	},
+	// Nominative, Mo-first, for editor labels. The accusative above is only
+	// correct after "u" — a label reading "u srijedu" where a name belongs
+	// would be wrong in the other direction.
+	daysNom: [7]string{
+		"Ponedjeljak", "Utorak", "Srijeda", "Četvrtak", "Petak", "Subota", "Nedjelja",
 	},
 	weekdaysEn: [7]string{
 		"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
@@ -131,9 +147,17 @@ var en = &Catalog{
 		"owner.save":       "Save changes",
 		"owner.saved":      "Changes saved",
 		"owner.health.old": "The picture is old — what to do?",
+
+		"hours.err.clock":        "{day}{shift}: use HH:MM times like 09:00",
+		"hours.err.backwards":    "{day}{shift}: closes {close} before it opens at {open}",
+		"hours.err.closed_times": "{day}: marked closed but has times — clear one or the other",
+		"hours.err.untouched":    "{day}: set hours or mark it closed",
+		"hours.err.second":       " (second shift)",
+		"hours.copy":             "Copy Monday to weekdays",
 	},
 	weekdays:   [7]string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"},
 	weekdaysEn: [7]string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"},
+	daysNom:    [7]string{"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"},
 }
 
 // For returns the catalog for a language, defaulting to Croatian.
@@ -186,6 +210,9 @@ func subst(s string, args ...any) string {
 	return b.String()
 }
 
+// DayNames returns the seven editor labels, Mo-first.
+func (c *Catalog) DayNames() [7]string { return c.daysNom }
+
 // Weekday returns the weekday name for a time in the given location.
 // Croatian uses the accusative, because the copy puts it after "u".
 func (c *Catalog) Weekday(t time.Time) string {
@@ -228,4 +255,28 @@ func daysApart(then, now time.Time) int {
 		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 	}
 	return int(math.Round(mid(now).Sub(mid(then)).Hours() / 24))
+}
+
+// HoursErrorText renders a structured hours-form failure in this catalog's
+// language. The day name arrived already localized; only the sentence around
+// it is translated here. F() substitutes in placeholder order, so the call
+// argument order must match each message's {…} order.
+func (c *Catalog) HoursErrorText(e *venue.HoursError) string {
+	if e == nil {
+		return ""
+	}
+	shift := ""
+	if e.Second {
+		shift = c.Get("hours.err.second")
+	}
+	switch e.Code {
+	case "clock":
+		return c.F("hours.err.clock", e.DayName, shift)
+	case "backwards":
+		return c.F("hours.err.backwards", e.DayName, shift, e.Close, e.Open)
+	case "closed_times":
+		return c.F("hours.err.closed_times", e.DayName)
+	default:
+		return c.F("hours.err.untouched", e.DayName)
+	}
 }

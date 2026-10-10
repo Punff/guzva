@@ -40,8 +40,8 @@
       </div>
     </div>
     <div class="fieldset">
-      <label class="lbl" for="v-hours">Radno vrijeme</label>
-      <input class="inp" id="v-hours" name="hours" value="{{.HoursSpec}}" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (prazno = bez oznake)">
+      <span class="lbl mb-2">Radno vrijeme</span>
+      {{template "hours-editor.html" dict "days" .Days "closed" (.Cat.Get "hours.closed") "copy" (.Cat.Get "hours.copy")}}
     </div>
     <button class="btn btn--primary" type="submit">Spremi promjene</button>
   </form>
