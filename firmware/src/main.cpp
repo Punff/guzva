@@ -151,7 +151,12 @@ struct SensorCfg {
   uint8_t led_pwm;      // 0..255 flash LED
 };
 static SensorCfg scDefault = {
-  /* framesize  */ 4,       // FRAMESIZE_VGA
+  /* framesize  */ 5,       // FRAMESIZE_QVGA (320x240): the render grid is
+                             // 160x120, so anything above QVGA only costs
+                             // upload bytes on a weak link (DESIGN.md ⚑10).
+                             // NOTE: 4 is 240x240 (square, non-4:3) — the old
+                             // default here was mislabelled VGA and its frames
+                             // are dims-rejected server-side.
   /* quality    */ 14,
   /* brightness */ 0, /* contrast */ 0, /* saturation */ 0, /* sharpness */ 0,
   /* denoise    */ 0,
@@ -175,7 +180,7 @@ uint32_t brownoutCount  = 0;
 uint32_t captureSeq     = 0;
 uint32_t cfgVerApplied  = 0;
 char     deviceToken[80] = {0};
-uint32_t intervalS      = 30;
+uint32_t intervalS      = 60; // server default; 45-90 s recommended (DESIGN.md ⚑10)
 
 // --- RAM counters (reset on boot) -------------------------------------------
 uint32_t joinFail = 0, postFail = 0, tlsFail = 0, captureFail = 0;
@@ -341,7 +346,7 @@ static void loadNvs() {
   String tok = provPrefs.getString("token", DEVICE_TOKEN);
   snprintf(deviceToken, sizeof deviceToken, "%s", tok.c_str());
 
-  uint32_t iv = camPrefs.getULong("interval", 30);
+  uint32_t iv = camPrefs.getULong("interval", 60);
   intervalS = (uint32_t)clampu(iv, INTERVAL_MIN_S, INTERVAL_MAX_S);
 
   sc = scDefault;
