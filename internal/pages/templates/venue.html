@@ -3,10 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- No-JS fallback: the sched tick rewrites this file when state changes,
-     so a plain reload still lands on the current view. With JS the page
-     updates itself in place instead (no flash, no scroll jump). -->
-<meta http-equiv="refresh" content="30">
+<!-- No-JS fallback, and only for no-JS. Measured: with the meta tag plainly
+     in <head>, Chrome arms the refresh timer when it PARSES the element, so
+     neither rewriting content="300" nor removing the element afterwards
+     disarms it — the page kept reloading every 30s (3 full navigations in
+     95s) with the in-place swap running. Inside <noscript> the element is
+     parsed only when scripting is off, so a JS visitor never arms it and
+     the fallback still works for the visitor who has no JS. -->
+<noscript><meta http-equiv="refresh" content="30"></noscript>
 <title>{{.Name}} — live still</title>
 <meta name="description" content="A stylised live view of {{.Name}}{{if .Updated}}, updated {{.UpdatedDay}} at {{.Updated}} {{.TZ}}{{end}}.">
 <meta name="theme-color" content="#0b0d10" media="(prefers-color-scheme: dark)">
@@ -91,24 +95,6 @@
   // so a first-time visitor kept the shimmer until an unrelated later swap
   // happened to fire a load event. Settle the image that is already here.
   settle(document.getElementById('still'));
-
-  // The <meta refresh> is the no-JS fallback, but nothing was ever switching
-  // it off — so the document reloaded every 30s EVEN WITH THIS SCRIPT
-  // RUNNING (measured: 3 full reloads in 95s, navType "reload"). That is
-  // precisely the flash and scroll-jump the in-place swap exists to avoid,
-  // and it wasted the swap entirely.
-  //
-  // Cancel it by REMOVING the element, not by rewriting its content:
-  // Chrome schedules the refresh timer when the meta element is parsed, so
-  // changing content="30" to a longer delay afterwards leaves the already
-  // armed 30s timer running (measured: still 3 reloads in 95s). Removal is
-  // what actually disarms it.
-  //
-  // This is the no-JS fallback and JS is demonstrably running, so the swap
-  // loop now owns the page. Verified after the change: 0 navigations in
-  // 95s, where before it was 3.
-  var metaRefresh = document.querySelector('meta[http-equiv="refresh"]');
-  if (metaRefresh && metaRefresh.parentNode) metaRefresh.parentNode.removeChild(metaRefresh);
 
   // Clear the "still arriving" veil exactly once the image has settled.
   //

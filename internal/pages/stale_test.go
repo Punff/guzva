@@ -47,18 +47,27 @@ func TestPublicPageShipsTheVeilClearer(t *testing.T) {
 // both was the root cause: index.html must revalidate (it is rewritten on
 // every state change and inlines the CSS and JS), while latest.jpg is
 // addressed by a unique ?v= and can therefore be cached forever.
-// The meta refresh must be REMOVED once the swap loop owns the page, or the
-// document reloads every 30s and the in-place update is pointless. Setting a
-// longer content delay does not work — the timer is armed at parse time.
-func TestPublicPageStandsDownTheMetaRefresh(t *testing.T) {
+// The meta refresh must never reach a JS-enabled visitor: with it plainly in
+// <head>, Chrome arms the timer at parse time and neither rewriting the delay
+// nor removing the element afterwards disarms it, so the document reloaded
+// every 30s and defeated the in-place swap. <noscript> is the only placement
+// that works — the element is parsed only when scripting is off.
+func TestPublicPageFallsBackOnlyWithoutJS(t *testing.T) {
 	f := newFixture(t)
 	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {
 		t.Fatal(err)
 	}
 	idx := f.readIndex(t)
-	if !strings.Contains(idx, `meta[http-equiv="refresh"]`) ||
-		!strings.Contains(idx, `metaRefresh.parentNode.removeChild(metaRefresh)`) {
-		t.Error("page does not remove the meta refresh when JS takes over")
+	i := strings.Index(idx, `<meta http-equiv="refresh"`)
+	if i < 0 {
+		t.Fatal("no meta refresh at all — the no-JS fallback is gone")
+	}
+	// It must sit inside <noscript>, i.e. preceded by the open tag with no
+	// intervening </noscript>.
+	open := strings.LastIndex(idx[:i], "<noscript>")
+	close := strings.LastIndex(idx[:i], "</noscript>")
+	if open < 0 || close > open {
+		t.Errorf("meta refresh is not inside <noscript>; a JS visitor will reload every 30s")
 	}
 }
 
