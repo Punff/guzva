@@ -21,6 +21,7 @@ import (
 
 	"guzva/internal/store"
 	"guzva/internal/venue"
+	"guzva/internal/webui"
 
 	_ "time/tzdata" // venue tz names resolve even without a system zone db (§2)
 )
@@ -111,8 +112,9 @@ type view struct {
 	Updated    string // "14:07" venue-local, empty before the first frame
 	UpdatedDay string // "today" | "yesterday" | "Mon 6 Oct" — disambiguates
 	// the bare clock time without a relative age
-	HoursToday string // "09:00–17:00" venue-local, empty if hours unset
-	TZ         string // venue tz abbreviation, e.g. "CET"
+	HoursToday string       // "09:00–17:00" venue-local, empty if hours unset
+	TZ         string       // venue tz abbreviation, e.g. "CET"
+	CSS        template.CSS // embedded design-system stylesheet (inlined: D5)
 }
 
 func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
@@ -175,6 +177,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		Name:     v.Name,
 		HasFrame: latest != nil && latest.Status == "ok",
 		TZ:       zoneLabel(last.In(loc), loc),
+		CSS:      template.CSS(webui.CSS()),
 	}
 	if vw.HasFrame {
 		vw.StillVer = fmt.Sprintf("%d", latest.ReceivedAt.Unix())

@@ -151,6 +151,15 @@ func TestOnFrameWritesOnlyPublicFiles(t *testing.T) {
 	if !strings.Contains(idx, `width="640"`) {
 		t.Error("index.html missing intrinsic still width")
 	}
+	// The design system is inlined (D5: still a two-file root), and it is the
+	// SAME compiled stylesheet the consoles serve — the guard against the two
+	// surfaces drifting into different looks (PLAN §9).
+	if !strings.Contains(idx, "--color-ink") || !strings.Contains(idx, ".badge--fresh") {
+		t.Error("index.html is not inlining the shared design system")
+	}
+	if strings.Contains(idx, `href="/admin/app.css"`) {
+		t.Error("public page must not link the console stylesheet (D5: two-file root)")
+	}
 }
 
 // TestRefreshFlipsToStale proves the sched half: a static file cannot notice

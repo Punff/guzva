@@ -30,11 +30,6 @@ include Makefile.web.mk
 help: ## this list
 	@grep -E '^[a-z]+:.*?##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?##"}{printf "  %-10s %s\n",$$1,$$2}'
 
-test: ## gofmt + vet + all unit tests
-	gofmt -l cmd internal tools | grep . && exit 1 || true
-	go vet ./...
-	go test ./...
-
 test: css-check ## gofmt + vet + unit tests (fails on stale UI or build drift)
 	gofmt -l cmd internal tools | grep . && exit 1 || true
 	go vet ./...
