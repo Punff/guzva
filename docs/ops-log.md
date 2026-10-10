@@ -138,3 +138,20 @@ Baseline before this block: `e7db280` (PLAN v3.2 + docs/ux.md).
 - ACTION: venue description/contact on the public page needs a store
   migration (v4). Every migration must add its `case N+1` *and* keep
   `TestReopenCurrentDatabase` green — that gap killed the site once.
+
+### Live verification after `624dfeb`
+
+Checked against the running box, not the local build:
+
+- `GET /bench/` → 200, 21 KB, inlines the design system (`--color-ink`
+  present twice = light + dark block), **no** `/admin/app.css` link, so D5
+  still holds; `id="still"` + `data-ver` present, title renders.
+- `GET /admin/app.css` → 200, 16 KB, `text/css` (console path).
+- `GET /bench?p=1` → 301 → `/bench/?p=1`, query preserved.
+- `GET /owner/login` → 200, Croatian (`lang="hr"`, `Prijava`, `Lozinka`,
+  `Identifikator objekta`).
+- `GET /owner/` unauthed → 303 → `/owner/login` (no dash leak).
+- `GET /admin/` unauthed → 303 → `/admin/login` (unchanged).
+
+Note: `/owner/<slug>` is not a route — the owner login is one page at
+`/owner/login` with the slug as a form field. A 404 there is correct.
