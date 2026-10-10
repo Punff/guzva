@@ -1,0 +1,201 @@
+/*
+ * guzva design tokens — "Tisak" (print).
+ * Source: docs/design.md §3.1, §3.3, §3.4, §4, §5.4.
+ *
+ * The names are ROLES, not colours: in dark mode `paper` is the dark
+ * background and `ink` the light text. That inversion is deliberate — a
+ * component says what it means ("bg-paper") and never has to know the theme.
+ *
+ * Two literals escape the role system: s0–s3, the four tones of the still
+ * itself. They never change, in either theme, so a picture shared in a chat
+ * looks identical wherever it is opened (§5.4).
+ *
+ * Consumed by web/public.css (inlined into the page) and web/app.css (served
+ * to the consoles). Never a CDN, never a runtime compiler.
+ */
+@import "tailwindcss" source(none);
+
+@theme {
+  /* Drop the default palette and radii: everything square, and a much
+     smaller stylesheet. A stray rounded-lg or text-white will not resolve,
+     which is the point — it has to be a named role. */
+  --color-*: initial;
+  --radius-*: initial;
+
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-fresh: var(--fresh);
+  --color-late: var(--late);
+  --color-stale: var(--stale);
+
+  /* The still ramp — literal, both themes (§5.4). Even lightness steps. */
+  --color-s0: #12202d;
+  --color-s1: #33607f;
+  --color-s2: #7ea5c0;
+  --color-s3: #f2ede2;
+
+  /* Depth is a hard offset, never a blur (§3.3). */
+  --shadow-step: 4px 4px 0 0 var(--ink);
+  --shadow-step-sm: 2px 2px 0 0 var(--ink);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  --breakpoint-sm: 30rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+}
+
+/* Light is the default theme; dark is whatever the visitor's system says,
+ * unless a console has pinned data-theme (the manual toggle, §3.1). */
+:root {
+  --paper: #f2ede2;
+  --paper-2: #e8e1d2;
+  --ink: #12202d;
+  --muted: #46535f;
+  --accent: #ae2b16;
+  --fresh: #15694a;
+  --late: #7f5000;
+  --stale: #4f5b66;
+
+  /* The still ramp as raw vars too, so the CSS-only textures (hatch, dither)
+     can reach them without going through a generated utility class. */
+  --s0: #12202d;
+  --s1: #33607f;
+  --s2: #7ea5c0;
+  --s3: #f2ede2;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0d151c;
+    --paper-2: #17222c;
+    --ink: #eee9dd;
+    --muted: #a9b5bf;
+    --accent: #ff7a5c;
+    --fresh: #5ed394;
+    --late: #f2b84b;
+    --stale: #98a5b0;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #0d151c;
+  --paper-2: #17222c;
+  --ink: #eee9dd;
+  --muted: #a9b5bf;
+  --accent: #ff7a5c;
+  --fresh: #5ed394;
+  --late: #f2b84b;
+  --stale: #98a5b0;
+}
+
+/*
+ * Base — deliberately small. Everything else is a utility in the templates
+ * (§6), not a component layer here.
+ */
+@layer base {
+  html {
+    /* 4px grid: every gap and pad in the system is a multiple. */
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    /* Nothing on this site is selectable-and-copyable by accident, but the
+       still's alt text and the hours must be. Leave defaults alone. */
+  }
+  /* Focus is always visible and reads on any surface (§3.3): a 3px accent
+     ring, offset 2px, with a 1px paper gap inside it. */
+  :focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 1px var(--paper);
+  }
+  /* Colour is never the only signal (§2.1, §12): forced-colors keeps the
+     borders, and the text and shapes still carry the state. */
+  @media (forced-colors: active) {
+    * {
+      box-shadow: none !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* ---- textures: CSS only, ~100 B each (§3.3) ---- */
+
+  /* Hatch — stale overlays, section rules. */
+  .tx-hatch {
+    background-image: repeating-linear-gradient(
+      135deg,
+      transparent 0 3px,
+      color-mix(in oklab, var(--s1) 45%, transparent) 3px 4px
+    );
+  }
+  .tx-hatch-light {
+    background-image: repeating-linear-gradient(
+      135deg,
+      transparent 0 3px,
+      color-mix(in oklab, var(--s1) 22%, transparent) 3px 4px
+    );
+  }
+  /* Dither — skeletons and empty states. Static by design (§3.6). */
+  .tx-dither {
+    background-image: conic-gradient(
+      var(--paper-2) 0 25%,
+      var(--paper) 0 50%,
+      var(--paper-2) 0 75%,
+      var(--paper) 0
+    );
+    background-size: 8px 8px;
+  }
+  /* Shutter — a closed venue shows no still at all; this fills the frame
+     box instead (§3.2, §5.6). */
+  .tx-shutter {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      var(--paper-2) 0 10px,
+      var(--ink) 10px 20px
+    );
+  }
+
+  /* ---- motion: nearly none, and none under reduced-motion (§3.6) ---- */
+  .tap {
+    transition: transform 80ms steps(2), box-shadow 80ms steps(2);
+  }
+  .tap:active {
+    transform: translate(2px, 2px);
+    box-shadow: 0 0 0 0 var(--ink);
+  }
+  /* A new frame gets a 3-step blink, not a crossfade: crisp, and gone in
+     240ms. */
+  .blink {
+    animation: blink 240ms steps(3);
+  }
+  @keyframes blink {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  /* Tabular numerals everywhere a time or a count appears. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tap,
+  .blink {
+    animation: none;
+    transition: none;
+  }
+}

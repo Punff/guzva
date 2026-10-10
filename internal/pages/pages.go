@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"guzva/internal/i18n"
 	"guzva/internal/store"
 	"guzva/internal/venue"
 	"guzva/internal/webui"
@@ -105,16 +106,22 @@ type view struct {
 	StillVer   string // latest.jpg cache-buster (frame received unix)
 	StillW     int    // intrinsic render size, so the browser reserves the
 	StillH     int    // box before the JPEG lands (no layout shift)
-	FreshClass string
-	FreshText  string
-	OpenClass  string
-	OpenText   string
 	Updated    string // "14:07" venue-local, empty before the first frame
-	UpdatedDay string // "today" | "yesterday" | "Mon 6 Oct" — disambiguates
+	UpdatedDay string // "danas" | "jučer" | "10.10.2026." — disambiguates
 	// the bare clock time without a relative age
-	HoursToday string       // "09:00–17:00" venue-local, empty if hours unset
-	TZ         string       // venue tz abbreviation, e.g. "CET"
-	CSS        template.CSS // embedded design-system stylesheet (inlined: D5)
+	HoursToday string // "09:00–17:00" venue-local, empty if hours unset
+	TZ         string // venue tz abbreviation, e.g. "CET"
+
+	// DESIGN.md §3.2: a state is a SHAPE, a COLOUR and a SENTENCE. Colour is
+	// never the only signal, so all three travel together.
+	StateClass  string // fresh | late | nosignal | waiting | closed
+	StateText   string // Croatian (or per-venue English) from internal/i18n
+	StateShape  string // svg shape carrying the state without colour
+	StateDetail string // one plain sentence, or ""
+	OpenText    string
+	ShowStill   bool // §5.6: a closed venue shows no still at all
+	Lang        string
+	CSS         template.CSS // embedded design-system stylesheet (inlined: D5)
 }
 
 func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
@@ -150,7 +157,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 
 	// The state key is everything the page shows that time can change.
 	// force (new frame) bypasses it because Updated HH:MM follows the frame.
-	stateKey := fmt.Sprintf("%s|%s|%d|%s|%s", fresh, open, last.Unix(), v.Name, hoursToday(hours, localNow))
+	stateKey := fmt.Sprintf("%s|%s|%d|%s|%s", fresh, open, last.Unix(), v.Name, hoursToday(i18n.For(i18n.Normalize(v.Lang)), hours, localNow))
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -173,11 +180,14 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		return nil // nothing the page shows has changed
 	}
 
+	cat := i18n.For(i18n.Normalize(v.Lang))
 	vw := view{
-		Name:     v.Name,
-		HasFrame: latest != nil && latest.Status == "ok",
-		TZ:       zoneLabel(last.In(loc), loc),
-		CSS:      template.CSS(webui.CSS()),
+		Name:      v.Name,
+		HasFrame:  latest != nil && latest.Status == "ok",
+		TZ:        zoneLabel(last.In(loc), loc),
+		CSS:       template.CSS(webui.Public()),
+		Lang:      string(cat.Lang),
+		ShowStill: true,
 	}
 	if vw.HasFrame {
 		// The cache-buster is the frame row id, NOT received_at: ids are
@@ -188,27 +198,36 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		// photo in a visitor's cache permanently.
 		vw.StillVer = fmt.Sprintf("%d", latest.ID)
 		local := last.In(loc)
-		vw.Updated = local.Format("15:04")
-		vw.UpdatedDay = dayLabel(local, now.In(loc))
+		vw.Updated = cat.Time(local)
+		vw.UpdatedDay = cat.DayName(local, now.In(loc))
 		if latest.Width > 0 && latest.Height > 0 {
 			vw.StillW, vw.StillH = latest.Width, latest.Height
 		}
 	}
-	switch fresh {
-	case venue.Fresh:
-		vw.FreshClass, vw.FreshText = "fresh", "Fresh"
-	case venue.Stale:
-		vw.FreshClass, vw.FreshText = "stale", "STALE"
+	// State = shape + colour + sentence (§3.2). Two stale tiers (DESIGN.md
+	// ⚑3) so a camera merely running behind reads differently from one that
+	// has gone quiet.
+	switch {
+	case !vw.HasFrame:
+		vw.StateClass, vw.StateText, vw.StateShape = "waiting", cat.Get("state.waiting"), shapeWaiting
+	case fresh == venue.Fresh:
+		vw.StateClass, vw.StateText, vw.StateShape = "fresh", cat.Get("state.fresh"), shapeFresh
+	case fresh == venue.Late:
+		vw.StateClass, vw.StateText, vw.StateShape = "late", cat.Get("state.late"), shapeLate
+		vw.StateDetail = cat.F("late.detail", vw.Updated)
 	default:
-		vw.FreshClass, vw.FreshText = "unknown", "No frame yet"
+		vw.StateClass, vw.StateText, vw.StateShape = "nosignal", cat.Get("state.nosignal"), shapeNoSignal
+		vw.StateDetail = cat.F("stale.detail", vw.Updated)
 	}
-	switch open {
-	case venue.Open:
-		vw.OpenClass, vw.OpenText = "open", "Open now"
-	case venue.Closed:
-		vw.OpenClass, vw.OpenText = "closed", "Closed"
+
+	// §5.6: a closed venue shows no still at all — privacy after hours,
+	// honesty (there is nothing to claim), and bytes.
+	if open == venue.Closed {
+		vw.StateClass, vw.StateText, vw.StateShape = "closed", cat.Get("state.closed"), shapeClosed
+		vw.ShowStill, vw.StateDetail = false, ""
 	}
-	vw.HoursToday = hoursToday(hours, localNow)
+	vw.OpenText = openText(cat, hours, localNow, open)
+	vw.HoursToday = hoursToday(cat, hours, localNow)
 
 	if err := renderAtomic(filepath.Join(dir, "index.html"), w.tmpl, "venue.html", vw); err != nil {
 		return err
@@ -245,24 +264,8 @@ func sameDayMinusOne(a, b time.Time) bool {
 	return ay == prev.Year() && am == prev.Month() && ad == prev.Day()
 }
 
-// dayLabel says which day the frame is from, so a bare clock time is never
-// ambiguous ("Updated 14:07" on a page from yesterday reads wrong). Not a
-// relative age — the freshness badge owns "how long ago" (§6.4).
-func dayLabel(frameAt, nowLocal time.Time) string {
-	ay, am, ad := frameAt.Date()
-	ny, nm, _ := nowLocal.Date()
-	switch {
-	case ay == ny && am == nm && ad == nowLocal.Day():
-		return "today"
-	case sameDayMinusOne(frameAt, nowLocal):
-		return "yesterday"
-	default:
-		return frameAt.Format("Mon 2 Jan")
-	}
-}
-
 // hoursToday formats today's ranges in venue-local time, "" when unset.
-func hoursToday(h venue.Hours, t time.Time) string {
+func hoursToday(cat *i18n.Catalog, h venue.Hours, t time.Time) string {
 	rs := h[int(t.Weekday())]
 	if len(rs) == 0 {
 		return ""
@@ -327,3 +330,52 @@ func renderAtomic(dst string, tmpl *template.Template, name string, v view) erro
 	}
 	return os.Rename(tmp.Name(), dst)
 }
+
+// openText is the second line: when this venue is open, or when it next
+// opens. Absent hours means the page never claims anything about opening.
+func openText(cat *i18n.Catalog, h venue.Hours, now time.Time, open venue.OpenClosed) string {
+	if !h.Configured() {
+		return ""
+	}
+	switch open {
+	case venue.Open:
+		if end, ok := h.NextClose(now); ok {
+			return cat.F("open.until", cat.Time(end))
+		}
+		return cat.Get("open.now")
+	default:
+		if next, ok := h.NextOpen(now); ok {
+			when := cat.Get("when.today")
+			if !sameDay(now, next) {
+				when = cat.Get("when.tomorrow")
+			}
+			return cat.F("closed.opens", when, cat.Time(next))
+		}
+		return cat.Get("state.closed")
+	}
+}
+
+// sameDay reports whether two instants fall on the same calendar day.
+func sameDay(a, b time.Time) bool {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.Date()
+	return ay == by && am == bm && ad == bd
+}
+
+// Status shapes (DESIGN.md §3.2). Colour is never the only signal, so every
+// state carries a DISTINCT silhouette as well as a colour and a sentence:
+// filled / half / hatched / shutter / dither. 12×12, crispEdges, currentColor
+// so the chip's colour drives them. Rendered aria-hidden; the text beside them
+// is what a screen reader reads.
+//
+// These are whole strings, never assembled by concatenation — the Tailwind
+// scanner and the SVG inliner both need to see them literally (§4).
+const (
+	shapeFresh = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><rect width="12" height="12" fill="currentColor"/></svg>`
+	shapeLate  = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><rect width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"/><rect y="6" width="12" height="6" fill="currentColor"/></svg>`
+	// Hatched: bars, so it reads as "no clean signal" without colour.
+	shapeNoSignal = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><rect width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"/><path d="M0 3h12M0 6h12M0 9h12" stroke="currentColor" stroke-width="2"/></svg>`
+	// Shutter bars: a closed venue shows no still at all (§5.6).
+	shapeClosed  = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><rect y="2" width="12" height="3" fill="currentColor"/><rect y="7" width="12" height="3" fill="currentColor"/></svg>`
+	shapeWaiting = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h4v4H0zM8 0h4v4H8zM4 4h4v4H4zM0 8h4v4H0zM8 8h4v4H8z" fill="currentColor"/></svg>`
+)

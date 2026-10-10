@@ -1,0 +1,7 @@
+/* Public page entry (DESIGN.md §4). Scans ONLY the page templates and
+ * inlines into each venue's index.html, because D5 allows exactly two files
+ * in the web root — no third asset, ever. Budget: ≤ 8 KB minified.
+ * source(none) in tokens.css disables Tailwind's automatic scan of the whole
+ * repo; without it both entries compiled byte-identical files. */
+@import "./tokens.css";
+@source "../internal/pages/templates/*.html";

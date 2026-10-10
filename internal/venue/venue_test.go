@@ -92,7 +92,13 @@ func TestClassifyFreshness(t *testing.T) {
 		{time.Time{}, Unknown},
 		{now.Add(-time.Minute), Fresh},
 		{now.Add(-3 * time.Minute), Fresh}, // boundary is exclusive
-		{now.Add(-3*time.Minute - time.Second), Stale},
+		// DESIGN.md ⚑3: two tiers, both "not fresh". A venue running a
+		// few minutes behind is not the same as one that has gone quiet,
+		// and the page should not use the same word for both.
+		{now.Add(-3*time.Minute - time.Second), Late},
+		{now.Add(-14 * time.Minute), Late},
+		{now.Add(-15 * time.Minute), Late}, // NoSignalAfter boundary is exclusive
+		{now.Add(-15*time.Minute - time.Second), Stale},
 		{now.Add(-time.Hour), Stale},
 	}
 	for _, c := range cases {

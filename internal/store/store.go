@@ -158,6 +158,13 @@ const schemaV3 = `
 ALTER TABLE venues ADD COLUMN owner_hash TEXT NOT NULL DEFAULT '';
 `
 
+// schemaV4 adds the per-venue page language (DESIGN.md ⚑9). Croatian is the
+// product default; English is for tourist venues, chosen per venue rather than
+// by a toggle, so no second file and no D5 change.
+const schemaV4 = `
+ALTER TABLE venues ADD COLUMN lang TEXT NOT NULL DEFAULT 'hr';
+`
+
 func (s *Store) migrate(ctx context.Context) error {
 	var ver int
 	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&ver); err != nil {
@@ -189,7 +196,17 @@ func (s *Store) migrate(ctx context.Context) error {
 		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 3"); err != nil {
 			return fmt.Errorf("store: set user_version: %w", err)
 		}
+		ver = 3 // ... and v4 as well; every step must reach the terminal
+		fallthrough
 	case 3:
+		if _, err := s.db.ExecContext(ctx, schemaV4); err != nil {
+			return fmt.Errorf("store: migration v4: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 4"); err != nil {
+			return fmt.Errorf("store: set user_version: %w", err)
+		}
+		ver = 4
+	case 4:
 		// current — nothing to do.
 	default:
 		return fmt.Errorf("store: unknown schema version %d (binary older than db?)", ver)
@@ -241,12 +258,12 @@ func (s *Store) CreateVenue(ctx context.Context, v Venue) (int64, error) {
 	return res.LastInsertId()
 }
 
-const venueCols = `id, slug, name, tz, style, owner_hash, last_frame_at, created_at`
+const venueCols = `id, slug, name, tz, style, owner_hash, lang, last_frame_at, created_at`
 
 func scanVenue(row interface{ Scan(...any) error }) (*Venue, error) {
 	var v Venue
 	var last, created int64
-	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &v.OwnerHash, &last, &created)
+	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &v.OwnerHash, &v.Lang, &last, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -349,6 +366,7 @@ type Venue struct {
 	TZ          string // IANA name; public pages render venue-local time (§6.4)
 	Style       string // preset name applied to new frames (site-plane)
 	OwnerHash   string
+	Lang        string // page language, "hr" (default) or "en" (⚑9)
 	LastFrameAt time.Time
 	CreatedAt   time.Time
 }

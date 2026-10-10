@@ -11,8 +11,17 @@ import (
 	"time"
 )
 
-// StaleAfter is the freshness threshold for the public STALE badge (§6.6).
-const StaleAfter = 3 * time.Minute
+// Freshness thresholds (PLAN §6.6, DESIGN.md §3.2/⚑3). Two tiers, both
+// "not fresh", so the page and the alerting agree: a picture that is merely
+// running behind says so in gentler words than one the camera has stopped
+// sending. NoSignalAfter is the plan's own 15-minute alert threshold, reused
+// rather than invented.
+const (
+	// StaleAfter is when a good render stops counting as fresh.
+	StaleAfter = 3 * time.Minute
+	// NoSignalAfter is when the venue is treated as having gone silent.
+	NoSignalAfter = 15 * time.Minute
+)
 
 // Freshness classifies the age of the last good frame relative to server
 // time. The server clock is canonical; device clocks are advisory (§1).
@@ -23,8 +32,12 @@ const (
 	Unknown Freshness = iota
 	// Fresh means a good render arrived within StaleAfter.
 	Fresh
-	// Stale means the last good render is older than StaleAfter. A failure
-	// never erases identity: last-good stays and STALE shows (§1).
+	// Late means the last good render is older than StaleAfter but within
+	// NoSignalAfter: the venue is running behind, not silent.
+	Late
+	// Stale means the last good render is older than NoSignalAfter — the
+	// camera has stopped sending. A failure never erases identity: last-good
+	// stays and the page says so (§1).
 	Stale
 )
 
@@ -32,6 +45,8 @@ func (f Freshness) String() string {
 	switch f {
 	case Fresh:
 		return "fresh"
+	case Late:
+		return "late"
 	case Stale:
 		return "stale"
 	default:
@@ -45,10 +60,14 @@ func Classify(lastFrameAt, now time.Time) Freshness {
 	if lastFrameAt.IsZero() {
 		return Unknown
 	}
-	if now.Sub(lastFrameAt) > StaleAfter {
+	switch {
+	case now.Sub(lastFrameAt) > NoSignalAfter:
 		return Stale
+	case now.Sub(lastFrameAt) > StaleAfter:
+		return Late
+	default:
+		return Fresh
 	}
-	return Fresh
 }
 
 // Range is one opening interval on one weekday, in minutes from local
@@ -297,4 +316,50 @@ func parseHHMM(s string) (int, error) {
 		return 0, fmt.Errorf("bad hour")
 	}
 	return h*60 + m, nil
+}
+
+// NextClose returns the end of the opening interval containing t. False when
+// the venue is not open at t, or when the day has no closing boundary (an
+// interval running to 24:00). The public page uses it for "Otvoreno do {time}"
+// (DESIGN.md §11) rather than saying "open", which claims a duration it
+// cannot know.
+func (h Hours) NextClose(t time.Time) (time.Time, bool) {
+	if !h.OpenAt(t) {
+		return time.Time{}, false
+	}
+	mins := t.Hour()*60 + t.Minute()
+	for _, r := range h[int(t.Weekday())] {
+		if mins >= r.OpenMin && mins < r.CloseMin {
+			end := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location()).
+				Add(time.Duration(r.CloseMin) * time.Minute)
+			if r.CloseMin >= 1440 {
+				return time.Time{}, false // open past midnight: no closing time
+			}
+			return end, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// NextOpen returns the next moment the venue opens, searching forward up to a
+// week. False when no hours are configured — the page must then say nothing
+// at all about opening rather than guess.
+func (h Hours) NextOpen(t time.Time) (time.Time, bool) {
+	if !h.Configured() {
+		return time.Time{}, false
+	}
+	base := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	mins := t.Hour()*60 + t.Minute()
+	for d := 0; d < 8; d++ {
+		day := base.AddDate(0, 0, d)
+		for _, r := range h[int(day.Weekday())] {
+			if d == 0 && r.OpenMin <= mins {
+				continue // already passed today
+			}
+			if r.CloseMin > r.OpenMin {
+				return day.Add(time.Duration(r.OpenMin) * time.Minute), true
+			}
+		}
+	}
+	return time.Time{}, false
 }
