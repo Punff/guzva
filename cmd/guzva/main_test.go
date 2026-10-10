@@ -149,6 +149,17 @@ func TestStaticServesOnlyPublicFiles(t *testing.T) {
 	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "/<slug>/") {
 		t.Errorf("root hint = %d %q", w.Code, w.Body.String())
 	}
+	// The slashless form is canonicalised: served from /<slug>, latest.jpg
+	// would resolve to /latest.jpg (404 — the broken-image bug on mobile
+	// links that arrive without the trailing slash).
+	w = httptest.NewRecorder()
+	static.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/"+slug+"?p=1", nil))
+	if w.Code != http.StatusMovedPermanently {
+		t.Fatalf("GET /%s: %d, want 301", slug, w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/"+slug+"/?p=1" {
+		t.Errorf("Location = %q, want %q", loc, "/"+slug+"/?p=1")
+	}
 	// POST is refused — the static plane is read-only.
 	w = httptest.NewRecorder()
 	static.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/"+slug+"/", nil))

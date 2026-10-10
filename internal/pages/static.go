@@ -38,6 +38,17 @@ func Static(dir string) http.Handler {
 			return
 		}
 		if fi, err := os.Stat(full); err == nil && fi.IsDir() {
+			// The canonical form of a venue page is /<slug>/: the only
+			// relative URL on it (latest.jpg) resolves against the
+			// directory, and links shared to a phone usually arrive
+			// without the slash. Redirect instead of serving the page
+			// from a path whose relative links would 404.
+			if !strings.HasSuffix(r.URL.Path, "/") {
+				u := *r.URL
+				u.Path = path.Clean(clean) + "/"
+				http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
+				return
+			}
 			// Serve a directory only as its index.html — never list it.
 			full = filepath.Join(full, "index.html")
 		}
