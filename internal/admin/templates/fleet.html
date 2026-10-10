@@ -24,7 +24,7 @@
   </div>
   {{if .Devices}}
   <div class="hidden md:block">
-  <table class="tbl">
+  <table class="tbl tbl--bare">
     <thead>
       <tr> <th>Serial</th> <th>State</th> <th>FW</th> <th>Signal</th> <th>Last seen</th> <th title="WiFi joins failed / uploads failed / TLS failed since boot">Failures</th> <th>Config</th>
         <th></th>
@@ -97,7 +97,7 @@
 
 <section class="mt-6">
   <h2 class="text-lg font-bold mb-3">New venue</h2>
-  <form class="card card--raised grid gap-3 max-w-2xl" hx-post="/admin/venues" hx-target="#flash" hx-swap="innerHTML">
+  <form class="card card--inset grid gap-3 max-w-2xl" hx-post="/admin/venues" hx-target="#flash" hx-swap="innerHTML">
     <div class="fieldset">
       <label class="lbl" for="v-slug">Slug</label>
       <input class="inp" id="v-slug" name="slug" placeholder="jadro" required pattern="[a-z0-9][a-z0-9-]{0,39}">
@@ -130,7 +130,7 @@
 <section class="mt-6">
   <h2 class="text-lg font-bold mb-3">New device</h2>
   {{if .DeviceOpts}}
-  <form class="card card--raised grid gap-3 max-w-2xl" hx-post="/admin/devices" hx-target="#token-out" hx-swap="innerHTML">
+  <form class="card card--inset grid gap-3 max-w-2xl" hx-post="/admin/devices" hx-target="#token-out" hx-swap="innerHTML">
     <div class="fieldset">
       <label class="lbl" for="d-venue">Venue</label>
       <select class="inp" id="d-venue" name="venue_id">

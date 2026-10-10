@@ -50,7 +50,7 @@ func New(st *store.Store, passHash string, secret []byte, secure bool, log *slog
 	// partial like page-head can be called with named values instead of a
 	// positional soup. It panics on a bad call at TEMPLATE EXECUTION time,
 	// so the pairings are unit-tested rather than discovered in production.
-	funcs := template.FuncMap{"dict": dict}
+	funcs := template.FuncMap{"dict": dict, "appCSS": webui.AppPath}
 	tmpl, err := template.New("").Funcs(funcs).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("admin: parse templates: %w", err)
@@ -78,6 +78,11 @@ func (s *Server) Register(mux *http.ServeMux) {
 	// The compiled design system (PLAN §9/D6) replaces the inline <style> block:
 	// one Tailwind-purged stylesheet, embedded, cached, shared with the public
 	// page (which inlines the same bytes).
+	// The content-hashed URL is known at build time, so it is registered
+	// literally. It is the only URL the templates emit, and because the hash
+	// changes with the bytes it can be cached forever without ever going
+	// stale. The un-hashed path stays as a courtesy for old bookmarks.
+	mux.Handle("GET "+webui.AppPath(), webui.Handler())
 	mux.Handle("GET /admin/app.css", webui.Handler())
 	mux.HandleFunc("GET /admin/login", s.loginPage)
 	mux.HandleFunc("POST /admin/login", s.loginSubmit)

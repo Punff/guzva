@@ -145,8 +145,12 @@
     background: var(--paper);
     padding: 1rem;
   }
+  /* Depth is earned, not sprinkled. Only the ONE thing a page is about
+     carries the offset shadow; everything below it is a flat bordered
+     surface. Three stacked shadows read as noise, not hierarchy (§2.3). */
   .card--raised { box-shadow: var(--shadow-step); }
-  /* A nested surface: same border, no shadow, one step darker. */
+  /* A secondary surface: quieter background, no shadow. Used for anything
+     that is not the page's subject — create-forms, panels, empty states. */
   .card--inset { background: var(--paper-2); }
 
   .btn {
@@ -172,7 +176,10 @@
   .btn--primary:hover { filter: brightness(1.07); }
   .btn--danger { background: transparent; color: var(--accent); border-color: var(--accent); box-shadow: none; }
   .btn--danger:hover { background: var(--accent); color: var(--paper); }
+  /* Buttons size to their label by default. A full-width primary button on a
+     short action ("Save details") reads as a layout accident. */
   .btn--block { width: 100%; }
+  .btn--quiet { box-shadow: none; }
 
   .inp {
     width: 100%;
@@ -198,6 +205,9 @@
   .fieldset { display: grid; gap: 0.25rem; }
 
   .tbl { width: 100%; font-size: var(--text-sm, 0.875rem); border: 2px solid var(--ink); }
+  /* A table inside a card: keep the header and stripes, drop the frame. Two
+     nested borders read as a mistake. */
+  .tbl--bare { border: 0; }
   .tbl th, .tbl td { text-align: left; padding: 0.375rem 0.5rem; }
   .tbl thead th {
     background: var(--paper-2);

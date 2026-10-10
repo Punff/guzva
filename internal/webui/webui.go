@@ -31,6 +31,20 @@ var publicCSS []byte
 // App returns the compiled console stylesheet.
 func App() []byte { return appCSS }
 
+var appHash = func() string {
+	sum := sha256.Sum256(appCSS)
+	return hex.EncodeToString(sum[:])[:8]
+}()
+
+// AppPath is the console stylesheet's URL, hashed by content
+// (DESIGN.md §4: app.[hash].css). A new build is therefore a NEW URL, so a
+// browser holding yesterday's stylesheet cannot possibly serve it for the new
+// templates — which is exactly the bug this replaces: the sheet was served at
+// a fixed /admin/app.css under a long max-age, so browsers kept an old one
+// while the templates moved on, and every new component class silently did
+// nothing.
+func AppPath() string { return "/admin/app." + appHash + ".css" }
+
 // Public returns the compiled public-page stylesheet, for inlining.
 func Public() []byte { return publicCSS }
 
@@ -45,7 +59,9 @@ func Handler() http.Handler {
 	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
+		// Safe to cache forever: the filename carries the hash, so this URL's
+		// bytes can never change.
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		if r.Header.Get("If-None-Match") == etag {
 			w.WriteHeader(http.StatusNotModified)
 			return

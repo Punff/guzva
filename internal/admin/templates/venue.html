@@ -14,14 +14,9 @@
   {{if .OwnerSet}}<div class="card card--inset text-sm" role="status">Owner password set.</div>{{end}}
 </div>
 
-<nav class="flex flex-wrap gap-2 mb-5" aria-label="Sections">
-  <span class="inline-flex items-center border-2 border-ink bg-ink text-paper px-3 min-h-11 text-sm font-semibold">Overview</span>
-  <a class="inline-flex items-center border-2 border-ink bg-paper px-3 min-h-11 text-sm font-semibold tap" href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">Public page ↗</a>
-</nav>
-
 <section class="border-2 border-ink bg-paper shadow-step p-4 mb-5">
   <h2 class="text-lg font-bold mb-1">Details</h2>
-  <p class="text-sm text-muted mb-3">Slug <code class="font-mono text-ink">/{{.Venue.Slug}}/</code> is identity and never changes.</p>
+  <p class="text-sm text-muted mb-3">Slug <code class="font-mono text-ink">/{{.Venue.Slug}}/</code> is identity and never changes. <a class="underline" href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">Open the public page ↗</a></p>
   <form class="grid gap-3" hx-post="/admin/venues/{{.Venue.ID}}" hx-target="#flash" hx-swap="innerHTML">
     <div class="fieldset">
       <label class="lbl" for="v-name">Name</label>
