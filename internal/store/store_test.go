@@ -178,8 +178,8 @@ func TestMigrationV1ToV2(t *testing.T) {
 	defer s.Close()
 
 	var ver int
-	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 4 {
-		t.Fatalf("user_version = %d err=%v, want 4", ver, err)
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 5 {
+		t.Fatalf("user_version = %d err=%v, want 5", ver, err)
 	}
 	d, err := s.DeviceBySerial(context.Background(), "esp32-old")
 	if err != nil {
@@ -382,8 +382,8 @@ func TestMigrationToV3(t *testing.T) {
 	}
 	defer s.Close()
 	var ver int
-	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 4 {
-		t.Fatalf("user_version = %d err=%v, want 4", ver, err)
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 5 {
+		t.Fatalf("user_version = %d err=%v, want 5", ver, err)
 	}
 	v, err := s.VenueBySlug(context.Background(), "old")
 	if err != nil {
@@ -393,6 +393,9 @@ func TestMigrationToV3(t *testing.T) {
 	// missing fallthrough left case 3 unreachable and reported success.
 	if v.Lang != "hr" {
 		t.Fatalf("venue lang = %q after migrating from v1, want \"hr\"", v.Lang)
+	}
+	if v.CalibJSON != "" {
+		t.Fatalf("venue calib = %q after migrating from v1, want empty (defaults)", v.CalibJSON)
 	}
 	if v.Name != "Old" || v.OwnerHash != "" {
 		t.Fatalf("v1 venue not intact: %+v", v)
@@ -450,10 +453,10 @@ func TestVenueDetailsAndOwner(t *testing.T) {
 // restart after the first boot failed to open the store.
 func TestReopenCurrentDatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "reopen.db")
-	// A fresh database migrates 0→4 in one open; reopens stay at 4.
+	// A fresh database migrates 0→5 in one open; reopens stay at 5.
 	// Every step of the chain must be terminal — a missing case is what
 	// turned a deploy into an outage once.
-	for i, want := range []int{4, 4, 4} {
+	for i, want := range []int{5, 5, 5} {
 		s, err := Open(path)
 		if err != nil {
 			t.Fatalf("open #%d: %v", i+1, err)

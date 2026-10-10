@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"guzva/internal/proto"
+	"guzva/internal/render"
 	"guzva/internal/venue"
 
 	_ "modernc.org/sqlite" // CGO-free SQLite driver → one static binary
@@ -165,6 +166,14 @@ const schemaV4 = `
 ALTER TABLE venues ADD COLUMN lang TEXT NOT NULL DEFAULT 'hr';
 `
 
+// schemaV5 adds the render calibration (DESIGN.md ⚑5): thresholds, bias,
+// invert, masks and preset as one JSON document. Nullable in spirit —
+// DEFAULT ” means "defaults, no masks" — so old venues render exactly as
+// before without any backfill.
+const schemaV5 = `
+ALTER TABLE venues ADD COLUMN calib_json TEXT NOT NULL DEFAULT '';
+`
+
 func (s *Store) migrate(ctx context.Context) error {
 	var ver int
 	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&ver); err != nil {
@@ -205,8 +214,17 @@ func (s *Store) migrate(ctx context.Context) error {
 		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 4"); err != nil {
 			return fmt.Errorf("store: set user_version: %w", err)
 		}
-		ver = 4
+		ver = 4 // ... and v5 as well; every step must reach the terminal
+		fallthrough
 	case 4:
+		if _, err := s.db.ExecContext(ctx, schemaV5); err != nil {
+			return fmt.Errorf("store: migration v5: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 5"); err != nil {
+			return fmt.Errorf("store: set user_version: %w", err)
+		}
+		ver = 5
+	case 5:
 		// current — nothing to do.
 	default:
 		return fmt.Errorf("store: unknown schema version %d (binary older than db?)", ver)
@@ -258,12 +276,12 @@ func (s *Store) CreateVenue(ctx context.Context, v Venue) (int64, error) {
 	return res.LastInsertId()
 }
 
-const venueCols = `id, slug, name, tz, style, owner_hash, lang, last_frame_at, created_at`
+const venueCols = `id, slug, name, tz, style, owner_hash, lang, calib_json, last_frame_at, created_at`
 
 func scanVenue(row interface{ Scan(...any) error }) (*Venue, error) {
 	var v Venue
 	var last, created int64
-	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &v.OwnerHash, &v.Lang, &last, &created)
+	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &v.OwnerHash, &v.Lang, &v.CalibJSON, &last, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -367,6 +385,7 @@ type Venue struct {
 	Style       string // preset name applied to new frames (site-plane)
 	OwnerHash   string
 	Lang        string // page language, "hr" (default) or "en" (⚑9)
+	CalibJSON   string // render calib document, "" = defaults (⚑5)
 	LastFrameAt time.Time
 	CreatedAt   time.Time
 }
@@ -778,4 +797,11 @@ func (s *Store) PruneMeta(ctx context.Context, metaCutoff time.Time) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM frames WHERE status = 'quarantined' AND received_at < ?`, ts(metaCutoff))
 	return err
+}
+
+// ParseCalib decodes a venue's calib_json into a render Calib. The parsing
+// rules (empty/malformed → defaults) live in render so the pipeline and the
+// store cannot disagree about what a document means.
+func ParseCalib(raw string) render.Calib {
+	return render.ParseCalib(raw)
 }
