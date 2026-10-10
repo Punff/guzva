@@ -32,7 +32,9 @@ evaluation (2026-10-10), so all ten ⚑ deltas were in scope.
 
 ## Not done
 
-- [ ] **B1 kit page** `/admin/_kit` — worth doing, low risk, no rush.
+- [x] **B1 kit page** `/admin/_kit` — every component, both themes, all states.
+      Gated on GUZVA_KIT=1 (404 otherwise). Shapes resolve from the class
+      through a shape() template func — one source of truth.
 - [ ] **⚑1/⚑2 the print** — 160×120 paletted PNG + burned-in HH:MM stamp.
       **This is the centrepiece and it is the biggest remaining piece**: an
       8-stage pipeline, palette PNG encoding, a 5×7 digit font, goldens, and

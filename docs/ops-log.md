@@ -324,3 +324,25 @@ opens this panel on whatever phone is behind the bar.
 Lesson worth keeping: a stylesheet served at a FIXED url under a long
 max-age is a silent dependency between two deploys. Nothing fails loudly; the
 UI just quietly stops existing.
+
+## 2026-10-10 — Tisak pipeline live (⚑1/⚑2), kit gallery (B1)
+
+Deployed through `7e361d2`. Real bench frames now store as poster@2:
+160×120 paletted PNGs, 2-bit colormap, ~160 bytes on a dark bench (vs ~16 KB
+JPEG before). The stamp burns venue-local HH:MM into the picture; the page
+headline agrees with it by construction (same instant, one clock read).
+
+- public/bench holds exactly index.html + latest.png again; the old
+  latest.jpg was removed by the publish path itself.
+- The closed state renders the shutter with no still (verified live: bench
+  hours 08:00–20:00, page showed "Zatvoreno / Otvara se sutra u 08:00").
+- Firmware boot defaults fixed in source (framesize 4 was 240×240 square, not
+  VGA — its frames would dims-reject until desired_cfg converges; now QVGA +
+  60 s). pio run SUCCESS. Takes effect on next physical reflash only.
+- /admin/_kit gallery behind GUZVA_KIT=1 (404 in production, verified).
+  Rendered locally: all four chip states, cards, buttons, error input,
+  table, textures, flash — all correct.
+
+Pipeline numbers on procedural fixtures: tisak-clean 323 B, busy 306 B,
+sablon 215 B (6 KB bound). Live bench frames: ~160 B (dark room compresses
+to nearly nothing — the size bound matters for bright rooms, not this one).
