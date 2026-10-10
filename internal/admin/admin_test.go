@@ -14,6 +14,7 @@ import (
 
 	"guzva/internal/auth"
 	"guzva/internal/proto"
+	"guzva/internal/render"
 	"guzva/internal/store"
 )
 
@@ -542,5 +543,65 @@ func TestKitGated(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("kit page missing %q", want)
 		}
+	}
+}
+
+// Calibration form (DESIGN.md ⚑5/⚑6): valid documents store, invalid ones
+// flash in words, and the stored document parses back through the same
+// parser the render path uses.
+func TestSetCalib(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	ck := f.login(t)
+	f.do(t, http.MethodPost, "/admin/venues", url.Values{
+		"slug": {"jadro"}, "name": {"Jadro"}, "style": {"poster"},
+	}, ck, true)
+
+	set := func(v url.Values) *httptest.ResponseRecorder {
+		return f.do(t, http.MethodPost, "/admin/venues/1/calib", v, ck, true)
+	}
+	// Thresholds + bias + invert + one mask.
+	w := set(url.Values{
+		"t0": {"70"}, "t1": {"140"}, "t2": {"200"}, "bias": {"-12"},
+		"invert": {"1"}, "m0x0": {"10"}, "m0y0": {"20"}, "m0x1": {"30"}, "m0y1": {"40"},
+	})
+	if w.Header().Get("HX-Redirect") == "" {
+		t.Fatalf("valid calib: no redirect, body %q", w.Body.String())
+	}
+	v, err := f.st.VenueByID(t.Context(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cal := store.ParseCalib(v.CalibJSON)
+	if cal.T != [3]uint8{70, 140, 200} || cal.Bias != -12 || !cal.Invert {
+		t.Fatalf("stored calib = %+v", cal)
+	}
+	if len(cal.Masks) != 1 || cal.Masks[0] != (render.Rect{X0: 10, Y0: 20, X1: 30, Y1: 40}) {
+		t.Fatalf("stored masks = %+v", cal.Masks)
+	}
+
+	// Non-monotonic thresholds are refused in words.
+	w = set(url.Values{"t0": {"200"}, "t1": {"100"}, "t2": {"50"}})
+	if !strings.Contains(w.Body.String(), "must increase") {
+		t.Fatalf("bad thresholds accepted: %q", w.Body.String())
+	}
+	// Empty mask rect is refused in words.
+	w = set(url.Values{"m0x0": {"30"}, "m0y0": {"20"}, "m0x1": {"10"}, "m0y1": {"40"}})
+	if !strings.Contains(w.Body.String(), "empty") {
+		t.Fatalf("empty mask accepted: %q", w.Body.String())
+	}
+	// Clearing everything restores defaults.
+	w = set(url.Values{})
+	if w.Header().Get("HX-Redirect") == "" {
+		t.Fatalf("clear calib: no redirect, body %q", w.Body.String())
+	}
+	if v, err := f.st.VenueByID(t.Context(), 1); err != nil {
+		t.Fatal(err)
+	} else if v.CalibJSON != "" {
+		t.Fatalf("cleared calib = %q", v.CalibJSON)
+	}
+	// The venue page shows the form with the current values.
+	w = f.do(t, http.MethodGet, "/admin/venues/1", nil, ck, false)
+	if !strings.Contains(w.Body.String(), "Picture calibration") {
+		t.Fatal("venue page missing calibration section")
 	}
 }

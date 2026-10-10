@@ -402,6 +402,16 @@ func (s *Store) UpdateVenue(ctx context.Context, id int64, name, style, tz strin
 
 // SetOwnerHash stores the bcrypt hash of the owner's panel password
 // (super-admin only; the password itself never reaches the store).
+// SetCalib stores the venue's render calibration document (DESIGN.md ⚑5).
+// The document must already be validated — SetCalib stores exactly what it is
+// given, so callers validate first (the admin form builds it from fields;
+// ParseCalib remains the read-path backstop for hand-edited rows).
+func (s *Store) SetCalib(ctx context.Context, id int64, calibJSON string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE venues SET calib_json = ? WHERE id = ?`, calibJSON, id)
+	return err
+}
+
 func (s *Store) SetOwnerHash(ctx context.Context, id int64, hash string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE venues SET owner_hash = ? WHERE id = ?`, hash, id)
