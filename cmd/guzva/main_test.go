@@ -127,13 +127,13 @@ func TestStaticServesOnlyPublicFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(pub.Root(), slug, "index.html"), []byte("<h1>Jadro</h1>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(pub.Root(), slug, "latest.jpg"), []byte{0xff, 0xd8}, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pub.Root(), slug, "latest.png"), []byte{0x89, 0x50, 0x4e, 0x47}, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	static := pages.Static(pub.Root())
 	for path, want := range map[string]int{
 		"/" + slug + "/":           http.StatusOK,
-		"/" + slug + "/latest.jpg": http.StatusOK,
+		"/" + slug + "/latest.png": http.StatusOK,
 		"/" + slug + "/missing":    http.StatusNotFound,
 		"/nope/":                   http.StatusNotFound,
 	} {
@@ -149,8 +149,8 @@ func TestStaticServesOnlyPublicFiles(t *testing.T) {
 	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "/<slug>/") {
 		t.Errorf("root hint = %d %q", w.Code, w.Body.String())
 	}
-	// The slashless form is canonicalised: served from /<slug>, latest.jpg
-	// would resolve to /latest.jpg (404 — the broken-image bug on mobile
+	// The slashless form is canonicalised: served from /<slug>, the still
+	// would resolve to /latest.png (404 — the broken-image bug on mobile
 	// links that arrive without the trailing slash).
 	w = httptest.NewRecorder()
 	static.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/"+slug+"?p=1", nil))

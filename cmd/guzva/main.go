@@ -145,7 +145,7 @@ func serveMain(args []string) int {
 	lim := auth.DefaultLimiter(time.Now)
 	ing := frames.New(st, eng, lim, *dataDir, *retainHours, log)
 
-	// §6.1 order inside ingest: store → replace latest.jpg → rewrite
+	// §6.1 order inside ingest: store → replace latest.png → rewrite
 	// index.html → respond. A page failure never fails the ingest (the frame
 	// is stored; the 30 s sched tick repairs the page).
 	pub, err := pages.New(st, *dataDir, log)

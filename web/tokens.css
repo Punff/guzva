@@ -306,6 +306,20 @@
   .tnum {
     font-variant-numeric: tabular-nums;
   }
+
+  /* The print at integer scale (DESIGN.md §5.7): 160 cells × k, pixelated.
+     k=2 fits a 360px phone with margins; 3 from 480px; 4 from 768px.
+     Non-integer scales make uneven "pixels". */
+  .still-print {
+    width: 320px;
+    image-rendering: pixelated;
+  }
+  @media (min-width: 30rem) {
+    .still-print { width: 480px; }
+  }
+  @media (min-width: 48rem) {
+    .still-print { width: 640px; }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

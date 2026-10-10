@@ -2,10 +2,10 @@
 <!--
   guzva public venue page — DESIGN.md §7.
   Two hard constraints shape this file:
-    D5  the web root holds exactly index.html + latest.jpg per venue, so the
+    D5  the web root holds exactly index.html + latest.png per venue, so the
         stylesheet and the script are INLINED here and never a third file;
-    ⚑2 the still carries its own time (render stage 7), so this page does not
-        need to be rewritten per frame.
+    ⚑2 the still carries its own time (render stage 7), so this page is
+        rewritten only on state flips and settings edits — not per frame.
 -->
 <html lang="{{.Lang}}">
 <head>
@@ -28,7 +28,8 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18' shape-rendering='crispEdges'%3E%3Crect width='18' height='18' fill='%2312202D'/%3E%3Crect x='1' y='3' width='16' height='10' fill='%23F2EDE2'/%3E%3Crect x='3' y='13' width='2' height='1' fill='%23F2EDE2'/%3E%3Crect x='3' y='5' width='2' height='2' fill='%2333607F'/%3E%3Crect x='2' y='7' width='4' height='4' fill='%2333607F'/%3E%3Crect x='8' y='5' width='2' height='2' fill='%23AE2B16'/%3E%3Crect x='7' y='7' width='4' height='4' fill='%23AE2B16'/%3E%3Crect x='13' y='5' width='2' height='2' fill='%2333607F'/%3E%3Crect x='12' y='7' width='4' height='4' fill='%2333607F'/%3E%3C/svg%3E">
 <style>{{.CSS}}</style>
 </head>
-<body class="min-h-dvh bg-paper text-ink font-sans">
+<body class="min-h-dvh bg-paper text-ink font-sans"
+      data-tz="{{.TZName}}" data-still="{{.StillFile}}" data-lang="{{.Lang}}" data-poll="30">
 <div class="mx-auto w-full max-w-[40rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
 
   <header class="flex items-center gap-2">
@@ -61,20 +62,22 @@
     {{if .OpenText}}<span class="text-sm text-muted" id="opentxt">{{.OpenText}}</span>{{end}}
   </div>
 
-  <!-- The still. The box is reserved before the bytes land, so nothing shifts
-       (§7.7): width/height attributes plus an explicit aspect-ratio. -->
+  <!-- The still. The box is reserved before the bytes land, so nothing shifts:
+       width/height attributes plus an explicit aspect-ratio. The print is
+       shown at integer scale (k=2/3/4), pixelated — non-integer scales make
+       uneven "pixels" (§5.7). -->
   <main class="relative border-2 border-ink bg-s3 shadow-step"
         id="frame"
-        style="aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}}"
-        {{if .HasFrame}}data-ver="{{.StillVer}}"{{else}}data-empty="1"{{end}}>
+        style="aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}}">
     {{if .ShowStill}}
       {{if .HasFrame}}
-        <img id="still" src="latest.jpg?v={{.StillVer}}" width="{{.StillW}}" height="{{.StillH}}"
+        <img id="still" src="{{.StillFile}}?v={{.StillVer}}"
+             width="{{if .StillW}}{{.StillW}}{{else}}160{{end}}" height="{{if .StillH}}{{.StillH}}{{else}}120{{end}}"
              decoding="async" fetchpriority="high"
              alt="{{if .Updated}}Stilizirana slika prostora {{.Name}}, snimljena u {{.Updated}}{{else}}Stilizirana slika prostora {{.Name}}{{end}}"
-             class="block h-full w-full object-contain">
+             class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
         {{/* Late / no-signal overlays are CSS only — the picture itself is
-             never altered (DESIGN.md §5.6). */}}
+             never altered (§5.6). */}}
         {{if eq .StateClass "late"}}<div class="absolute inset-0 tx-hatch-light pointer-events-none" aria-hidden="true"></div>{{end}}
         {{if eq .StateClass "nosignal"}}<div class="absolute inset-0 tx-hatch" aria-hidden="true"></div>{{end}}
       {{else}}
@@ -87,12 +90,21 @@
   </main>
 
   <!-- Headline: the time the picture was taken, venue-local, absolute. Never
-       a relative age (§11 — Croatian plurals make those unreadable). -->
-  <p class="font-mono text-[3.5rem] leading-none font-bold tnum" id="hl">
-    {{if .Updated}}{{.Updated}}{{end}}
-  </p>
-  <p class="text-muted text-sm -mt-2">
-    {{if .UpdatedDay}}{{.UpdatedDay}}{{end}}{{if .TZ}} · {{.TZ}}{{end}}
+       a relative age (§11 — Croatian plurals make those unreadable). The
+       client rewrites this from Last-Modified on every new frame; the stamp
+       burned into the picture always agrees with it. -->
+  <div role="status" aria-live="polite">
+    <p class="font-mono text-[3.5rem] leading-none font-bold tnum" id="hl">
+      {{if .Updated}}{{.Updated}}{{end}}
+    </p>
+    <p class="text-muted text-sm -mt-2" id="hlday">
+      {{if .UpdatedDay}}{{.UpdatedDay}}{{end}}{{if .TZ}} · {{.TZ}}{{end}}
+    </p>
+  </div>
+  <p id="banner" class="hidden text-sm border-2 border-ink bg-paper-2 px-3 py-2" role="alert"></p>
+  <p id="idle" class="hidden text-sm border-2 border-ink bg-paper-2 px-3 py-2">
+    <span id="idletext"></span>
+    <button id="resume" class="btn btn--primary mt-2" type="button"></button>
   </p>
 
   {{if .StateDetail}}
@@ -111,75 +123,172 @@
   </footer>
 </div>
 
-<p class="sr-only" role="status" aria-live="polite" id="live"></p>
-
 <script>
 /*
- * In-place updates (DESIGN.md §7.3). The page re-fetches ITSELF — a static
- * file, no database, no server render — and swaps only what changed. A full
- * reload would flash the document and reset scroll on every tick, including
- * the ~2 in 3 ticks where nothing has changed.
+ * The poller (DESIGN.md §7.3). Goal: the cheapest possible honest page.
  *
- * The still is fetched as a blob and shown from it: one transfer, no second
- * request for the same bytes.
+ * Per frame the browser does ONE conditional request for the still:
+ * fetch(still, {cache:'no-cache'}) → 304 ≈ 0.3 KB when nothing changed,
+ * 200 ≈ 1–3 KB when a new frame arrived. The Last-Modified header (the
+ * frame's received_at) drives the headline via Intl in the venue's timezone;
+ * the new still is shown from the fetched blob, so one transfer and no
+ * second request for the same bytes.
+ *
+ * State flips (late/no-signal/closed/open) arrive differently: one more
+ * conditional request for index.html every 60 s, and if its Last-Modified
+ * moved, the page reloads — flips are rare, so a full reload is simpler and
+ * cheaper than DOM diffing.
+ *
+ * Polling runs only while the tab is visible, stops after 10 idle minutes
+ * (tap to resume), and backs off 30→120 s on network errors.
  */
 (function () {
-  var frame = document.getElementById('frame');
-  var still = document.getElementById('still');
-  var live  = document.getElementById('live');
-  if (!frame || !location.protocol.startsWith('http')) return;
+  'use strict';
+  var d = document.body.dataset;
+  var tz = d.tz || 'Europe/Sarajevo';
+  var lang = (d.lang === 'en') ? 'en-GB' : 'hr-HR';
+  var stillURL = d.still || 'latest.png';
+  var poll = Math.max(10, parseInt(d.poll || '30', 10)) * 1000;
 
-  var ver = frame.getAttribute('data-ver') || '';
-  var busy = false;
+  function $(id) { return document.getElementById(id); }
+  var img = $('still'), hl = $('hl'), day = $('hlday'),
+      banner = $('banner'), idleBox = $('idle'), resume = $('resume'),
+      live = null;
 
-  function swap(doc) {
-    var nextFrame = doc.getElementById('frame');
-    if (!nextFrame) return;
-    var nextVer = nextFrame.getAttribute('data-ver') || '';
-    var nextImg = doc.getElementById('still');
-    if (nextImg && nextVer && nextVer !== ver) {
-      ver = nextVer;
-      frame.removeAttribute('data-empty');
-      var fresh = nextImg.cloneNode(true);
-      if (still) { still.replaceWith(fresh); still = fresh; }
-      var hl = document.getElementById('hl');
-      var nextHL = doc.getElementById('hl');
-      if (hl && nextHL) {
-        hl.textContent = nextHL.textContent.trim();
-        hl.classList.remove('blink');
-        void hl.offsetWidth;          // restart the 3-step blink (§3.6)
-        hl.classList.add('blink');
-      }
-      if (live) live.textContent = 'Nova slika.';
+  var liveEl = document.createElement('p');
+  liveEl.className = 'sr-only';
+  liveEl.setAttribute('role', 'status');
+  liveEl.setAttribute('aria-live', 'polite');
+  document.body.appendChild(liveEl);
+  live = liveEl;
+
+  var fmtTime = new Intl.DateTimeFormat(lang,
+    { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+  var fmtDay = new Intl.DateTimeFormat(lang,
+    { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+
+  // Copy strings: keep them beside the catalog keys they mirror
+  // (internal/i18n). No relative-time sentences, ever (§11).
+  var STR = (d.lang === 'en') ? {
+    offline: 'No internet connection. Trying again…',
+    idle: 'Refreshing is paused.',
+    resume: 'Resume',
+    newpic: 'New picture.',
+    today: 'today', yesterday: 'yesterday'
+  } : {
+    offline: 'Nema internetske veze. Pokušavamo ponovno…',
+    idle: 'Osvježavanje je pauzirano.',
+    resume: 'Nastavi',
+    newpic: 'Nova slika.',
+    today: 'danas', yesterday: 'jučer'
+  };
+  $('idletext').textContent = STR.idle;
+  resume.textContent = STR.resume;
+
+  var lastLM = '', prevURL = '', backoff = poll,
+      idleAt = Date.now() + 10 * 60 * 1000, idle = false,
+      busy = false, pageLM = Date.parse(document.lastModified) || 0;
+
+  function venueDay(date) { return fmtDay.format(date); }
+  function headline(lmDate) {
+    hl.textContent = fmtTime.format(lmDate);
+    var tzName = '';
+    try {
+      tzName = new Intl.DateTimeFormat(lang,
+        { timeZone: tz, timeZoneName: 'short' })
+        .formatToParts(lmDate).filter(function (p) { return p.type === 'timeZoneName'; })[0].value;
+    } catch (e) { tzName = ''; }
+    var todayS = venueDay(new Date()), thenS = venueDay(lmDate), word;
+    if (thenS === todayS) {
+      word = STR.today;
+    } else {
+      var y = new Date(Date.now() - 864e5);
+      word = (venueDay(y) === thenS) ? STR.yesterday : thenS;
     }
-    ['chip-fresh','chip-late','chip-nosignal','chip-waiting','chip-closed','opentxt']
-      .forEach(function (id) {
-        var el = document.getElementById(id), next = doc.getElementById(id);
-        if (el && next) el.textContent = next.textContent;
-      });
+    day.textContent = word + (tzName ? ' · ' + tzName : '');
+    if (img) {
+      var alt = img.getAttribute('alt') || '';
+      img.setAttribute('alt', alt.replace(/, snimljena u .*|, taken at .*|$/, function () {
+        return (d.lang === 'en' ? ', taken at ' : ', snimljena u ') + fmtTime.format(lmDate);
+      }));
+    }
   }
+
+  function showBanner(on) {
+    banner.classList.toggle('hidden', !on);
+    if (on) banner.textContent = STR.offline;
+  }
+
+  function later(ms) { setTimeout(tick, ms || backoff); }
 
   function tick() {
-    if (busy || document.hidden) return;
+    if (busy) return;
+    if (document.hidden) return later();
+    if (idle) return;
+    if (Date.now() > idleAt) {
+      idle = true;
+      idleBox.classList.remove('hidden');
+      return;
+    }
     busy = true;
-    fetch(location.pathname + '?p=' + Date.now(), { cache: 'no-store', credentials: 'omit' })
-      .then(function (r) { return r.ok ? r.text() : null; })
-      .then(function (t) {
-        if (!t) return;
-        var doc = new DOMParser().parseFromString(t, 'text/html');
-        var nf = doc.getElementById('frame');
-        if (nf && (nf.getAttribute('data-ver') || '') !== ver) swap(doc);
+    fetch(stillURL, { cache: 'no-cache', credentials: 'omit' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('still ' + r.status);
+        var lm = r.headers.get('last-modified') || '';
+        showBanner(false);
+        backoff = poll;
+        if (lm && lm !== lastLM) {
+          lastLM = lm;
+          return r.blob().then(function (b) {
+            if (prevURL) URL.revokeObjectURL(prevURL);
+            var url = URL.createObjectURL(b);
+            prevURL = url;
+            if (img) img.src = url;
+            var dt = new Date(lm);
+            if (!isNaN(dt)) {
+              headline(dt);
+              if (live) live.textContent = STR.newpic;
+              hl.classList.remove('blink');
+              void hl.offsetWidth;
+              hl.classList.add('blink');
+            }
+          });
+        }
+        return r.blob().then(function () {});
       })
-      .catch(function () { /* offline: next tick retries */ })
-      .then(function () { busy = false; });
+      .catch(function () {
+        showBanner(true);
+        backoff = Math.min(backoff * 2, 120000);
+      })
+      .then(function () { busy = false; later(); });
   }
 
-  // 12s is well under the venue's 45-90s capture cadence, so a new picture
-  // shows up promptly without ever being the thing that wakes the radio.
-  setInterval(tick, 12000);
-  document.addEventListener('visibilitychange', function () {
-    if (!document.hidden) tick();
+  // State flips: conditional GET of the page itself every 60 s; a moved
+  // Last-Modified means a flip (or an edit, or a deploy) → reload.
+  // document.lastModified is the baseline, so a flip that happened between
+  // load and the first check still triggers.
+  setInterval(function () {
+    if (document.hidden) return;
+    fetch(location.pathname, { credentials: 'omit' })
+      .then(function (r) {
+        var lm = r.headers.get('last-modified') || '';
+        var t = lm && Date.parse(lm);
+        if (t && pageLM && t !== pageLM) location.reload();
+      })
+      .catch(function () {});
+  }, 60000);
+
+  resume.addEventListener('click', function () {
+    idle = false;
+    idleAt = Date.now() + 10 * 60 * 1000;
+    idleBox.classList.add('hidden');
+    tick();
   });
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && !idle) tick();
+  });
+
+  setTimeout(tick, 1500);
 })();
 </script>
 </body>

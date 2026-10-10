@@ -1,5 +1,5 @@
 // Package pages: the static file handler behind the public side (§6.4).
-// It serves exactly what Writer wrote — index.html and latest.jpg per venue
+// It serves exactly what Writer wrote — index.html + latest.png per venue
 // — and nothing else: no directory listings, no traversal, no method other
 // than GET/HEAD. The privacy proof ("the web root contains only
 // index.html + latest.jpg per venue") lives in pages_test.go's disk scan.
@@ -102,8 +102,19 @@ func Static(dir string) http.Handler {
 			return
 		}
 
-		// A JPEG is already compressed; gzip would only cost CPU.
-		w.Header().Set("Content-Type", "image/jpeg")
+		// Stills are already compressed (PNG or JPEG); gzip would only cost
+		// CPU. The type follows the file: during the v1→v2 transition a venue
+		// may still publish latest.jpg until its first v2 frame, and serving
+		// JPEG bytes as image/png would break the picture (nosniff is set).
+		switch strings.ToLower(filepath.Ext(full)) {
+		case ".png":
+			w.Header().Set("Content-Type", "image/png")
+		case ".jpg", ".jpeg":
+			w.Header().Set("Content-Type", "image/jpeg")
+		default:
+			http.NotFound(w, r)
+			return
+		}
 		http.ServeContent(w, r, filepath.Base(full), fi.ModTime(), f)
 	})
 }
@@ -192,7 +203,7 @@ func acceptsGzip(r *http.Request) bool {
 // per-venue data lives in the markup, never in the script.
 func buildCSP(page []byte) string {
 	var sb strings.Builder
-	sb.WriteString("default-src 'none'; img-src 'self' data:; connect-src 'self'; " +
+	sb.WriteString("default-src 'none'; img-src 'self' blob: data:; connect-src 'self'; " +
 		"base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 	// 'unsafe-hashes' is required for hashes to apply to style ATTRIBUTES;
 	// without it the browser rejects the page's one inline style (the frame

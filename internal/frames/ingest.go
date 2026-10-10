@@ -54,7 +54,7 @@ type Server struct {
 	diskFree func(dir string) (float64, error)
 
 	// OnStored runs after a frame is durably stored and before the response
-	// goes out (§6.1: replace latest.jpg → rewrite index.html → respond).
+	// goes out (§6.1: replace latest.png → rewrite index.html → respond).
 	// It is the pages hook; an error is logged, never turned into a failure
 	// (the frame IS stored — the next tick rewrites the page).
 	OnStored func(ctx context.Context, venueID int64)

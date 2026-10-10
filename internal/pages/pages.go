@@ -1,5 +1,5 @@
 // Package pages pre-renders the public side as static files (PLAN D5,
-// §6.4): data/public/{slug}/index.html + latest.jpg. Public requests never
+// §6.4): data/public/{slug}/index.html + latest.png. Public requests never
 // touch SQLite, templates, or the render pipeline — Static below only serves
 // bytes. All writes are temp-file + rename under one mutex (single process),
 // and index.html is rewritten only when something it shows changed.
@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"guzva/internal/i18n"
+	"guzva/internal/render"
 	"guzva/internal/store"
 	"guzva/internal/venue"
 	"guzva/internal/webui"
@@ -67,7 +68,7 @@ func New(st *store.Store, dataDir string, log *slog.Logger) (*Writer, error) {
 // Root is the directory Static serves.
 func (w *Writer) Root() string { return w.root }
 
-// OnFrame publishes a freshly stored frame: latest.jpg first, then
+// OnFrame publishes a freshly stored frame: latest.png first, then
 // index.html — the §6.1 order, called from the ingest handler before it
 // responds. An error is returned to the caller but must never fail the
 // ingest: the frame IS stored and the next tick repairs the page.
@@ -103,9 +104,12 @@ func (w *Writer) RefreshAll(ctx context.Context) error {
 type view struct {
 	Name       string
 	HasFrame   bool
-	StillVer   string // latest.jpg cache-buster (frame received unix)
+	StillVer   string // still cache-buster: the frame row id (unique, monotonic)
 	StillW     int    // intrinsic render size, so the browser reserves the
-	StillH     int    // box before the JPEG lands (no layout shift)
+	StillH     int    // box before the still lands (no layout shift)
+	StillFile  string // "latest.png" (or latest.jpg until the first v2 frame)
+	Pixelated  bool   // grid print: integer scale, pixelated (§5.7)
+	TZName     string // IANA venue tz for the client-side headline (data-tz)
 	Updated    string // "14:07" venue-local, empty before the first frame
 	UpdatedDay string // "danas" | "jučer" | "10.10.2026." — disambiguates
 	// the bare clock time without a relative age
@@ -156,9 +160,14 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	localNow := now.In(loc)
 	open := hours.ClassifyOpen(localNow)
 
-	// The state key is everything the page shows that time can change.
-	// force (new frame) bypasses it because Updated HH:MM follows the frame.
-	stateKey := fmt.Sprintf("%s|%s|%d|%s|%s", fresh, open, last.Unix(), v.Name, hoursToday(i18n.For(i18n.Normalize(v.Lang)), hours, localNow))
+	// The state key is everything the page shows. The per-frame clock is NOT
+	// part of it: the stamp burned into the picture carries the time (⚑2), so
+	// index.html is rewritten only on state flips and settings edits — not
+	// per frame. Style/TZ/lang ARE part of it, because a settings edit must
+	// reach the page on the next sched tick even though no frame arrived.
+	cat0 := i18n.For(i18n.Normalize(v.Lang))
+	stateKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", fresh, open, v.Name, v.Style,
+		v.TZ, v.Lang, hoursToday(cat0, hours, localNow))
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -168,16 +177,36 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		return fmt.Errorf("pages: venue dir: %w", err)
 	}
 
-	// latest.jpg: only a good stylised render ever lands here; a quarantined
+	// latest.png: only a good stylised render ever lands here; a quarantined
 	// beat leaves the previous still untouched (never publish a failure).
+	//
+	// Transition honesty: old ring rows are JPEGs and can never become PNGs
+	// (raws are not stored), so the published filename follows the row —
+	// latest.png for new rows, latest.jpg until a venue's first v2 frame.
+	// The stale counterpart is removed, so the web root still holds exactly
+	// two files. Within one capture interval every venue converges to .png.
+	stillFile := "latest.png"
+	if latest != nil && latest.Status == "ok" && latest.Path != "" && !strings.HasSuffix(latest.Path, ".png") {
+		stillFile = "latest.jpg"
+	}
 	if force && latest != nil && latest.Status == "ok" && latest.Path != "" {
 		src := filepath.Join(w.dataDir, latest.Path)
-		if err := copyAtomic(src, filepath.Join(dir, "latest.jpg")); err != nil {
-			w.log.Error("pages: latest.jpg publish failed", "venue", v.Slug, "err", err.Error())
+		if err := copyAtomic(src, filepath.Join(dir, stillFile)); err != nil {
+			w.log.Error("pages: still publish failed", "venue", v.Slug, "err", err.Error())
+		}
+		for _, stale := range []string{"latest.png", "latest.jpg"} {
+			if stale != stillFile {
+				_ = os.Remove(filepath.Join(dir, stale))
+			}
 		}
 	}
 
-	if !force && w.last[v.Slug] == stateKey {
+	// ⚑2: the still carries its own time, so index.html moves only on state
+	// flips and settings edits — never per frame. (force once meant "a new
+	// frame arrived, rewrite regardless"; that bypass is gone, because the
+	// rewritten-identical page still moved Last-Modified and every 60 s poll
+	// would have reloaded the page constantly.)
+	if w.last[v.Slug] == stateKey {
 		return nil // nothing the page shows has changed
 	}
 
@@ -186,10 +215,12 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		Name:        v.Name,
 		HasFrame:    latest != nil && latest.Status == "ok",
 		TZ:          zoneLabel(last.In(loc), loc),
+		TZName:      v.TZ,
 		CSS:         template.CSS(webui.Public()),
 		Lang:        string(cat.Lang),
 		PrivacyLine: cat.Get("privacy.line"),
 		ShowStill:   true,
+		StillFile:   stillFile,
 	}
 	if vw.HasFrame {
 		// The cache-buster is the frame row id, NOT received_at: ids are
@@ -205,6 +236,9 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		if latest.Width > 0 && latest.Height > 0 {
 			vw.StillW, vw.StillH = latest.Width, latest.Height
 		}
+		// The print is shown at integer scale with pixelated rendering (§5.7);
+		// anything else on disk is a pre-print JPEG shown 1:1.
+		vw.Pixelated = latest.Width == render.GW && latest.Height == render.GH
 	}
 	// State = shape + colour + sentence (§3.2). Two stale tiers (DESIGN.md
 	// ⚑3) so a camera merely running behind reads differently from one that

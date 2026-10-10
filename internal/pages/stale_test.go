@@ -1,15 +1,23 @@
 package pages
 
 import (
+	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"guzva/internal/render"
+	"guzva/internal/store"
 )
 
 // The stale-image bug, pinned — and the fact that the fix has since changed
@@ -129,7 +137,10 @@ func TestPageSecurityHeadersAndCSP(t *testing.T) {
 	if strings.Contains(csp, "unsafe-inline") || strings.Contains(csp, "unsafe-eval") {
 		t.Errorf("CSP relies on unsafe-inline, which makes it decorative: %s", csp)
 	}
-	for _, want := range []string{"default-src 'none'", "style-src", "script-src", "sha256-", "frame-ancestors 'none'", "base-uri 'none'"} {
+	// The §7.3 poller fetches the still and shows it from a blob URL: without
+	// blob: in img-src and connect-src 'self', the new still never loads.
+	for _, want := range []string{"default-src 'none'", "style-src", "script-src", "sha256-", "frame-ancestors 'none'", "base-uri 'none'",
+		"img-src 'self' blob: data:", "connect-src 'self'"} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CSP missing %q: %s", want, csp)
 		}
@@ -206,4 +217,128 @@ func inlineBody(t *testing.T, page, tag string) string {
 		t.Fatalf("no </%s> in page", tag)
 	}
 	return page[i+len(open) : i+j]
+}
+
+// The print world (DESIGN.md ⚑1/⚑2): a v2 PNG row publishes latest.png, the
+// stale latest.jpg is removed so the root still holds exactly two files, and
+// the page references the PNG at integer scale.
+func TestPngRowPublishesLatestPng(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	// Plant a v2 PNG row alongside the fixture's old JPEG row.
+	rel := filepath.Join("venues", "1", "stills", "C1-2-bbbb.png")
+	abs := filepath.Join(f.w.dataDir, rel)
+	if err := os.WriteFile(abs, []byte("FAKE-PRINT"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.InsertFrame(ctx, store.Frame{
+		VenueID: f.vid, CaptureID: "C1-2-bbbb", SHA256: "def456",
+		ReceivedAt: f.now.Add(time.Minute),
+		Bytes:      11, Width: render.GW, Height: render.GH,
+		Preset: "poster", PresetVer: 2, Path: rel, Status: "ok",
+	}); err != nil {
+		t.Fatalf("insert png frame: %v", err)
+	}
+	if err := f.w.OnFrame(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(f.w.Root(), "jadro")
+	got, err := os.ReadFile(filepath.Join(dir, "latest.png"))
+	if err != nil {
+		t.Fatalf("latest.png missing: %v", err)
+	}
+	if string(got) != "FAKE-PRINT" {
+		t.Fatalf("latest.png = %q", got)
+	}
+	// The stale counterpart is gone: still exactly two files (D5).
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Fatalf("web root holds %v, want exactly [index.html latest.png]", names)
+	}
+	idx := f.readIndex(t)
+	for _, want := range []string{
+		`src="latest.png?v=`,
+		`data-still="latest.png"`,
+		`data-tz="Europe/Sarajevo"`,
+		"still-print", // integer scale, pixelated (§5.7)
+	} {
+		if !strings.Contains(idx, want) {
+			t.Errorf("index.html missing %q", want)
+		}
+	}
+}
+
+// ⚑2's core behavior: the per-frame clock lives in the picture now, so a new
+// frame with no state change must NOT rewrite index.html. Disk churn and
+// Last-Modified movement per frame would defeat the 60 s state-flip check
+// (every poll would see a "changed" page and reload constantly).
+func TestNewFrameWithoutStateFlipSkipsRewrite(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.w.OnFrame(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	idxPath := filepath.Join(f.w.Root(), "jadro", "index.html")
+	before, err := os.ReadFile(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mtime := fi.ModTime()
+
+	// A second frame, one minute later, same state (fresh, open, same name).
+	f.now = f.now.Add(time.Minute)
+	if err := f.w.OnFrame(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("index.html rewritten for a new frame with no state change — ⚑2 regressed")
+	}
+	if fi, err := os.Stat(idxPath); err != nil {
+		t.Fatal(err)
+	} else if !fi.ModTime().Equal(mtime) {
+		t.Fatal("index.html mtime moved without a state change — every poll would reload")
+	}
+	// But the still itself DID advance (the picture is new even though the
+	// page is byte-identical — the poller sees it via Last-Modified).
+	got, err := os.ReadFile(filepath.Join(f.w.Root(), "jadro", "latest.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "FAKE-STYLISED-RENDER" {
+		t.Fatalf("still not published: %q", got)
+	}
+}
+
+// A settings edit (rename) flips the state key, so the next tick rewrites.
+func TestSettingsEditFlipsStateKey(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.w.OnFrame(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	before := f.readIndex(t)
+	if err := f.st.UpdateVenue(ctx, f.vid, "Jadro Novo", "poster", "Europe/Sarajevo"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.w.Refresh(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	if after := f.readIndex(t); !strings.Contains(after, "Jadro Novo") || after == before {
+		t.Fatal("rename did not reach the page on refresh")
+	}
 }
