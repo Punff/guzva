@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -477,4 +478,40 @@ func TestNeverSeenDeviceHasNoSignalReading(t *testing.T) {
 	if !strings.Contains(body, "never-seen") || !strings.Contains(body, "—") {
 		t.Errorf("fleet board missing the never-seen row:\n%s", body)
 	}
+}
+
+// A duplicate class attribute is silently dropped by the HTML parser, so the
+// first one wins and the second is invisible — the symptom is an element that
+// just does not move, with nothing in the logs. None may exist.
+func TestNoDuplicateClassAttributes(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	ck := f.login(t)
+	f.do(t, http.MethodPost, "/admin/venues", url.Values{
+		"slug": {"jadro"}, "name": {"Jadro"}, "style": {"poster"},
+		"hours": {"Mo-Fr 09:00-17:00"},
+	}, ck, true)
+	f.do(t, http.MethodPost, "/admin/devices", url.Values{
+		"venue_id": {"1"}, "serial": {"cam1"},
+	}, ck, true)
+
+	seen := regexp.MustCompile(`class="[^"]*"\s[^>]*class="`)
+	for _, tc := range []struct {
+		path string
+		body string
+	}{
+		{"/admin/", f.do(t, http.MethodGet, "/admin/", nil, ck, false).Body.String()},
+		{"/admin/venues/1", f.do(t, http.MethodGet, "/admin/venues/1", nil, ck, false).Body.String()},
+		{"/admin/devices/1", f.do(t, http.MethodGet, "/admin/devices/1", nil, ck, false).Body.String()},
+	} {
+		if m := seen.FindString(tc.body); m != "" {
+			t.Errorf("%s has a duplicate class attribute: %q", tc.path, m[:min(len(m), 120)])
+		}
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

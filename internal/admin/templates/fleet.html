@@ -19,7 +19,7 @@
     <a class="text-lg font-bold tracking-tight hover:underline" href="/{{.Slug}}/" target="_blank" rel="noreferrer">{{.Name}}</a>
     <code class="text-sm text-muted font-mono">/{{.Slug}}/</code>
     {{template "chip.html" .Fresh}}
-    <span class="text-sm text-muted" class="push">{{.LastAge}}</span>
+    <span class="push text-sm text-muted">{{.LastAge}}</span>
     <a class="inline-flex items-center justify-center border-2 border-ink bg-paper px-3 min-h-11 text-sm font-semibold shadow-step-sm tap" href="/admin/venues/{{.ID}}">Edit</a>
   </div>
   {{if .Devices}}
@@ -97,7 +97,7 @@
 
 <section class="mt-6">
   <h2 class="text-lg font-bold mb-3">New venue</h2>
-  <form class="border-2 border-ink bg-paper shadow-step p-4 grid gap-3 max-w-xl" hx-post="/admin/venues" hx-target="#flash" hx-swap="innerHTML">
+  <form class="card card--raised grid gap-3 max-w-2xl" hx-post="/admin/venues" hx-target="#flash" hx-swap="innerHTML">
     <div class="fieldset">
       <label class="lbl" for="v-slug">Slug</label>
       <input class="inp" id="v-slug" name="slug" placeholder="jadro" required pattern="[a-z0-9][a-z0-9-]{0,39}">
@@ -130,7 +130,7 @@
 <section class="mt-6">
   <h2 class="text-lg font-bold mb-3">New device</h2>
   {{if .DeviceOpts}}
-  <form class="border-2 border-ink bg-paper shadow-step p-4 grid gap-3 max-w-xl" hx-post="/admin/devices" hx-target="#token-out" hx-swap="innerHTML">
+  <form class="card card--raised grid gap-3 max-w-2xl" hx-post="/admin/devices" hx-target="#token-out" hx-swap="innerHTML">
     <div class="fieldset">
       <label class="lbl" for="d-venue">Venue</label>
       <select class="inp" id="d-venue" name="venue_id">
