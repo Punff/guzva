@@ -47,6 +47,20 @@ func TestPublicPageShipsTheVeilClearer(t *testing.T) {
 // both was the root cause: index.html must revalidate (it is rewritten on
 // every state change and inlines the CSS and JS), while latest.jpg is
 // addressed by a unique ?v= and can therefore be cached forever.
+// The meta refresh must stand down once the swap loop owns the page, or the
+// document reloads every 30s and the in-place update is pointless.
+func TestPublicPageStandsDownTheMetaRefresh(t *testing.T) {
+	f := newFixture(t)
+	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {
+		t.Fatal(err)
+	}
+	idx := f.readIndex(t)
+	if !strings.Contains(idx, `meta[http-equiv="refresh"]`) ||
+		!strings.Contains(idx, `setAttribute('content', '300')`) {
+		t.Error("page does not stand the meta refresh down when JS takes over")
+	}
+}
+
 func TestStaticCachePolicyPerFile(t *testing.T) {
 	f := newFixture(t)
 	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {

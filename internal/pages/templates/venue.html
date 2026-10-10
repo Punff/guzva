@@ -92,6 +92,18 @@
   // happened to fire a load event. Settle the image that is already here.
   settle(document.getElementById('still'));
 
+  // The <meta refresh> is the no-JS fallback, but nothing was ever switching
+  // it off — so the document reloaded every 30s EVEN WITH THIS SCRIPT
+  // RUNNING (measured: 3 full reloads in 95s, navType "reload"). That is
+  // precisely the flash and scroll-jump the in-place swap exists to avoid,
+  // and it wasted the swap entirely.
+  //
+  // Push it far out rather than removing it: the swap handles the normal
+  // path, and if this script ever stops running the page still self-heals
+  // in five minutes instead of freezing on a dead frame for ever.
+  var metaRefresh = document.querySelector('meta[http-equiv="refresh"]');
+  if (metaRefresh) metaRefresh.setAttribute('content', '300');
+
   // Clear the "still arriving" veil exactly once the image has settled.
   //
   // Two ways this went wrong, both seen on the live site: attaching a load
