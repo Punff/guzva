@@ -1,12 +1,15 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"guzva/internal/auth"
+	"guzva/internal/i18n"
 	"guzva/internal/store"
+	"guzva/internal/venue"
 )
 
 // Owner panel (per-venue login): venue details the owner may change
@@ -108,6 +111,9 @@ type ownerDashModel struct {
 	Venue     store.Venue
 	HoursSpec string
 	OpenState string
+	State     chip
+	Summary   string
+	Cat       *i18n.Catalog
 	Devices   []deviceView
 	Saved     bool
 }
@@ -124,16 +130,50 @@ func (s *Server) ownerDash(w http.ResponseWriter, r *http.Request, v *store.Venu
 		return
 	}
 	now := s.now().UTC()
-	m := ownerDashModel{Venue: *v, HoursSpec: h.Spec(),
-		OpenState: h.ClassifyOpen(now.In(venueLoc(v.TZ))).String(),
+	loc := venueLoc(v.TZ)
+	cat := i18n.For(i18n.Normalize(v.Lang))
+	m := ownerDashModel{Venue: *v, HoursSpec: h.Spec(), Cat: cat,
+		OpenState: h.ClassifyOpen(now.In(loc)).String(),
 		Saved:     r.URL.Query().Get("saved") != ""}
+
+	// One plain sentence, in the owner's language, saying what the picture
+	// means right now — the thing they actually open this panel for (§9).
+	fresh := venue.Classify(v.LastFrameAt, now)
+	clock := "—"
+	if !v.LastFrameAt.IsZero() {
+		clock = cat.Time(v.LastFrameAt.In(loc))
+	}
+	switch {
+	case v.LastFrameAt.IsZero():
+		m.State = chip{"unknown", shapeWaiting, cat.Get("state.waiting")}
+		m.Summary = cat.Get("state.waiting")
+	case fresh == venue.Fresh:
+		m.State = chip{"fresh", shapeFresh, cat.Get("state.fresh")}
+		m.Summary = cat.F("owner.fresh", clock)
+	case fresh == venue.Late:
+		m.State = chip{"late", shapeLate, cat.Get("state.late")}
+		m.Summary = cat.F("owner.late", clock)
+	default:
+		m.State = chip{"stale", shapeNoSignal, cat.Get("state.nosignal")}
+		m.Summary = cat.F("owner.stale", clock)
+	}
+
 	for _, d := range devs {
-		m.Devices = append(m.Devices, deviceView{
+		dv := deviceView{
 			ID: d.ID, Serial: d.Serial, Status: d.Status, FW: d.FW, RSSI: d.RSSI,
 			SeenAge: age(now, d.LastSeenAt), Counters: d.Counters,
 			CfgVer: d.CfgVer, CfgApplied: d.CfgAppliedVer,
 			Amber: d.Status == "active" && d.CfgAppliedVer != d.CfgVer,
-		})
+		}
+		// A board that has never checked in has no reading; "0 dBm" would read
+		// as a perfect signal (same rule as the fleet board).
+		if d.LastSeenAt.IsZero() {
+			dv.RSSIText = "—"
+		} else {
+			dv.RSSIText = fmt.Sprintf("%d dBm", d.RSSI)
+			dv.Weak = d.RSSI <= -65
+		}
+		m.Devices = append(m.Devices, dv)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

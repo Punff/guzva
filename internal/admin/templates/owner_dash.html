@@ -1,60 +1,94 @@
 {{define "owner_dash.html"}}<!doctype html>
 <html lang="hr">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+{{template "shell-head.html" .}}
 <title>guzva — {{.Venue.Name}}</title>
 <script src="/admin/static/htmx.min.js" defer></script>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0d10'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%237ee787' stroke-width='3'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="/admin/app.css">
 </head>
-<body class="bg-[var(--color-bg)] text-[var(--color-ink)] font-sans">
-<div class="wrap" style="max-width:44rem;margin-inline:auto;padding:1rem">
-<header class="flex items-center justify-between gap-4 py-2 mb-4">
-  <h1 class="text-xl font-semibold tracking-tight">{{.Venue.Name}}</h1>
-  <form method="post" action="/owner/logout" class="inline"><button class="btn btn--ghost" type="submit">Odjava</button></form>
+<body class="bg-paper text-ink font-sans">
+<div class="mx-auto w-full max-w-[40rem] px-4 py-6 sm:px-6">
+<header class="flex flex-wrap items-center justify-between gap-3 py-2 mb-5">
+  <h1 class="text-2xl font-bold tracking-tight">{{.Venue.Name}}</h1>
+  <form method="post" action="/owner/logout" class="inline">
+    <button class="inline-flex items-center justify-center border-2 border-ink bg-paper px-4 min-h-11 text-sm font-semibold shadow-step-sm tap" type="submit">Odjava</button>
+  </form>
 </header>
 
-<div id="flash">{{if .Saved}}<div class="flash flash--ok" role="status">Spremljeno.</div>{{end}}</div>
+<div id="flash">{{if .Saved}}<div class="border-2 border-ink bg-paper px-3 py-2 text-sm" role="status">Promjene su spremljene.</div>{{end}}</div>
 
-<section class="card p-5 mb-5">
-  <p class="mb-3"><a href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">Javna stranica ↗</a> <span class="muted">· oznaka otvoreno/zatvoreno sada: <strong>{{.OpenState}}</strong></span></p>
+<section class="border-2 border-ink bg-paper shadow-step p-4 mb-5">
+  <div class="flex flex-wrap items-center gap-2 mb-3">
+    {{template "chip.html" .State}}
+    <a class="text-sm underline" href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">Javna stranica ↗</a>
+  </div>
+  <p class="text-sm text-muted">{{.Summary}}</p>
+</section>
+
+<section class="border-2 border-ink bg-paper shadow-step p-4 mb-5">
+  <h2 class="text-lg font-bold mb-3">Podaci o salonu</h2>
   <form class="grid gap-3" hx-post="/owner/venue" hx-target="#flash" hx-swap="innerHTML">
-    <div class="field"><label class="label" for="v-name">Naziv</label><input class="input" id="v-name" name="name" value="{{.Venue.Name}}" required></div>
+    <div class="grid gap-1">
+      <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-name">Naziv</label>
+      <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-name" name="name" value="{{.Venue.Name}}" required>
+    </div>
     <div class="grid grid-cols-2 gap-3">
-      <div class="field"><label class="label" for="v-tz">Vremenska zona</label><input class="input" id="v-tz" name="tz" value="{{.Venue.TZ}}"></div>
-      <div class="field"><label class="label" for="v-style">Stil</label>
-        <select class="select" id="v-style" name="style">
-          <option value="poster"{{if eq .Venue.Style "poster"}} selected{{end}}>poster (4 nivoa)</option>
-          <option value="mono"{{if eq .Venue.Style "mono"}} selected{{end}}>mono (crno-bijelo)</option>
+      <div class="grid gap-1">
+        <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-tz">Vremenska zona</label>
+        <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-tz" name="tz" value="{{.Venue.TZ}}">
+      </div>
+      <div class="grid gap-1">
+        <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-style">Stil slike</label>
+        <select class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-style" name="style">
+          <option value="poster"{{if eq .Venue.Style "poster"}} selected{{end}}>Tisak (4 nivoa)</option>
+          <option value="mono"{{if eq .Venue.Style "mono"}} selected{{end}}>Šablon (2 nivoa)</option>
         </select>
       </div>
     </div>
-    <div class="field"><label class="label" for="v-hours">Radno vrijeme</label><input class="input" id="v-hours" name="hours" value="{{.HoursSpec}}" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (prazno = bez oznake)"></div>
-    <button class="btn" type="submit">Spremi</button>
+    <div class="grid gap-1">
+      <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="v-hours">Radno vrijeme</label>
+      <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" id="v-hours" name="hours" value="{{.HoursSpec}}" placeholder="Mo-Fr 09:00-17:00;Sa 10:00-14:00 (prazno = bez oznake)">
+    </div>
+    <button class="inline-flex items-center justify-center border-2 border-ink bg-accent text-paper px-4 min-h-11 font-semibold shadow-step-sm tap w-max" type="submit">Spremi promjene</button>
   </form>
 </section>
 
-<section class="card p-5">
-  <h2 class="text-lg font-semibold mb-3">Stanje uređaja</h2>
+<section class="border-2 border-ink bg-paper shadow-step p-4">
+  <h2 class="text-lg font-bold mb-3">Zdravlje uređaja</h2>
   {{if .Devices}}
-  <table class="table">
-    <thead><tr><th>Serijski broj</th><th>Stanje</th><th>Zadnji put viđen</th><th>Signal</th><th>Konfiguracija</th></tr></thead>
+  <div class="overflow-x-auto">
+  <table class="w-full text-sm border-2 border-ink">
+    <thead><tr class="bg-paper-2 text-left">
+      <th class="px-2 py-1 font-semibold text-xs uppercase tracking-widest text-muted">Serijski broj</th>
+      <th class="px-2 py-1 font-semibold text-xs uppercase tracking-widest text-muted">Stanje</th>
+      <th class="px-2 py-1 font-semibold text-xs uppercase tracking-widest text-muted">Zadnja slika</th>
+      <th class="px-2 py-1 font-semibold text-xs uppercase tracking-widest text-muted">Signal</th>
+    </tr></thead>
     <tbody>
       {{range .Devices}}
-      <tr>
-        <td class="font-mono">{{.Serial}}</td>
-        <td><span style="color:{{if eq .Status "active"}}var(--color-fresh){{else}}var(--color-stale){{end}}">{{.Status}}</span></td>
-        <td>{{.SeenAge}}</td>
-        <td>{{.RSSI}} dBm</td>
-        <td class="sizeTxt"{{if .Amber}} style="color:var(--color-stale)" title="novi konfiguracija je na putu do uređaja"{{end}}>{{.CfgVer}}/{{.CfgApplied}}</td>
+      <tr class="odd:bg-paper-2">
+        <td class="px-2 py-1 font-mono">{{.Serial}}</td>
+        <td class="px-2 py-1" style="color:{{if eq .Status "active"}}var(--fresh){{else}}var(--muted){{end}}">{{.Status}}</td>
+        <td class="px-2 py-1">{{.SeenAge}}</td>
+        <td class="px-2 py-1 tnum"{{if .Weak}} style="color:var(--accent)"{{end}}>{{.RSSIText}}</td>
       </tr>
       {{end}}
     </tbody>
   </table>
-  <p class="muted mt-3 text-sm">Postavkama kamere upravlja administrator — pitajte ga ako slika treba korigirati.</p>
-  {{else}}<p class="muted">Još nema uređaja — administrator će dodati jedan.</p>{{end}}
+  </div>
+  <div class="border-l-2 border-ink pl-3 mt-4">
+    <h3 class="font-semibold">Slika je stara — što učiniti?</h3>
+    <ol class="list-decimal list-inside text-sm text-muted mt-1">
+      <li>Provjeri je li kamera uključena u struju.</li>
+      <li>Provjeri radi li WiFi u salonu.</li>
+      <li>Ako ništa ne pomogne, javi se administratoru.</li>
+    </ol>
+  </div>
+  {{else}}
+  <div class="tx-dither border-2 border-ink p-4 text-sm text-muted">Još nema uređaja — administrator će dodati jedan.</div>
+  {{end}}
 </section>
+
+{{template "shell-foot.html" .}}
 </div>
 </body>
 </html>{{end}}

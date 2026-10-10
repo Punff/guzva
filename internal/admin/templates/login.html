@@ -1,25 +1,24 @@
 {{define "login.html"}}<!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+{{template "shell-head.html" .}}
 <title>guzva — admin</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0d10'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%237ee787' stroke-width='3'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="/admin/app.css">
 </head>
-<body class="min-h-dvh grid place-items-center p-4 bg-[var(--color-bg)] text-[var(--color-ink)] font-sans">
-  <main class="w-full max-w-sm">
-    <h1 class="text-xl font-semibold tracking-tight mb-1">guzva</h1>
-    <p class="muted mb-5">Sign in to the admin console.</p>
-    {{if .Err}}<div class="flash flash--err mb-4" role="alert">{{.Err}}</div>{{end}}
-    <form method="post" action="/admin/login" class="card p-5 grid gap-3">
-      <div class="field">
-        <label for="password">Password</label>
-        <input class="input" type="password" id="password" name="password" autofocus autocomplete="current-password">
+<body class="bg-paper text-ink font-sans">
+<main class="min-h-dvh grid place-items-center p-4">
+  <div class="w-full max-w-sm">
+    <h1 class="text-2xl font-bold tracking-tight mb-1">guzva</h1>
+    <p class="text-sm text-muted mb-5">Sign in to the admin console.</p>
+    {{if .Err}}<div class="border-2 border-accent bg-paper px-3 py-2 text-sm mb-4" role="alert">{{.Err}}</div>{{end}}
+    <form method="post" action="/admin/login" class="border-2 border-ink bg-paper shadow-step p-4 grid gap-3">
+      <div class="grid gap-1">
+        <label class="text-xs font-semibold uppercase tracking-widest text-muted" for="password">Password</label>
+        <input class="w-full border-2 border-ink bg-paper px-3 min-h-11 text-base" type="password" id="password" name="password" autofocus autocomplete="current-password">
       </div>
-      <button class="btn w-full" type="submit">Sign in</button>
+      <button class="inline-flex items-center justify-center border-2 border-ink bg-accent text-paper px-4 min-h-11 font-semibold shadow-step-sm tap" type="submit">Sign in</button>
     </form>
-    <p class="muted mt-4 text-xs">Sessions are signed cookies (§6.5); the raw camera image never appears here or on public pages.</p>
-  </main>
+    <p class="text-xs text-muted mt-4">Sessions are signed cookies (§6.5); the raw camera image never appears here or on public pages.</p>
+  </div>
+</main>
 </body>
 </html>{{end}}

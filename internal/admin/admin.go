@@ -178,6 +178,12 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/admin/login")
 }
 
+// InstallGateRSSI is the weakest signal an install may ship with (PLAN §10).
+// Below it, pictures arrive late and TLS handshakes fail; the bench unit sits
+// at −74 and is a standing reminder that this is a hardware gate, not a
+// preference.
+const InstallGateRSSI = -65
+
 // --- fleet board -----------------------------------------------------------
 
 type deviceView struct {
@@ -196,13 +202,21 @@ type deviceView struct {
 }
 
 type venueView struct {
-	ID         int64
-	Slug       string
-	Name       string
-	FreshClass string
-	FreshText  string
-	LastAge    string
-	Devices    []deviceView
+	ID      int64
+	Slug    string
+	Name    string
+	Fresh   chip // shape + colour + sentence for the status chip
+	LastAge string
+	Devices []deviceView
+}
+
+// chip is the "needs attention" state of a venue, ready for the chip partial
+// (DESIGN.md §3.2). Shape is markup and must not be escaped; text is the
+// signal a screen reader reads, so the state never depends on colour.
+type chip struct {
+	Cls   string
+	Shape template.HTML
+	Text  string
 }
 
 type fleetModel struct {
@@ -237,7 +251,7 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 		}
 		if seen {
 			dv.RSSIText = fmt.Sprintf("%d dBm", d.RSSI)
-			dv.Weak = d.RSSI <= -65
+			dv.Weak = d.RSSI <= InstallGateRSSI
 		} else {
 			dv.RSSIText = "—"
 		}
@@ -251,11 +265,13 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 		}
 		switch venue.Classify(v.LastFrameAt, now) {
 		case venue.Fresh:
-			vv.FreshClass, vv.FreshText = "fresh", "Fresh"
+			vv.Fresh = chip{"fresh", shapeFresh, "Fresh"}
+		case venue.Late:
+			vv.Fresh = chip{"late", shapeLate, "Late"}
 		case venue.Stale:
-			vv.FreshClass, vv.FreshText = "stale", "STALE"
+			vv.Fresh = chip{"stale", shapeNoSignal, "No signal"}
 		default:
-			vv.FreshClass, vv.FreshText = "unknown", "No frame"
+			vv.Fresh = chip{"unknown", shapeWaiting, "No frame yet"}
 		}
 		model.Venues = append(model.Venues, vv)
 	}
@@ -520,14 +536,18 @@ type cfgField struct {
 	Val      int
 	Min, Max int
 	Range    string // "30…90" — always both ends, never a bare bound
-	Cadence  bool   // interval_s/quality: the cadence trio, not sensor keys
+	Cadence  bool   // interval_s/quality: when the board wakes up
+	Image    bool   // sensor/imaging keys (DESIGN.md §8.3)
+	Hardware bool   // flash LED, test pattern
 }
 
 type deviceModel struct {
 	Device store.Device
 	Cfg    proto.DesiredCfg
 	Fields []cfgField
-	Amber  bool
+	Amber  bool // applied config version behind desired (read-back mismatch)
+	Weak   bool // signal below the −65 dBm install gate (§10)
+	Seen   bool // the board has ever checked in
 	Saved  bool
 }
 
@@ -550,10 +570,19 @@ func deviceFields(cfg proto.DesiredCfg) []cfgField {
 		// Always print both bounds. A bare "30" under a 45 was unreadable —
 		// you could not tell min from max, and a lone "4" under quality
 		// looked like a fourth option rather than a ceiling.
-		out = append(out, cfgField{
+		f := cfgField{
 			Key: k, Val: val, Min: spec.Min, Max: spec.Max, Cadence: cadence,
 			Range: fmt.Sprintf("%d…%d", spec.Min, spec.Max),
-		})
+		}
+		if !cadence {
+			switch k {
+			case "led_pwm", "test_pattern":
+				f.Hardware = true
+			default:
+				f.Image = true
+			}
+		}
+		out = append(out, f)
 	}
 	return out
 }
@@ -574,6 +603,8 @@ func (s *Server) devicePage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	m := deviceModel{Device: *d, Cfg: cfg, Fields: deviceFields(cfg),
 		Amber: d.Status == "active" && d.CfgAppliedVer != d.CfgVer,
+		Seen:  !d.LastSeenAt.IsZero(),
+		Weak:  !d.LastSeenAt.IsZero() && d.RSSI <= InstallGateRSSI,
 		Saved: r.URL.Query().Get("saved") != ""}
 	if err := s.tmpl.ExecuteTemplate(w, "device.html", m); err != nil {
 		s.log.Error("admin: render device", "err", err.Error())
@@ -651,3 +682,13 @@ func randHex(n int) string {
 	}
 	return hex.EncodeToString(b)
 }
+
+// Status shapes shared with the public page (DESIGN.md §3.2): a distinct
+// silhouette per state, so the state survives with no colour at all. Whole
+// strings, never assembled by concatenation, so the inliner sees them.
+const (
+	shapeFresh    = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><rect width="12" height="12" fill="currentColor"/></svg>`
+	shapeLate     = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><rect width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"/><rect y="6" width="12" height="6" fill="currentColor"/></svg>`
+	shapeNoSignal = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><rect width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"/><path d="M0 3h12M0 6h12M0 9h12" stroke="currentColor" stroke-width="2"/></svg>`
+	shapeWaiting  = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><path d="M0 0h4v4H0zM8 0h4v4H8zM4 4h4v4H4zM0 8h4v4H0zM8 8h4v4H8z" fill="currentColor"/></svg>`
+)
