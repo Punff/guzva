@@ -63,8 +63,24 @@ func Static(dir string) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		// Matches the meta refresh: a stale-but-valid page beats a cache miss.
-		w.Header().Set("Cache-Control", "public, max-age=30")
+		// Cache policy differs by which of the two files this is, and
+		// getting it wrong is what made the page look stuck.
+		//
+		// index.html is re-fetched on every tick and is rewritten on every
+		// state change, so a cached copy means the visitor can be looking at
+		// an old page — old freshness badge, old inlined CSS, and above all
+		// old JS. After a deploy that is exactly the "it struggles to pick
+		// it up again" symptom. Revalidate every time: no-cache still allows
+		// the cheap conditional GET, so the common case is a 304, not a
+		// re-download.
+		w.Header().Set("Cache-Control", "no-cache")
+		if filepath.Base(full) == "latest.jpg" {
+			// latest.jpg is addressed by ?v=<received-at>, which is unique
+			// per frame, so this URL's bytes will never change again. Cache
+			// it hard: a repeat view costs nothing, and because the URL
+			// changes, "cached" can never mean "stale".
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
 		http.ServeContent(w, r, filepath.Base(full), fi.ModTime(), f)
 	})
 }

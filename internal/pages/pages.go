@@ -180,7 +180,13 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		CSS:      template.CSS(webui.CSS()),
 	}
 	if vw.HasFrame {
-		vw.StillVer = fmt.Sprintf("%d", latest.ReceivedAt.Unix())
+		// The cache-buster is the frame row id, NOT received_at: ids are
+		// unique and monotonic, so this URL can never be reused for
+		// different bytes. Seconds-resolution timestamps could collide if
+		// two frames ever landed in the same second, and since latest.jpg
+		// is served immutable for a year, one collision would pin a stale
+		// photo in a visitor's cache permanently.
+		vw.StillVer = fmt.Sprintf("%d", latest.ID)
 		local := last.In(loc)
 		vw.Updated = local.Format("15:04")
 		vw.UpdatedDay = dayLabel(local, now.In(loc))

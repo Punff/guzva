@@ -130,7 +130,7 @@ func TestOnFrameWritesOnlyPublicFiles(t *testing.T) {
 		"16:00",                     // venue-local, absolute (§6.4)
 		"today",                     // day label disambiguates the clock
 		"CEST",                      // venue timezone, not the viewer's
-		`src="latest.jpg?v=`,        // cache-busted by received_at
+		`src="latest.jpg?v=`,        // cache-busted by frame id (collision-proof)
 		"Open today 09:00–17:00",    // today (Friday) hours, venue-local
 		"raw camera image is never", // privacy footer
 		`aspect-ratio:`,             // box reserved before the JPEG loads

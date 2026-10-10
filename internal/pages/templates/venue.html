@@ -86,6 +86,31 @@
   var ver = frame.getAttribute('data-ver') || '';
   var busy = false;
 
+  // The server ships data-loading="1" so there is no flash of a blank box
+  // before the first pixel. Nothing was listening to clear it on arrival —
+  // so a first-time visitor kept the shimmer until an unrelated later swap
+  // happened to fire a load event. Settle the image that is already here.
+  settle(document.getElementById('still'));
+
+  // Clear the "still arriving" veil exactly once the image has settled.
+  //
+  // Two ways this went wrong, both seen on the live site: attaching a load
+  // listener AFTER inserting the node loses the event entirely when the
+  // bytes are already in cache (it has already fired by then), and the
+  // server-rendered data-loading="1" had no listener at all until the first
+  // successful swap — so a first-time visitor stared at a permanently
+  // shimmering photo, which read as "the image is stuck".
+  //
+  // complete covers both "already loaded from cache" and "failed"; error is
+  // handled so a broken image stops sweeping instead of spinning forever.
+  function settle(img) {
+    if (!img) return;
+    if (img.complete) { frame.removeAttribute('data-loading'); return; }
+    var clear = function () { frame.removeAttribute('data-loading'); };
+    img.addEventListener('load', clear, { once: true });
+    img.addEventListener('error', clear, { once: true });
+  }
+
   function swap(doc) {
     var nextFrame = doc.getElementById('frame');
     if (!nextFrame) return;
@@ -99,10 +124,8 @@
         frame.setAttribute('data-loading', '1');
         frame.removeAttribute('data-empty');
         var fresh = nextImg.cloneNode(true);
+        settle(fresh);            // before insertion, so nothing can be missed
         img.replaceWith(fresh);
-        fresh.addEventListener('load', function () {
-          frame.removeAttribute('data-loading');
-        }, { once: true });
       }
     }
     ['fresh', 'open'].forEach(function (id) {
