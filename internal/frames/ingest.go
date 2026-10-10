@@ -229,6 +229,14 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	rawSHA := sha256hex(frameRaw)
 
 	// Render (§6.1 step 5): bounded by the engine's global semaphore.
+	// The stamp location comes from the venue row, and an unknown TZ must
+	// never fail an ingest — UTC with a warning, same as the page writer.
+	stampLoc := time.UTC
+	if loc, err := time.LoadLocation(venue.TZ); err != nil {
+		s.log.Warn("ingest: unknown venue tz, stamping UTC", "venue", venue.ID, "tz", venue.TZ)
+	} else {
+		stampLoc = loc
+	}
 	pctx, cancel := context.WithTimeout(ctx, RenderTimeout)
 	start := s.now()
 	out, perr := s.eng.Process(pctx, render.FrameIn{
@@ -236,6 +244,8 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		CaptureID: meta.CaptureID,
 		Preset:    venue.Style,
 		Raw:       frameRaw,
+		StampLoc:  stampLoc,
+		Calib:     store.ParseCalib(venue.CalibJSON),
 	})
 	cancel()
 	s.m.observeRender(s.now().Sub(start))
@@ -281,9 +291,9 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// the render into place. Ordering matters under (venue_id, capture_id)
 	// races: the loser removes only its own temp file, never the winner's
 	// published render.
-	rel := filepath.Join("venues", fmt.Sprint(dev.VenueID), "stills", meta.CaptureID+".jpg")
+	rel := filepath.Join("venues", fmt.Sprint(dev.VenueID), "stills", meta.CaptureID+".png")
 	abs := filepath.Join(s.dataDir, rel)
-	tmp, err := writeTemp(abs, out.JPEG, 0o644, 0o750)
+	tmp, err := writeTemp(abs, out.PNG, 0o644, 0o750)
 	if err != nil {
 		s.internal(w, "write render", err)
 		return

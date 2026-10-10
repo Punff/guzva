@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"log/slog"
 	"math/rand"
 	"mime/multipart"
@@ -205,7 +206,7 @@ func (f *fixture) device(t *testing.T) *store.Device {
 
 func stills(t *testing.T, dataDir string) []string {
 	t.Helper()
-	matches, err := filepath.Glob(filepath.Join(dataDir, "venues", "*", "stills", "*.jpg"))
+	matches, err := filepath.Glob(filepath.Join(dataDir, "venues", "*", "stills", "*.png"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,8 +238,8 @@ func TestIngestStoresFrame(t *testing.T) {
 		t.Errorf("201 must not carry reason: %v", body)
 	}
 
-	// File landed at the contract path, public width, no temp leftovers.
-	wantPath := filepath.Join(f.dataDir, "venues", "1", "stills", "C1-1-aaaa.jpg")
+	// File landed at the contract path, grid dims, no temp leftovers.
+	wantPath := filepath.Join(f.dataDir, "venues", "1", "stills", "C1-1-aaaa.png")
 	if _, err := os.Stat(wantPath); err != nil {
 		t.Fatalf("render missing: %v", err)
 	}
@@ -247,9 +248,9 @@ func TestIngestStoresFrame(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer fh.Close()
-	cfg, err := jpeg.DecodeConfig(fh)
-	if err != nil || cfg.Width != render.PublicWidth {
-		t.Fatalf("stored render: cfg=%+v err=%v (want width %d)", cfg, err, render.PublicWidth)
+	cfg, err := png.DecodeConfig(fh)
+	if err != nil || cfg.Width != render.GW || cfg.Height != render.GH {
+		t.Fatalf("stored render: cfg=%+v err=%v (want %dx%d)", cfg, err, render.GW, render.GH)
 	}
 	if tmps, _ := filepath.Glob(filepath.Join(f.dataDir, "venues", "*", "stills", ".ingest-*.tmp")); len(tmps) != 0 {
 		t.Errorf("temp files left behind: %v", tmps)
@@ -526,12 +527,12 @@ func TestPrivacyRawNeverOnDisk(t *testing.T) {
 		if bytes.Contains(content, raw) {
 			t.Errorf("raw frame bytes on disk: %s", path)
 		}
-		if strings.HasSuffix(path, ".jpg") {
-			cfg, err := jpeg.DecodeConfig(bytes.NewReader(content))
+		if strings.HasSuffix(path, ".png") {
+			cfg, err := png.DecodeConfig(bytes.NewReader(content))
 			if err != nil {
-				t.Errorf("stored JPEG unreadable: %s: %v", path, err)
-			} else if cfg.Width != render.PublicWidth {
-				t.Errorf("stored JPEG width %d != %d: %s", cfg.Width, render.PublicWidth, path)
+				t.Errorf("stored PNG unreadable: %s: %v", path, err)
+			} else if cfg.Width != render.GW || cfg.Height != render.GH {
+				t.Errorf("stored PNG dims %dx%d != %dx%d: %s", cfg.Width, cfg.Height, render.GW, render.GH, path)
 			}
 		}
 		return nil
@@ -591,7 +592,7 @@ func TestPruneKeepsLastGoodFile(t *testing.T) {
 
 	mk := func(cid string, at time.Time) string {
 		t.Helper()
-		rel := filepath.Join("venues", "1", "stills", cid+".jpg")
+		rel := filepath.Join("venues", "1", "stills", cid+".png")
 		abs := filepath.Join(f.dataDir, rel)
 		if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
 			t.Fatal(err)
