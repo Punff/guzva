@@ -1,6 +1,10 @@
 package pages
 
 import (
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/base64"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -93,4 +97,103 @@ func TestStaticRevalidatesBothFiles(t *testing.T) {
 			t.Errorf("%s Cache-Control = %q, want no-cache", path, cc)
 		}
 	}
+}
+
+// Delivery hardening (DESIGN.md §7.4, §13). These are the guarantees a guest
+// on mobile data actually depends on, and none of them can be checked by
+// reading the template.
+func TestPageSecurityHeadersAndCSP(t *testing.T) {
+	f := newFixture(t)
+	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {
+		t.Fatal(err)
+	}
+	h := Static(f.w.Root())
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/jadro/index.html", nil))
+
+	want := map[string]string{
+		"Referrer-Policy":              "no-referrer",
+		"X-Content-Type-Options":       "nosniff",
+		"X-Frame-Options":              "DENY",
+		"Cross-Origin-Resource-Policy": "same-origin",
+		"Permissions-Policy":           "camera=(), microphone=(), geolocation=()",
+		"X-Robots-Tag":                 "noindex, nofollow",
+	}
+	for k, v := range want {
+		if got := w.Header().Get(k); got != v {
+			t.Errorf("%s = %q, want %q", k, got, v)
+		}
+	}
+
+	csp := w.Header().Get("Content-Security-Policy")
+	if strings.Contains(csp, "unsafe-inline") || strings.Contains(csp, "unsafe-eval") {
+		t.Errorf("CSP relies on unsafe-inline, which makes it decorative: %s", csp)
+	}
+	for _, want := range []string{"default-src 'none'", "style-src 'sha256-", "script-src 'sha256-", "frame-ancestors 'none'", "base-uri 'none'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP missing %q: %s", want, csp)
+		}
+	}
+	// The hashes must be THIS page's, so a template change cannot silently
+	// lock the page out of its own script.
+	for _, tag := range []string{"style", "script"} {
+		sum := sha256.Sum256([]byte(inlineBody(t, f.readIndex(t), tag)))
+		if !strings.Contains(csp, base64.StdEncoding.EncodeToString(sum[:])) {
+			t.Errorf("CSP hash for <%s> does not match the served page", tag)
+		}
+	}
+}
+
+func TestPageIsGzippedOnTheWire(t *testing.T) {
+	f := newFixture(t)
+	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {
+		t.Fatal(err)
+	}
+	h := Static(f.w.Root())
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/jadro/index.html", nil))
+	if enc := w.Header().Get("Content-Encoding"); enc != "" {
+		t.Errorf("Content-Encoding = %q without Accept-Encoding", enc)
+	}
+	if got, want := w.Body.Len(), len(f.readIndex(t)); got != want {
+		t.Errorf("plain body = %d bytes, want %d", got, want)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/jadro/index.html", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, r)
+	if w2.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatal("no gzip when the client accepts it")
+	}
+	if w2.Body.Len() >= len(f.readIndex(t)) {
+		t.Errorf("gzip did not help: %d >= %d", w2.Body.Len(), len(f.readIndex(t)))
+	}
+	zr, err := gzip.NewReader(w2.Body)
+	if err != nil {
+		t.Fatalf("not valid gzip: %v", err)
+	}
+	got, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != f.readIndex(t) {
+		t.Error("gzipped body does not round-trip to index.html")
+	}
+}
+
+// inlineBody extracts one inline block's contents from the rendered page.
+func inlineBody(t *testing.T, page, tag string) string {
+	t.Helper()
+	open, close := "<"+tag+">", "</"+tag+">"
+	i := strings.Index(page, open)
+	if i < 0 {
+		t.Fatalf("no <%s> in page", tag)
+	}
+	j := strings.Index(page[i:], close)
+	if j < 0 {
+		t.Fatalf("no </%s> in page", tag)
+	}
+	return page[i+len(open) : i+j]
 }
