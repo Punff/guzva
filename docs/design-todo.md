@@ -43,7 +43,10 @@ evaluation (2026-10-10), so all ten ⚑ deltas were in scope.
       working still with a broken one.
 - [ ] **⚑5/⚑6** calib_json + privacy masks — needs ⚑1's grid to draw masks on.
 - [ ] **⚑10** device capture ≤ QVGA, interval defaults.
-- [ ] Install wizard (§8.4), QR poster (§10), owner hours editor (§9).
+- [x] **Owner hours editor** (§9) — seven rows, native time pickers, split
+      shifts, closed checkboxes, copy-Monday, day-naming errors in both
+      languages. The spec-string input is gone from all three forms.
+- [ ] Install wizard (§8.4), QR poster (§10).
 
 ## Judgement calls to review
 

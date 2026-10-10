@@ -346,3 +346,18 @@ headline agrees with it by construction (same instant, one clock read).
 Pipeline numbers on procedural fixtures: tisak-clean 323 B, busy 306 B,
 sablon 215 B (6 KB bound). Live bench frames: ~160 B (dark room compresses
 to nearly nothing — the size bound matters for bright rooms, not this one).
+
+## 2026-10-11 — hours editor live (DESIGN.md §9)
+
+Deployed `4200955`. All three venue forms (admin create, admin edit, owner)
+use one shared editor partial: 7 day-rows, native time pickers, two intervals
+per day, closed checkboxes, server-side copy-Monday. The spec-string field is
+gone; ParseSpec stays for compat.
+
+Verified live: 7 rows on the venue page prefilled 08:00 from bench hours,
+copy button present on the fleet create form, DB at user_version 5 with hours
+intact across the v4→v5 migration.
+
+Errors are structured (day + code) and sentenced per language: Croatian in the
+owner panel ("Ponedjeljak: …"), English in the console. All-closed rows =
+empty Hours = no badge, same as the old empty spec.
