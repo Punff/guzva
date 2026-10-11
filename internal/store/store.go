@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -256,9 +257,24 @@ func fromTS(sec int64) time.Time {
 // DefaultTZ is used when a venue is created without one.
 const DefaultTZ = "Europe/Sarajevo"
 
+// slugRe is the public-slug rule, one source for every writer: the admin
+// console flashes it, the CLI prints it, and CreateVenue enforces it — an
+// operator typo must never become a path outside the web root (maintenance
+// W1/B5: pages publish under data/public/<slug>).
+var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
+
+// ErrBadSlug is returned by CreateVenue for a slug the rule above rejects.
+var ErrBadSlug = errors.New("store: bad slug")
+
+// ValidSlug reports whether s is a legal public slug.
+func ValidSlug(s string) bool { return slugRe.MatchString(s) }
+
 // CreateVenue inserts a venue and returns its id. Hours are set separately
 // via SetHours (hours live as JSON on the venue row, §6.2).
 func (s *Store) CreateVenue(ctx context.Context, v Venue) (int64, error) {
+	if !ValidSlug(v.Slug) {
+		return 0, ErrBadSlug
+	}
 	tz := v.TZ
 	if tz == "" {
 		tz = DefaultTZ

@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"guzva/internal/auth"
@@ -36,6 +37,20 @@ func provisionMain(args []string) int {
 
 	if *slug == "" {
 		fmt.Fprintln(os.Stderr, "usage: guzva provision -slug <slug> -name <name> [-token <existing>] [-style poster|mono] [-hours ...] [-devices N] [-data dir]")
+		return 2
+	}
+	// Same rule the admin console and store.CreateVenue enforce (W1/B5):
+	// the slug becomes a directory name under the public web root, so a
+	// typo like "../etc" must die here, not in a filepath.Join.
+	*slug = strings.ToLower(strings.TrimSpace(*slug))
+	if !store.ValidSlug(*slug) {
+		fmt.Fprintln(os.Stderr, "provision: -slug must be lowercase letters, digits or dashes (≤40)")
+		return 2
+	}
+	// tz is a venue's display clock; a bogus one silently renders UTC with
+	// a warn in the journal. Validate now — same rule as the admin form.
+	if _, err := time.LoadLocation(*tz); err != nil {
+		fmt.Fprintf(os.Stderr, "provision: unknown -tz %q (IANA name, e.g. Europe/Sarajevo)\n", *tz)
 		return 2
 	}
 	if *devices < 1 || *devices > 256 {
@@ -168,8 +183,9 @@ Public page: /%s/
 
 	fmt.Printf(`
 Next:
-  1. Put the token into firmware/include/settings.h (DEVICE_TOKEN).
-  2. Set INGEST_HOST to this server's hostname; flash over USB.
+  1. Copy firmware/include/settings.example.h → settings.h, put the token in
+     DEVICE_TOKEN, set WIFI_SSID/WIFI_PASSWORD; flash over USB.
+  2. Set INGEST_HOST to this server; keep CA_ROOT_PEM matched to its cert.
   3. First POST /v1/ingest should answer 201; the public page is /%s/
   4. Gate harness: go run ./tools/fakecam -addr ... -tokens <t1,t2,...>
 `, *slug)

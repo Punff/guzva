@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,6 +48,27 @@ func TestVenueSlugUnique(t *testing.T) {
 	}
 	if _, err := s.VenueBySlug(ctx, "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+// The slug becomes a directory under the public web root, so the store
+// itself must refuse a bad one no matter which writer slipped it through
+// (maintenance W1/B5: the CLI could, before it grew the same validation).
+// The admin console and `guzva provision` pre-validate for friendly
+// errors; this is the enforcement they both rely on.
+func TestCreateVenueEnforcesSlugRule(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	for _, bad := range []string{"", "../etc", "Jadro", "with space", "-leading", strings.Repeat("x", 41)} {
+		_, err := s.CreateVenue(ctx, Venue{Slug: bad, Name: "x", Style: "poster"})
+		if !errors.Is(err, ErrBadSlug) {
+			t.Errorf("CreateVenue(slug=%q): err = %v, want ErrBadSlug", bad, err)
+		}
+	}
+	for _, ok := range []string{"jadro", "a1", strings.Repeat("x", 40)} {
+		if _, err := s.CreateVenue(ctx, Venue{Slug: ok, Name: "x", Style: "poster"}); err != nil {
+			t.Errorf("CreateVenue(slug=%q): %v", ok, err)
+		}
 	}
 }
 

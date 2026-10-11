@@ -15,7 +15,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -327,8 +326,6 @@ func age(now, then time.Time) string {
 
 // --- mutations -------------------------------------------------------------
 
-var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
-
 // parseVenueForm validates the editable site-plane fields. It is the one
 // validator for venue create (super-admin), venue update (super-admin) and
 // the owner panel — three forms, one rule, so an owner can never save what
@@ -369,7 +366,7 @@ func parseHours(r *http.Request, cat *i18n.Catalog) (venue.Hours, string) {
 func (s *Server) createVenue(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	slug := strings.ToLower(strings.TrimSpace(r.FormValue("slug")))
-	if !slugRe.MatchString(slug) {
+	if !store.ValidSlug(slug) {
 		s.flash(w, "Slug must be lowercase letters, digits or dashes (≤40).")
 		return
 	}

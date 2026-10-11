@@ -1,9 +1,13 @@
 // Command guzva is the whole service: one static Go binary (PLAN §2).
 //
-//	guzva serve      ingest + static public pages + admin console (default)
+//	guzva serve      ingest + static public pages + admin console
 //	guzva provision  create a venue + device, print the token once (-token = import)
 //	guzva cfg        show or change a device's desired_cfg (-set k=v,...)
 //	guzva hashpw     bcrypt-hash a password for GUZVA_ADMIN_HASH
+//	guzva version    print the build version
+//
+// Dispatch lives in cli.go: no arguments means help, an unknown command is
+// an error — a server must never start by accident.
 //
 // Layout follows PLAN §3: this file only wires packages together — no
 // business logic, no SQL.
@@ -44,20 +48,7 @@ var version = "dev"
 const renderConcurrency = 4
 
 func main() {
-	args := os.Args[1:]
-	if len(args) > 0 {
-		switch args[0] {
-		case "provision":
-			os.Exit(provisionMain(args[1:]))
-		case "cfg":
-			os.Exit(cfgMain(args[1:]))
-		case "hashpw":
-			os.Exit(hashpwMain(args[1:]))
-		case "serve":
-			args = args[1:] // strip the subcommand so flags actually parse
-		}
-	}
-	os.Exit(serveMain(args))
+	os.Exit(run(os.Args[1:]))
 }
 
 // envOr returns the flag value, falling back to the environment (§2: config
