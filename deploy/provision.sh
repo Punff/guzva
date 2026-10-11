@@ -90,13 +90,17 @@ if [[ ! -f "$ETC_DIR/guzva.env" ]]; then
   printf '# guzva secrets — root only (0600). Set the admin hash via:\n#   guzva hashpw   (type the password on stdin, paste the hash below)\nGUZVA_ADMIN_HASH=\nGUZVA_COOKIE_SECRET=%s\n' "$COOKIE_SECRET" > "$ETC_DIR/guzva.env"
   chmod 0600 "$ETC_DIR/guzva.env"
 fi
-# Bench path: reuse the rig's epoch self-signed cert so already-flashed boards
-# keep validating with no re-flash. When autocert + domain land (§8), this
-# copy goes away and -tls-cert/-tls-key leave the unit file.
-if [[ ! -f "$ETC_DIR/tls.crt" && -f /etc/camtest/tls.crt ]]; then
-  log "bench TLS: copying the rig's cert pair (boards already trust it)"
-  install -m 0644 -o root -g root /etc/camtest/tls.crt "$ETC_DIR/tls.crt"
-  install -m 0640 -o root -g guzva /etc/camtest/tls.key "$ETC_DIR/tls.key"
+# Bench path: the epoch-valid self-signed cert for the bench VPS lives at
+# /etc/guzva/tls.{crt,key}. It is generated on the VPS with
+# tools/bench-cert.sh and installed by hand ONCE (the retired Python rig
+# used to provide it — that copy step is gone with the rig, maintenance W0).
+# Already-flashed boards keep validating with no re-flash. When autocert +
+# domain land (§8), the pair is deleted and -tls-cert/-tls-key leave the
+# unit file.
+if [[ ! -f "$ETC_DIR/tls.crt" ]]; then
+  log "no bench TLS pair in $ETC_DIR — generate one on this box:"
+  log "  ./tools/bench-cert.sh /tmp && install -m 0644 /tmp/bench-cert.pem $ETC_DIR/tls.crt"
+  log "  (key 0640 root:guzva; re-flash boards with the new PEM)"
 fi
 
 # --- 4. TLS: in-binary autocert (PLAN §8) --------------------------------------

@@ -10,7 +10,7 @@ are shown **once** at provision time and never stored recoverably.
   autocert/domain lands — browsers warn, the device already trusts it)
 - Admin: `https://34.139.58.143/admin/` · Health: `/healthz`
 - VPS: `ssh root@guzva` (34.139.58.143) · service: `guzva.service`
-  (the old Python rig `camtest` is stopped + disabled, kept as reference)
+  (the retired Python rig is deleted from the tree — git history keeps it)
 - Data: `/var/lib/guzva` (`guzva.db` + `venues/`) · env+certs: `/etc/guzva/`
 - Device: ESP32-CAM serial `bd2a58`, `http://guzva-bd2a58.local`,
   bench IP 192.168.1.6, serial 115200 on `/dev/ttyUSB0`

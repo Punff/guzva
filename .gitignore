@@ -2,11 +2,16 @@
 .pio/
 firmware/.pio/
 
+# Per-device firmware secrets — copy from settings.example.h
+# (maintenance W0: this file is the only one with device credentials)
+firmware/include/settings.h
+
 # Editor state
 .vscode/
 
 # Go build output
 dist/
+styleproof
 
 # Local test data
 mydata/

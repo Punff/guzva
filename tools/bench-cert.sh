@@ -13,8 +13,8 @@
 # seconds-since-boot ≈ 1970.  A normal cert (notBefore = issue date)
 # fails X.509 date verification there ("certificate is not yet valid",
 # mbedtls -9984).  notBefore 1970 … notAfter 2099 makes the bench cert
-# valid for any device clock in that window.  Production certs (Caddy /
-# Let's Encrypt, notBefore ≈ issue date) hit the same wall — see
+# valid for any device clock in that window.  Production certs
+# (autocert, notBefore ≈ issue date) hit the same wall — see
 # docs/ops-log.md bring-up entry for the VPS-phase time story.
 #
 # THE IP GOES IN SAN TWICE ON PURPOSE: mbedtls 2.26 (arduino-esp32 2.x,
@@ -26,10 +26,11 @@
 # the camera rejects with CN_MISMATCH / "bad certificate".
 #
 # Regenerate when the PC's LAN IP changes (DHCP), and re-flash the
-# firmware with the new PEM (firmware/include/wifiSettings.h, BENCH_TLS=1).
+# firmware with the new PEM (firmware/include/settings.h, CA_ROOT_PEM —
+# copy from settings.example.h first on a fresh clone; maintenance W0).
 #
-# Transfer to the VPS: set BENCH_TLS 0 and INGEST_HOST/PORT back to the
-# domain/443 — production verifies against the real CA, not this cert.
+# For the bench VPS: generate here or on the box, install as
+# /etc/guzva/tls.{crt,key} (see deploy/provision.sh §3b).
 set -euo pipefail
 
 out="${1:-./mydata}"
@@ -52,6 +53,6 @@ openssl req -x509 -newkey rsa:2048 -sha256 -nodes \
 chmod 600 "$out/bench-key.pem"
 echo "wrote $out/bench-cert.pem + $out/bench-key.pem (SAN includes IP:${ip}, IP:127.0.0.1)"
 echo
-echo "paste into firmware/include/wifiSettings.h (BENCH_TLS=1 CA_ROOT_PEM):"
+echo "paste into firmware/include/settings.h (CA_ROOT_PEM):"
 echo "---------------------------------------------------------------------"
 cat "$out/bench-cert.pem"
