@@ -29,36 +29,51 @@ evaluation (2026-10-10), so all ten ⚑ deltas were in scope.
 - [x] **⚑4 closed ⇒ no still** — shutter, no polling.
 - [x] **⚑9 per-venue language** — `venues.lang` migration (v4).
 - [x] **i18n** — one catalog, hr default + en fallback.
+- [x] **B1 kit page** `/admin/_kit` — components, both themes; shapes
+      resolve through the `shape()` template func — one source of truth.
+- [x] **Owner hours editor** (§9) — seven rows, native time pickers, split
+      shifts, closed checkboxes, copy-Monday, day-naming errors in both
+      languages; the spec-string input is gone from all three forms.
 
 ## Not done
 
-- [x] **B1 kit page** `/admin/_kit` — every component, both themes, all states.
-      Gated on GUZVA_KIT=1 (404 otherwise). Shapes resolve from the class
-      through a shape() template func — one source of truth.
-- [ ] **⚑1/⚑2 the print** — 160×120 paletted PNG + burned-in HH:MM stamp.
-      **This is the centrepiece and it is the biggest remaining piece**: an
-      8-stage pipeline, palette PNG encoding, a 5×7 digit font, goldens, and
-      `latest.jpg` → `latest.png` across ingest/pages/tests. Deliberately not
-      started rather than half-landed: a partial pipeline would replace a
-      working still with a broken one.
-- [ ] **⚑5/⚑6** calib_json + privacy masks — needs ⚑1's grid to draw masks on.
-- [ ] **⚑10** device capture ≤ QVGA, interval defaults.
-- [x] **Owner hours editor** (§9) — seven rows, native time pickers, split
-      shifts, closed checkboxes, copy-Monday, day-naming errors in both
-      languages. The spec-string input is gone from all three forms.
-- [ ] Install wizard (§8.4), QR poster (§10).
+Truth pass 11 Oct 2026 (the file previously listed ⚑1/⚑2, ⚑5/⚑6 and ⚑10 as
+"not done" — they shipped in `efd609e`…`f14997d`/`aa256fd`; the checkboxes
+below reflect git log and ops-log:328–348, not memory):
+
+- [x] **⚑1/⚑2 the print** — 160×120 paletted PNG + burned-in HH:MM stamp,
+      live through the Tisak pipeline (`efd609e`, `c5ee954`, `ea6f3ac`,
+      `888c3e5`); ring files are `.png`, pages publish `latest.png`.
+- [x] **⚑5/⚑6 calib + privacy masks** — schema v5 `calib_json`, admin form
+      with threshold/bias/invert validation and round-trip (`2423e4f`,
+      `f14997d`); masks are applied twice around blur+mode by the pipeline.
+- [x] **⚑10 device capture ≤ QVGA** — firmware defaults QVGA, 60 s
+      (`aa256fd`; takes effect on physical reflash, ops-log:339–341).
+- [ ] Install wizard (§8.4) — `tools/styleproof` is the CLI substitute
+      (contact sheet + paste-ready calib_json); the in-console wizard is W7
+      of docs/maintenance.md.
+- [ ] QR poster (§10) — W7.
 
 ## Judgement calls to review
 
-- **The still is the weakest part of the current product.** It is still a
-  640px JPEG at ~16 KB on the wire — about 3× the whole page. ⚑1 fixes that
-  and is the single highest-value item left.
-- **The bench still reads as a dark, almost-empty frame** because the camera
-  is pointed at a dark surface. Not a rendering bug, but it makes a poor
-  demo; worth pointing the camera at the room before showing anyone.
-- `i18n.DayName` had a real year-boundary bug (YearDay wraps) — fixed, tested.
+- **The chip colour layer never compiled.** `text-{{.Cls}}` in parts.html
+  and `text-{{.StateClass}}` in the public page assemble class names the
+  Tailwind scanner cannot see, so `text-fresh/late/stale/…` exist in
+  neither stylesheet and every chip renders in inherited ink — including in
+  the kit gallery, whose job was to catch exactly this. Fixed as
+  maintenance W2 (explicit state classes in tokens.css).
+- **`owner.fresh/late/stale` were missing from the i18n catalog** — the
+  owner dash rendered the raw keys. The dash had never been verified live
+  (the bench owner password was lost, ops-log:207–209). Both fixed in W2.
+- **The bench still reads as a dark, almost-empty frame** because the
+  camera points at a dark surface. Not a rendering bug, but it makes a poor
+  demo and it proves nothing about contrast on a bright room — W8 exists
+  to tune from real frames.
 - The still ramp is fixed in both themes while the UI inverts; intentional
-  per §5.4, but it looks odd at first glance in dark mode.
+  per §5.4 (a picture shared in a chat must look identical anywhere).
+- i18n: `owner.save/saved/health.old`, `alt.still/alt.nowframe`,
+  `hours.title` existed but templates hard-coded the strings — wired in W2.
+
 
 ## Bugs found while implementing (all mine)
 

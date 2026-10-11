@@ -637,6 +637,19 @@ green; first deploy + first restore drill via scripts; a week with no GCP charge
 
 ## 17. Change log
 
+**v3.2 → v3.3 (11 Oct 2026 — maintenance plan; no product change)**
+- **No decisions changed.** v3.3 exists to record that the project entered a
+  remediation pass: a four-way audit (firmware, server, UI/docs, DevOps)
+  found the architecture sound but the hygiene, a set of live surface bugs,
+  the missing CI substrate, and doc drift bad enough to mislead.
+- **`docs/maintenance.md` is the working plan** for that pass (workstreams
+  W0–W8, each item with evidence and an acceptance check). It defers to this
+  file everywhere the two touch. Notable verdicts it records: the spec's
+  "hourly-max reboot" is dropped (the task watchdog is the mechanism that
+  was meant); secrets in firmware history must be scrubbed **before the
+  first push to any remote**; the design-system's chip colours never
+  compiled (dynamic class names) and the owner dash rendered raw i18n keys.
+
 **v3.1 → v3.2 (09 Oct 2026 — product plan)**
 - **Restructured from protocol-spike to product.** §§5–8 (firmware, server,
   render, ops) kept as the proven foundation; added the missing product plan.
