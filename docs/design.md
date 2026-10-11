@@ -219,7 +219,7 @@ change.
   the scanner sees them (state classes via a lookup map of whole strings).
 - No `@apply` towers; components are ~12 template partials with their utility lists
   (§6), not a CSS component layer.
-- Budgets (CI fails above): `public.css` ≤ **8 KB minified** (≈ 2.5 KB gz);
+- Budgets (Makefile.web.mk fails above): `public.css` ≤ **4 KB gzipped**, `app.css` ≤ **12 KB gzipped** (§13 states the 2.5 KB gz ambition; the enforced gate carries the rationale);
   `app.css` ≤ **30 KB minified**.
 - `make css` is part of `make build`; CI fails if generated CSS is stale (plan §12).
 
@@ -242,7 +242,7 @@ their display names are **Tisak** (print, 4 tones) and **Šablon** (stencil, 2 t
 **Non-goals.** Recognising anything: no face/people/plate detection or counting
 (D9). Nothing here "finds" a person; the style just *coarsens everything equally*.
 
-### 5.2 Pipeline (`poster@1`)
+### 5.2 Pipeline (`poster@2`)
 
 All stages are pure, integer-friendly, stdlib-only. Input: decoded JPEG; output:
 `160×120` paletted PNG.
@@ -251,19 +251,24 @@ All stages are pure, integer-friendly, stdlib-only. Input: decoded JPEG; output:
 |---|---|---|---|
 | 1 | Take **luminance only** (the `Y` plane of the decoded `YCbCr`; any other colour model → `color.GrayModel`) | — | Colour (skin, hair, clothes, branding) is discarded at the first step and never converted. EXIF is already gone. |
 | 2 | **Area-average** to a **160×120 grid** (4:3 inputs only; exact for 160/320/640/800/1600 wide, fixed-point Q8 edge weights otherwise; non-4:3 → `422 dims`) | grid = 160×120 = 19,200 cells | The mosaic *is* the grid. 4× oversampling from VGA gives clean averaging; QVGA (2×) is plenty. |
-| 3 | **Privacy masks** — overwrite listed rectangles with a constant luma | ≤ 4 rects in grid coords ⚑ | Static, installer-drawn geometry for regions where people sit too close (§5.3). Applied *before* blur so nothing inside leaks. |
+| 3 | **Privacy masks** — overwrite listed rectangles with a constant luma | ≤ 4 rects in grid coords ⚑ | Static, installer-drawn geometry for regions where people sit too close (§5.3). Applied *before* blur so nothing inside leaks — and **again after the mode filter** in the shipped pipeline (edge bleed would otherwise smuggle gradients back; invariant-tested). |
 | 4 | **Blur** 3×3 binomial `[1 2 1]²/16` | σ ≈ 0.85 cells | Kills sub-cell detail and sensor noise before thresholding. |
 | 5 | **Quantise** to 4 tones with thresholds `t = (64, 128, 192)` by default; per-venue `calib` overrides (`t`, `bias`, `invert`) ⚑ | 2 bits/cell | Flat bands, ~2 bits of tone. Fixed thresholds: **no per-frame auto-levels** (§5.10). |
 | 6 | **Mode filter** 3×3 (majority; ties keep the centre) | — | Removes isolated speckle where a smooth area sits on a threshold. |
 | 7 | **Timestamp stamp** — burn `HH:MM` (venue-local) into the bottom-left | 5×7 digit font, `S3` digits on `S0` plate, 29×11 cells ≈ 1.7 % of the area ⚑ | A screenshot shared in a chat dates itself; also removes any per-frame HTML rewrite (§7.3). |
 | 8 | **Encode** paletted PNG, 4 fixed palette entries, best compression | Go's encoder picks 2-bit depth for ≤4 colours; no ancillary chunks | Tiny, lossless, no JPEG ringing on flat art. |
 
-`mono@1` (Šablon): same stages with 2 tones (`S0`/`S3`), one threshold, 1-bit PNG.
+`mono@2` (Šablon): same stages with 2 tones (`S0`/`S3`), one threshold, 1-bit PNG.
+
+A note on versions: the shipped presets are `@2`. Version 1 was the 640-px
+JPEG era; versions were bumped when the Tisak pipeline landed, so old
+sidecar rows keep meaning what they recorded (PLAN D2 outranks this doc
+where the two disagree).
 
 Sketch of the package surface (not final code):
 
 ```go
-// internal/render/tisak.go — poster@1
+// internal/render/tisak.go — poster@2
 const GW, GH = 160, 120
 
 func lumaGrid(img image.Image) (g []uint8, err error)  // stages 1–2
@@ -390,7 +395,7 @@ the headline handle "when").
 
 ### 5.8 Presets registry and versioning
 
-`poster@1` (Tisak), `mono@1` (Šablon). Sidecars record `preset@version`, as in
+`poster@2` (Tisak), `mono@2` (Šablon). Sidecars record `preset@version`, as in
 PLAN §7. Style *and* version changes apply to new frames only. New style = one file +
 one registry line + one golden test (unchanged contract).
 
@@ -826,7 +831,7 @@ Notes:
 
 | Item | Budget | Notes |
 |---|---|---|
-| Public `index.html` incl. inline CSS + JS | ≤ 20 KB raw, **≤ 8 KB gz** | CSS ≤ 2.5 KB gz, JS ≤ 1 KB gz |
+| Public `index.html` incl. inline CSS + JS | ≤ 20 KB raw, **≤ 8 KB gz** | CSS ≤ 4 KB gz (enforced), JS ≤ 1 KB gz |
 | Still (`latest.png`) | ~1–3 KB, hard cap 6 KB | §5.11 test |
 | **First view** | **≈ 11 KB** | vs ~30–50 KB with HTML + 640 JPEG |
 | Steady refresh (nothing new) | ≈ 0.3–0.6 KB | two conditional requests per cycle |
@@ -890,7 +895,7 @@ Each step has an acceptance check before the next begins (PLAN §16.13).
 1. **Tokens, Tailwind pipeline, kit page.** `web/tokens.css`, two builds, size gates,
    `/admin/_kit` with all components in light/dark. *Accept:* CSS budgets pass;
    contrast table reproduced; kit looks right on a real phone.
-2. **Render presets.** `poster@1`, `mono@1` + stamp in `internal/render`, goldens,
+2. **Render presets.** `poster@2`, `mono@2` + stamp in `internal/render`, goldens,
    invariants, size bound; render-ms on the e2-micro. *Accept:* privacy tests green;
    p95 render and real-frame sizes recorded (replaces §5.5's synthetic numbers).
 3. **Public page.** Template, states, poller, CSP hashes, `fakecam` driving every
@@ -961,5 +966,7 @@ Favicon: `<link rel="icon" href="data:image/svg+xml,…">` (URL-encode the SVG).
 clean text as the source: files exported through some tools gain an extra metadata
 block that adds several KB.
 
-`style-sample.png` (shipped beside this file) shows the four renders of one synthetic
+`tools/styleproof` (shipped) renders a candidate contact sheet from real
+frames — six renders of one input, each with its paste-ready `calib_json`.
+It shows four renders of one synthetic
 scene — camera frame, Tisak, Šablon, and stale — plus the palette and state chips.

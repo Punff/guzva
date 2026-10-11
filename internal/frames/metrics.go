@@ -1,15 +1,6 @@
 package frames
 
-import (
-	"fmt"
-	"strings"
-	"sync/atomic"
-	"time"
-)
-
-// renderBuckets: render latency histogram upper bounds in milliseconds (§6.6
-// hand-rolled /metrics — no dependency, no cardinality surprises).
-var renderBuckets = [...]float64{10, 25, 50, 100, 200, 500, 1000}
+import "sync/atomic"
 
 // ingestOutcomes is the fixed label set for the ingest counter. Fixed on
 // purpose: labels must never be built from request data.
@@ -19,13 +10,16 @@ var ingestOutcomes = []string{
 	"bad_meta", "internal",
 }
 
-// Metrics counts ingest outcomes. All operations are lock-free atomics: the
-// hot path must not serialize (§6.1 bounded work).
+// Metrics counts ingest outcomes. The readers today are the test suite and
+// the per-IP flood path: a flood must not become a log flood (§6.1), so the
+// drop is counted silently instead. There is deliberately NO /metrics route
+// and no formatter (PLAN §14 trigger: "debugging/audit needs slog can't
+// answer"); when one lands, a hand-rolled exposition of these counters is
+// in git history. The render-latency histogram that used to live here was
+// never read by anything either — render_ms rides the per-ingest journal
+// line (§11), which the 48 h soak actually consumes.
 type Metrics struct {
-	counters  map[string]*atomic.Int64
-	renderMs  [len(renderBuckets) + 1]atomic.Int64 // last bucket is +Inf
-	renderSum atomic.Int64                         // total render ms
-	renderN   atomic.Int64                         // render count
+	counters map[string]*atomic.Int64
 }
 
 // NewMetrics zeroes all counters.
@@ -51,39 +45,4 @@ func (m *Metrics) Get(outcome string) int64 {
 		return c.Load()
 	}
 	return 0
-}
-
-// observeRender folds one pipeline duration into the histogram.
-func (m *Metrics) observeRender(d time.Duration) {
-	ms := float64(d.Milliseconds())
-	m.renderSum.Add(int64(ms))
-	m.renderN.Add(1)
-	idx := len(renderBuckets) // +Inf
-	for i, ub := range renderBuckets {
-		if ms <= ub {
-			idx = i
-			break
-		}
-	}
-	m.renderMs[idx].Add(1)
-}
-
-// Prometheus renders the text exposition format (hand-rolled, §2).
-func (m *Metrics) Prometheus() string {
-	var b strings.Builder
-	b.WriteString("# TYPE guzva_ingest_total counter\n")
-	for _, o := range ingestOutcomes {
-		fmt.Fprintf(&b, "guzva_ingest_total{outcome=%q} %d\n", o, m.counters[o].Load())
-	}
-	b.WriteString("# TYPE guzva_render_ms histogram\n")
-	var cum int64
-	for i, ub := range renderBuckets {
-		cum += m.renderMs[i].Load()
-		fmt.Fprintf(&b, "guzva_render_ms_bucket{le=\"%g\"} %d\n", ub, cum)
-	}
-	cum += m.renderMs[len(renderBuckets)].Load()
-	fmt.Fprintf(&b, "guzva_render_ms_bucket{le=\"+Inf\"} %d\n", cum)
-	fmt.Fprintf(&b, "guzva_render_ms_sum %d\n", m.renderSum.Load())
-	fmt.Fprintf(&b, "guzva_render_ms_count %d\n", m.renderN.Load())
-	return b.String()
 }

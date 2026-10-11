@@ -1,7 +1,8 @@
 // Package sched is the server's single background goroutine (PLAN §2): one
-// ticker loop running periodic jobs — Phase 1: the retention pruner (§6.3).
-// Freshness rollup, missed-poll detection and alerts join here in Phase 2
-// (§6.6); the Job shape does not change when they do.
+// ticker loop running every periodic job — today the hourly retention
+// pruner (§6.3) and the 30 s public-page refresh. Alerting and the dead-man
+// heartbeat join here in Phase 2 (§6.6); the Job shape does not change when
+// they do.
 package sched
 
 import (
@@ -20,6 +21,7 @@ type Job struct {
 // Run executes jobs sequentially on this goroutine until ctx is cancelled.
 // Sequential on purpose: jobs are cheap (one SQL select + file deletes) and
 // a second goroutine would only add concurrency the plan doesn't need.
+// First runs are staggered by position so startup isn't a thundering herd.
 func Run(ctx context.Context, log *slog.Logger, jobs ...Job) {
 	if log == nil {
 		log = slog.Default()
@@ -29,38 +31,51 @@ func Run(ctx context.Context, log *slog.Logger, jobs ...Job) {
 		return
 	}
 	next := make([]time.Time, len(jobs))
-	now := time.Now()
+	t0 := time.Now()
 	for i := range jobs {
-		// Stagger first runs by their order so startup isn't a thundering
-		// herd on a small box.
-		next[i] = now.Add(time.Duration(i+1) * time.Second)
+		next[i] = t0.Add(time.Duration(i+1) * time.Second)
 	}
 	for {
 		wait := time.Hour
+		now := time.Now()
 		for _, t := range next {
-			if d := time.Until(t); d < wait {
+			if d := t.Sub(now); d < wait {
 				wait = d
 			}
 		}
 		if wait < 0 {
 			wait = 0
 		}
+		// A stopped timer per wait, never time.After: the loop can spin at
+		// sub-second resolution while a job overruns its schedule, and
+		// time.After would leak a timer per iteration until it fired.
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-time.After(wait):
+		case <-timer.C:
 		}
-		now = time.Now()
-		for i := range jobs {
-			if now.Before(next[i]) {
-				continue
-			}
-			// Schedule the following run before doing the work so slow
-			// jobs don't drift (same rule as the firmware timer).
-			next[i] = now.Add(jobs[i].Every)
+		for _, i := range advance(time.Now(), next, jobs) {
 			runJob(ctx, log, jobs[i])
 		}
 	}
+}
+
+// advance decides which jobs are due at cur and reschedules them. Pure so
+// the scheduling math is testable without a clock (the goroutine around it
+// is three lines of waiting). The following run is scheduled BEFORE the
+// work so slow jobs don't drift (same rule as the firmware timer).
+func advance(cur time.Time, next []time.Time, jobs []Job) []int {
+	var fire []int
+	for i := range jobs {
+		if cur.Before(next[i]) {
+			continue
+		}
+		next[i] = cur.Add(jobs[i].Every)
+		fire = append(fire, i)
+	}
+	return fire
 }
 
 func runJob(ctx context.Context, log *slog.Logger, j Job) {

@@ -75,7 +75,8 @@ func New(st *store.Store, eng *render.Engine, lim *auth.Limiter, dataDir string,
 	}
 }
 
-// Metrics exposes the ingest counters for the /metrics endpoint.
+// Metrics exposes the ingest outcome counters (tests + the silent flood
+// path). There is no /metrics endpoint — see metrics.go for why.
 func (s *Server) Metrics() *Metrics { return s.m }
 
 // reqError is a parse-stage rejection carrying its protocol status.
@@ -169,9 +170,51 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 				s.writeErr(w, proto.StatusTooLarge, "too_large")
 				return
 			}
-			// 422: rejected + reason + quarantined (headers-only record).
-			s.quarantine(ctx, dev, meta.CaptureID, reasonOf(err), len(frameRaw), "", meta)
-			respond(proto.StatusRejected, reasonOf(err))
+			// 422 parse-stage reject: quarantined record + parity with the
+			// render-stage reject (W3/B7). The device authenticated and
+			// POSTed, so it is alive — but the beat is written only when
+			// the meta actually parsed (bad_capture_id parses fully, so
+			// its fw/rssi/counters are real; bad_meta leaves zeros, and a
+			// zero beat would overwrite good readings with lies on the
+			// fleet board). A quarantined row goes in only when there is
+			// a capture_id to key it, so a retried reject answers 409 like
+			// every other processed capture.
+			reason := reasonOf(err)
+			// bad_capture_id is the one parse reject that follows a successful
+			// unmarshal, so its fw/rssi/counters are real; bad_meta leaves
+			// zeros, and a zero beat would overwrite good readings with lies
+			// on the fleet board (the meta-parsed check, not field sniffing).
+			if reason == proto.ReasonBadCaptureID {
+				if berr := s.st.UpdateDeviceBeat(ctx, dev.ID, store.Beat{
+					FW: meta.FW, RSSI: meta.RSSI, FreeHeap: int(meta.FreeHeap),
+					Counters: meta.Counters, CfgAppliedVer: meta.CfgVerApplied,
+					Reason: meta.Reason, At: s.now().UTC(),
+				}); berr != nil {
+					s.log.Error("beat update failed", "err", berr.Error())
+				}
+			}
+			s.quarantine(ctx, dev, meta.CaptureID, reason, len(frameRaw), "", meta)
+			if meta.CaptureID != "" {
+				// Idempotency applies to rejected captures too: a retry of the
+				// same (bogus) id answers 409 with the same body, exactly like
+				// a retry of a stored one — the parse stage runs before the
+				// general pre-check, so it carries its own.
+				if exists, xerr := s.st.FrameExists(ctx, dev.VenueID, meta.CaptureID); xerr == nil && exists {
+					s.m.add("duplicate")
+					respond(proto.StatusDuplicate, "")
+					return
+				}
+				if _, qerr := s.st.InsertFrame(ctx, store.Frame{
+					VenueID: dev.VenueID, CaptureID: meta.CaptureID,
+					ReceivedAt: s.now().UTC(), Bytes: len(frameRaw),
+					Status: "quarantined", Reason: reason,
+				}); qerr != nil && !errors.Is(qerr, store.ErrDuplicate) {
+					s.internal(w, "quarantine row", qerr)
+					return
+				}
+			}
+			s.m.add("quarantined")
+			respond(proto.StatusRejected, reason)
 			return
 		}
 		var mbe *http.MaxBytesError
@@ -248,7 +291,6 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		Calib:     store.ParseCalib(venue.CalibJSON),
 	})
 	cancel()
-	s.m.observeRender(s.now().Sub(start))
 	renderMS = float64(s.now().Sub(start).Microseconds()) / 1000 // §11: gate-visible
 	// Guard against a zero reading from a sub-millisecond render or a pinned
 	// test clock: gate-visible needs a positive number, and a fast render is

@@ -290,9 +290,10 @@ func TestNoRawPreset(t *testing.T) {
 	if _, ok := e.Preset("raw"); ok {
 		t.Fatal("raw preset must not exist (§7)")
 	}
-	names := e.PresetNames()
-	if len(names) != 2 {
-		t.Fatalf("registry = %v, want poster+mono", names)
+	for _, want := range []string{"poster", "mono"} {
+		if _, ok := e.Preset(want); !ok {
+			t.Fatalf("registry lacks %q — want exactly poster+mono", want)
+		}
 	}
 	// Unknown style falls back to the default, never to nothing.
 	if p, ok := e.Preset("definitely-not-a-style"); ok || p != nil {

@@ -81,7 +81,6 @@ var hr = &Catalog{
 		"alt.nowframe": "Stilizirana slika prostora {venue}",
 
 		"privacy.line": "Slika je namjerno grubo stilizirana radi privatnosti. Izvorne fotografije se ne pohranjuju.",
-		"privacy.note": "Stylised render — the raw camera image is never stored or published.",
 
 		"hours.title":  "Radno vrijeme",
 		"hours.closed": "Zatvoreno",
@@ -164,7 +163,6 @@ var en = &Catalog{
 		"alt.nowframe": "Stylised view of {venue}",
 
 		"privacy.line": "The picture is deliberately coarsely stylised for privacy. The original photos are not stored.",
-		"privacy.note": "Stylised render — the raw camera image is never stored or published.",
 
 		"hours.title":  "Opening hours",
 		"hours.closed": "Closed",

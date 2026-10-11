@@ -133,16 +133,6 @@ func (e *Engine) Preset(name string) (Preset, bool) {
 	return p, ok
 }
 
-// PresetNames lists the registry, sorted by construction order of insertion
-// is not guaranteed — callers must not depend on order.
-func (e *Engine) PresetNames() []string {
-	out := make([]string, 0, len(e.presets))
-	for n := range e.presets {
-		out = append(out, n)
-	}
-	return out
-}
-
 // Process runs the full pipeline for one frame. The input buffer is always
 // zeroed on return; on rejection an *RejectError carries the quarantine
 // reason. Context cancellation while waiting for the semaphore yields
@@ -157,7 +147,7 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 	case e.sem <- struct{}{}:
 		defer func() { <-e.sem }()
 	case <-ctx.Done():
-		return Output{}, Reject("busy")
+		return Output{}, Reject(proto.ReasonBusy)
 	}
 
 	sum := sha256.Sum256(in.Raw)
@@ -175,21 +165,21 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 
 	// --- validate (cheap checks before the full decode) ---
 	if len(in.Raw) > proto.MaxFrameBytes {
-		return Output{}, Reject("too_big")
+		return Output{}, Reject(proto.ReasonTooBig)
 	}
 	if len(in.Raw) < 2 || in.Raw[0] != 0xff || in.Raw[1] != 0xd8 {
-		return Output{}, Reject("bad_magic")
+		return Output{}, Reject(proto.ReasonBadMagic)
 	}
 	cfg, err := jpeg.DecodeConfig(bytes.NewReader(in.Raw))
 	if err != nil {
-		return Output{}, Reject("truncated")
+		return Output{}, Reject(proto.ReasonTruncated)
 	}
 	if cfg.Width < MinDim || cfg.Height < MinDim || cfg.Width > MaxDim || cfg.Height > MaxDim {
-		return Output{}, Reject("dims")
+		return Output{}, Reject(proto.ReasonDims)
 	}
 	img, err := jpeg.Decode(bytes.NewReader(in.Raw))
 	if err != nil {
-		return Output{}, Reject("truncated")
+		return Output{}, Reject(proto.ReasonTruncated)
 	}
 
 	// --- normalize to the luma grid, computing dark/dead-sensor stats on the
@@ -200,9 +190,9 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 		return Output{}, err
 	}
 	if mean, uniform := gridStats(g); mean < DarkMeanLuma {
-		return Output{}, Reject("dark")
+		return Output{}, Reject(proto.ReasonDark)
 	} else if uniform {
-		return Output{}, Reject("dead")
+		return Output{}, Reject(proto.ReasonDead)
 	}
 
 	// --- the print: masks → blur → quantise → mode → masks → stamp → PNG.

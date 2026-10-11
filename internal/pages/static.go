@@ -2,7 +2,7 @@
 // It serves exactly what Writer wrote — index.html + latest.png per venue
 // — and nothing else: no directory listings, no traversal, no method other
 // than GET/HEAD. The privacy proof ("the web root contains only
-// index.html + latest.jpg per venue") lives in pages_test.go's disk scan.
+// index.html + one still per venue") lives in pages_test.go's disk scan.
 package pages
 
 import (
@@ -49,7 +49,7 @@ func Static(dir string) http.Handler {
 		}
 		if fi, err := os.Stat(full); err == nil && fi.IsDir() {
 			// The canonical form of a venue page is /<slug>/: the only
-			// relative URL on it (latest.jpg) resolves against the
+			// relative URL on it (the still) resolves against the
 			// directory, and links shared to a phone usually arrive
 			// without the slash. Redirect instead of serving the page from a
 			// path whose relative links would 404.
@@ -76,7 +76,7 @@ func Static(dir string) http.Handler {
 
 		// One cache policy for both files: revalidate.
 		//
-		// latest.jpg is NOT served immutable even though ?v= is unique per
+		// The still is NOT served immutable even though ?v= is unique per
 		// frame, because the file behind that URL is mutable: the next frame
 		// overwrites it. A client holding a stale ?v= (an old index.html, a
 		// backgrounded tab) would fetch CURRENT bytes under the OLD

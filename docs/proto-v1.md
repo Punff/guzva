@@ -77,15 +77,17 @@ Status is the contract; the body is always the JSON object below (plus
 |------|---------|
 | `201` | stored (frame processed) **or** health-only beat accepted |
 | `409` | duplicate `capture_id` — same body as `201` (a retry must not re-process; the frame is not stored twice) |
-| `422` | rejected, quarantined — `reason` ∈ `bad_meta`, `bad_capture_id`, `no_body`, `empty_frame`, `bad_magic`, `truncated`, `dims`, `dark`, `dead`, `busy`; no bytes are ever stored; body still carries `desired_cfg` |
+| `422` | rejected, quarantined — `reason` ∈ `bad_meta`, `bad_capture_id`, `bad_magic`, `truncated`, `dims`, `dark`, `dead`, `busy`, `too_big` (decode-stage); no bytes are ever stored; body still carries `desired_cfg` |
 | `401` | unknown or revoked token — device keeps identity, drops to slow health-only backoff (60→600 s), amber LED until re-provisioned |
 | `413` | body over limit (`meta` > 16 KiB or `frame` > 4 MiB) |
 | `429` | rate-limited — `Retry-After: <seconds>` header |
 | `507` | disk degraded (<15 % free) — device retries on next tick, no special handling |
 
-`bad_meta`, `bad_capture_id`, `no_body`, `empty_frame`, `bad_magic`,
-`truncated` are proven by the rig today; `dims`, `dark`, `dead`, `busy` come
-from the Go render validation gate (PLAN §7).
+`bad_meta`, `bad_capture_id`, `bad_magic`, `truncated` are pinned by the
+ingest tests today; `dims`, `dark`, `dead`, `busy` come from the Go render
+validation gate (PLAN §7). (`no_body`/`empty_frame` once appeared in drafts;
+the server treats a missing meta part as `bad_meta` and an empty frame as a
+health beat, so those reasons were never emitted.)
 
 Success body — `201` and `409` carry exactly these fields (`server_time` is
 stamped per reply, so it differs between a store and a later retry):

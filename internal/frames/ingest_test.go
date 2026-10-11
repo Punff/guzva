@@ -459,7 +459,11 @@ func TestIngestRateLimited429(t *testing.T) {
 
 func TestIngestBadCaptureID422(t *testing.T) {
 	f := newFixture(t, 4)
-	w := f.post(t, "Bearer "+testToken, metaJSON(t, proto.Meta{CaptureID: "nonsense"}), syntheticFrame(t, 320, 240, 6))
+	// Real link data (fw, rssi) travels with the invalid capture_id: the
+	// device authenticated and POSTed, so the beat must advance — a
+	// parse-stage reject used to leave last_seen at zero forever (W3/B7).
+	m := proto.Meta{CaptureID: "nonsense", FW: "9.9.9", RSSI: -70, FreeHeap: 123456}
+	w := f.post(t, "Bearer "+testToken, metaJSON(t, m), syntheticFrame(t, 320, 240, 6))
 	if w.Code != proto.StatusRejected {
 		t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
 	}
@@ -471,6 +475,23 @@ func TestIngestBadCaptureID422(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(f.dataDir, "quarantine.jsonl")); err != nil {
 		t.Errorf("parse-stage rejection must be tailed: %v", err)
+	}
+	// B7 parity part 1: liveness + real readings survive the reject.
+	dev, err := f.st.DeviceByID(context.Background(), f.did)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dev.LastSeenAt.IsZero() {
+		t.Error("parse-stage reject did not advance last_seen")
+	}
+	if dev.RSSI != -70 || dev.FW != "9.9.9" {
+		t.Errorf("beat lost real readings: rssi=%d fw=%q", dev.RSSI, dev.FW)
+	}
+	// B7 parity part 2: the quarantined row keys the bogus capture_id, so
+	// a retry answers 409 like every other processed capture.
+	w = f.post(t, "Bearer "+testToken, metaJSON(t, m), syntheticFrame(t, 320, 240, 7))
+	if w.Code != proto.StatusDuplicate {
+		t.Errorf("retry of a parse-rejected capture = %d, want 409", w.Code)
 	}
 }
 

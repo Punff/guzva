@@ -2,9 +2,9 @@
 // static per-device bearer tokens, stored only as sha256, plus the per-IP and
 // per-device token buckets that sit in front of ingest (§6.1).
 //
-// Owner/admin sessions (bcrypt + cookie + CSRF + scope middleware) arrive
-// with Phase 2's owner P1 — deliberately not stubbed here, per the plan's
-// "no interface until a second implementation exists" rule.
+// Owner/admin sessions (bcrypt + HMAC-signed cookies, no sessions table)
+// live in admin.go in this package — shipped with D3, deliberately concrete
+// per the plan's "no interface until a second implementation exists" rule.
 package auth
 
 import (
@@ -46,21 +46,6 @@ func GenerateToken() (string, error) {
 func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
-}
-
-type ctxKey int
-
-const deviceKey ctxKey = 1
-
-// WithDevice carries the authenticated device on the request context.
-func WithDevice(ctx context.Context, d *store.Device) context.Context {
-	return context.WithValue(ctx, deviceKey, d)
-}
-
-// DeviceFrom returns the device put there by WithDevice.
-func DeviceFrom(ctx context.Context) (*store.Device, bool) {
-	d, ok := ctx.Value(deviceKey).(*store.Device)
-	return d, ok
 }
 
 // Authenticate resolves the request's bearer token to an active device.

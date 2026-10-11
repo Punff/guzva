@@ -326,15 +326,6 @@ func zoneLabel(at time.Time, loc *time.Location) string {
 	return fmt.Sprintf("GMT%s%d", sign, off/3600)
 }
 
-// sameDayMinusOne reports whether a is the calendar day before b (both in
-// the same location), handling month and year rollover.
-func sameDayMinusOne(a, b time.Time) bool {
-	y, m, d := b.Date()
-	prev := time.Date(y, m, d, 12, 0, 0, 0, time.UTC).AddDate(0, 0, -1)
-	ay, am, ad := a.Date()
-	return ay == prev.Year() && am == prev.Month() && ad == prev.Day()
-}
-
 // hoursToday formats today's ranges in venue-local time, "" when unset.
 func hoursToday(cat *i18n.Catalog, h venue.Hours, t time.Time) string {
 	rs := h[int(t.Weekday())]

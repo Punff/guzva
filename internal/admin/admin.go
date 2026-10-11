@@ -686,7 +686,7 @@ func deviceFields(cfg proto.DesiredCfg) []cfgField {
 		}
 		if !cadence {
 			switch k {
-			case "led_pwm", "test_pattern":
+			case "led_pwm":
 				f.Hardware = true
 			default:
 				f.Image = true

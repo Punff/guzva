@@ -10,8 +10,9 @@ import (
 	"time"
 )
 
-// MetaRetention is the 90-day window for health events, quarantine records
-// and sessions (§6.3). Raw is never written, so there is nothing else.
+// MetaRetention is the 90-day window for quarantined frame rows (§6.3) —
+// the only meta the ring keeps beyond the 48 h stills window. Raw is never
+// written and there are no session or health-event tables to prune.
 const MetaRetention = 90 * 24 * time.Hour
 
 // Prune runs one retention pass and reports how many frame rows were
