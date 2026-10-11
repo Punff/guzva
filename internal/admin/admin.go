@@ -77,12 +77,19 @@ func New(st *store.Store, passHash string, secret []byte, secure bool, log *slog
 	}, nil
 }
 
-// Register wires the admin routes (Go 1.22 patterns, §2).
+// Register wires the admin routes (Go 1.22 patterns, §2). Everything the
+// consoles serve — admin, owner, their static assets — is mounted through
+// secureHeaders, so a route added tomorrow inherits the security contract
+// without remembering to set it (maintenance W2/H8: the consoles shipped
+// with none while the public pages had all of them).
 func (s *Server) Register(mux *http.ServeMux) {
+	sub := http.NewServeMux()
 	static, err := fs.Sub(assets, "static")
 	if err == nil {
-		mux.Handle("GET /admin/static/", http.StripPrefix("/admin/static/",
-			http.FileServer(http.FS(static))))
+		// No directory listing: the public handler forbids them; a bare
+		// http.FileServer here would happily index /admin/static/ (W2/H8).
+		sub.Handle("GET /admin/static/",
+			http.StripPrefix("/admin/static/", noDirIndex(http.FileServer(http.FS(static)))))
 	}
 	// The compiled design system (PLAN §9/D6) replaces the inline <style> block:
 	// one Tailwind-purged stylesheet, embedded, cached, shared with the public
@@ -91,23 +98,68 @@ func (s *Server) Register(mux *http.ServeMux) {
 	// literally. It is the only URL the templates emit, and because the hash
 	// changes with the bytes it can be cached forever without ever going
 	// stale. The un-hashed path stays as a courtesy for old bookmarks.
-	mux.Handle("GET "+webui.AppPath(), webui.Handler())
-	mux.Handle("GET /admin/app.css", webui.Handler())
-	mux.HandleFunc("GET /admin/login", s.loginPage)
-	mux.HandleFunc("POST /admin/login", s.loginSubmit)
-	mux.HandleFunc("POST /admin/logout", s.require(s.logout))
-	mux.HandleFunc("GET /admin/{$}", s.require(s.fleet))
-	mux.HandleFunc("POST /admin/venues", s.require(s.createVenue))
-	mux.HandleFunc("GET /admin/venues/{id}", s.require(s.venuePage))
-	mux.HandleFunc("POST /admin/venues/{id}", s.require(s.updateVenue))
-	mux.HandleFunc("POST /admin/venues/{id}/ownerpw", s.require(s.setOwnerPassword))
-	mux.HandleFunc("POST /admin/venues/{id}/calib", s.require(s.setCalib))
-	mux.HandleFunc("POST /admin/devices", s.require(s.createDevice))
-	mux.HandleFunc("GET /admin/devices/{id}", s.require(s.devicePage))
-	mux.HandleFunc("POST /admin/devices/{id}/cfg", s.require(s.updateDeviceCfg))
-	mux.HandleFunc("POST /admin/devices/{id}/revoke", s.require(s.revokeDevice))
-	mux.HandleFunc("GET /admin/_kit", s.require(s.kit))
-	s.registerOwner(mux)
+	sub.Handle("GET "+webui.AppPath(), webui.Handler())
+	sub.Handle("GET /admin/app.css", webui.Handler())
+	sub.HandleFunc("GET /admin/login", s.loginPage)
+	sub.HandleFunc("POST /admin/login", s.loginSubmit)
+	sub.HandleFunc("POST /admin/logout", s.require(s.logout))
+	sub.HandleFunc("GET /admin/{$}", s.require(s.fleet))
+	sub.HandleFunc("POST /admin/venues", s.require(s.createVenue))
+	sub.HandleFunc("GET /admin/venues/{id}", s.require(s.venuePage))
+	sub.HandleFunc("POST /admin/venues/{id}", s.require(s.updateVenue))
+	sub.HandleFunc("POST /admin/venues/{id}/ownerpw", s.require(s.setOwnerPassword))
+	sub.HandleFunc("POST /admin/venues/{id}/calib", s.require(s.setCalib))
+	sub.HandleFunc("POST /admin/devices", s.require(s.createDevice))
+	sub.HandleFunc("GET /admin/devices/{id}", s.require(s.devicePage))
+	sub.HandleFunc("POST /admin/devices/{id}/cfg", s.require(s.updateDeviceCfg))
+	sub.HandleFunc("POST /admin/devices/{id}/revoke", s.require(s.revokeDevice))
+	sub.HandleFunc("GET /admin/_kit", s.require(s.kit))
+	s.registerOwner(sub)
+	// Method-scoped mounts, the same discipline the ingest route uses: a
+	// bare "/admin/" would conflict with the root's "GET /" static catch-all
+	// (fewer methods, more general path). GET mounts also give the free
+	// /admin → /admin/ canonical redirect.
+	mux.Handle("GET /admin/", s.secureHeaders(sub))
+	mux.Handle("POST /admin/", s.secureHeaders(sub))
+	mux.Handle("GET /owner/", s.secureHeaders(sub))
+	mux.Handle("POST /owner/", s.secureHeaders(sub))
+}
+
+// secureHeaders is the consoles' side of the C1 contract. The public pages
+// hash their inline styles into a per-page CSP; the consoles carry no
+// inline styles or scripts at all (W2 removed the last style= attributes),
+// so a static policy suffices. htmx is same-origin (script-src 'self',
+// connect-src 'self'); the favicon is a data: URI (img-src data:).
+func (s *Server) secureHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy",
+			"default-src 'none'; style-src 'self'; script-src 'self'; "+
+				"connect-src 'self'; img-src 'self' data:; form-action 'self'; "+
+				"base-uri 'none'; frame-ancestors 'none'")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+		// Console HTML is dynamic (no-store is set per-handler); static
+		// assets revalidate instead of caching — htmx.min.js lives at a
+		// fixed URL, and a fixed URL under a long max-age is the silent
+		// deploy dependency the ops-log already paid for once.
+		h.Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// noDirIndex 404s any path that would render a listing; files still serve.
+func noDirIndex(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "" || strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // --- helpers ---------------------------------------------------------------
@@ -748,7 +800,11 @@ const (
 	shapeFresh    = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><rect width="12" height="12" fill="currentColor"/></svg>`
 	shapeLate     = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><rect width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"/><rect y="6" width="12" height="6" fill="currentColor"/></svg>`
 	shapeNoSignal = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><rect width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"/><path d="M0 3h12M0 6h12M0 9h12" stroke="currentColor" stroke-width="2"/></svg>`
-	shapeWaiting  = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><path d="M0 0h4v4H0zM8 0h4v4H8zM4 4h4v4H4zM0 8h4v4H0zM8 8h4v4H8z" fill="currentColor"/></svg>`
+	// Shutter bars, same as the public page's closed chip (§5.6): a closed
+	// venue is a different fact from a quiet camera, so it gets a different
+	// silhouette — it used to borrow the no-signal hatch here (W2).
+	shapeClosed  = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><rect y="2" width="12" height="3" fill="currentColor"/><rect y="7" width="12" height="3" fill="currentColor"/></svg>`
+	shapeWaiting = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges"><path d="M0 0h4v4H0zM8 0h4v4H8zM4 4h4v4H4zM0 8h4v4H0zM8 8h4v4H8z" fill="currentColor"/></svg>`
 )
 
 // dict builds a map from alternating key/value pairs, for partials that take
@@ -795,8 +851,10 @@ func shape(cls string) template.HTML {
 		return shapeFresh
 	case "late":
 		return shapeLate
-	case "stale", "closed":
+	case "stale", "nosignal":
 		return shapeNoSignal
+	case "closed":
+		return shapeClosed
 	default:
 		return shapeWaiting
 	}

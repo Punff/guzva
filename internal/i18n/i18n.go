@@ -86,9 +86,34 @@ var hr = &Catalog{
 		"hours.title":  "Radno vrijeme",
 		"hours.closed": "Zatvoreno",
 
+		"when.yesterday": "jučer",
+		"live.newpic":    "Nova slika.",
+
 		"owner.save":       "Spremi promjene",
 		"owner.saved":      "Promjene su spremljene",
 		"owner.health.old": "Slika je stara — što učiniti?",
+		// The owner dash's one-sentence summary (§9.4): the thing the owner
+		// opens the panel for, in their venue's language.
+		"owner.fresh": "Slika je svježa — zadnja je objavljena u {time}.",
+		"owner.late":  "Slika kasni — zadnja je objavljena u {time}.",
+		"owner.stale": "Slika je stara — zadnja je objavljena u {time}. Provjeri kameru i internet.",
+
+		// Owner console chrome (§9.4). One catalog, so an English venue
+		// gets an English panel — never a mix.
+		"owner.public":     "Javna stranica",
+		"owner.details":    "Podaci o salonu",
+		"owner.name":       "Naziv",
+		"owner.tz":         "Vremenska zona",
+		"owner.style":      "Stil slike",
+		"owner.health":     "Zdravlje uređaja",
+		"owner.serial":     "Serijski broj",
+		"owner.state":      "Stanje",
+		"owner.last":       "Zadnja slika",
+		"owner.signal":     "Signal",
+		"owner.no_devices": "Još nema uređaja — administrator će dodati jedan.",
+		"owner.step1":      "Provjeri je li kamera uključena u struju.",
+		"owner.step2":      "Provjeri radi li WiFi u salonu.",
+		"owner.step3":      "Ako ništa ne pomogne, javi se administratoru.",
 
 		"hours.err.clock":        "{day}{shift}: upiši vrijeme kao 09:00",
 		"hours.err.backwards":    "{day}{shift}: zatvara u {close}, a otvara u {open}",
@@ -144,9 +169,30 @@ var en = &Catalog{
 		"hours.title":  "Opening hours",
 		"hours.closed": "Closed",
 
+		"when.yesterday": "yesterday",
+		"live.newpic":    "New picture.",
+
 		"owner.save":       "Save changes",
 		"owner.saved":      "Changes saved",
 		"owner.health.old": "The picture is old — what to do?",
+		"owner.fresh":      "The picture is fresh — the last one was published at {time}.",
+		"owner.late":       "The picture is late — the last one was published at {time}.",
+		"owner.stale":      "The picture is old — the last one was published at {time}. Check the camera and the internet.",
+
+		"owner.public":     "Public page",
+		"owner.details":    "Venue details",
+		"owner.name":       "Name",
+		"owner.tz":         "Time zone",
+		"owner.style":      "Picture style",
+		"owner.health":     "Device health",
+		"owner.serial":     "Serial",
+		"owner.state":      "State",
+		"owner.last":       "Last picture",
+		"owner.signal":     "Signal",
+		"owner.no_devices": "No device yet — the administrator will add one.",
+		"owner.step1":      "Check that the camera is plugged in.",
+		"owner.step2":      "Check that the venue WiFi works.",
+		"owner.step3":      "If nothing helps, contact the administrator.",
 
 		"hours.err.clock":        "{day}{shift}: use HH:MM times like 09:00",
 		"hours.err.backwards":    "{day}{shift}: closes {close} before it opens at {open}",
@@ -239,10 +285,7 @@ func (c *Catalog) DayName(then, now time.Time) string {
 	case 0:
 		return c.Get("when.today")
 	case 1:
-		if c == en {
-			return "yesterday"
-		}
-		return "jučer"
+		return c.Get("when.yesterday")
 	default:
 		return then.Format("02.01.2006.")
 	}

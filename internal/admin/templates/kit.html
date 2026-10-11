@@ -15,9 +15,12 @@
 <div class="flex flex-wrap gap-2">
   {{template "chip.html" dict "Cls" "fresh" "Text" "Svježa slika"}}
   {{template "chip.html" dict "Cls" "late" "Text" "Slika kasni"}}
-  {{template "chip.html" dict "Cls" "stale" "Text" "Nema nove slike"}}
+  {{template "chip.html" dict "Cls" "stale" "Text" "Zadnja slika je iz 14:07."}}
+  {{template "chip.html" dict "Cls" "nosignal" "Text" "Nema nove slike"}}
+  {{template "chip.html" dict "Cls" "closed" "Text" "Zatvoreno"}}
   {{template "chip.html" dict "Cls" "unknown" "Text" "Čekamo prvu sliku…"}}
 </div>
+<p class="text-xs text-muted mt-2">Every state a chip can carry, each with its own silhouette. If one renders in ink instead of its colour, the state classes in web/tokens.css broke — fix the class, not the page.</p>
 </section>
 
 <section class="mb-8">
@@ -46,7 +49,7 @@
 <div class="grid gap-3 max-w-xl">
   <div class="fieldset"><label class="lbl" for="k-text">Label</label><input class="inp" id="k-text" value="Europe/Sarajevo"></div>
   <div class="fieldset"><label class="lbl" for="k-sel">Select</label><select class="inp" id="k-sel"><option>Tisak (4 tones)</option><option>Šablon (2 tones)</option></select></div>
-  <div class="fieldset"><label class="lbl" for="k-err">With error</label><input class="inp" id="k-err" value="Mo-Fr 25:00" aria-invalid="true" style="border-color:var(--accent)"><span class="text-sm" style="color:var(--accent)">Friday closes at 25:00 — hours are 00:00–24:00.</span></div>
+  <div class="fieldset"><label class="lbl" for="k-err">With error</label><input class="inp border-accent" id="k-err" value="Mo-Fr 25:00" aria-invalid="true"><span class="text-sm text-accent">Friday closes at 25:00 — hours are 00:00–24:00.</span></div>
 </div>
 </section>
 
@@ -55,7 +58,7 @@
 <table class="tbl tbl--bare">
   <thead><tr><th>Venue</th><th>State</th><th class="tnum">Signal</th></tr></thead>
   <tbody>
-    <tr><td class="font-mono">bench</td><td style="color:var(--fresh)">active</td><td class="tnum">−74 dBm</td></tr>
+    <tr><td class="font-mono">bench</td><td class="text-fresh">active</td><td class="tnum">−74 dBm</td></tr>
     <tr><td class="font-mono">jadro</td><td class="text-muted">revoked</td><td class="tnum">—</td></tr>
   </tbody>
 </table>

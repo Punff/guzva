@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"guzva/internal/auth"
 	"guzva/internal/proto"
@@ -653,5 +654,119 @@ func TestSetCalib(t *testing.T) {
 	w = f.do(t, http.MethodGet, "/admin/venues/1", nil, ck, false)
 	if !strings.Contains(w.Body.String(), "Picture calibration") {
 		t.Fatal("venue page missing calibration section")
+	}
+}
+
+// W2/H8: the consoles inherit the C1 security contract through
+// secureHeaders — before W2 the public pages carried CSP/nosniff/DENY and
+// the admin + owner surfaces carried none at all.
+func TestConsoleSecurityHeaders(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	for _, path := range []string{"/admin/login", "/owner/login"} {
+		w := f.do(t, http.MethodGet, path, nil, nil, false)
+		csp := w.Header().Get("Content-Security-Policy")
+		if csp == "" {
+			t.Errorf("%s: no CSP", path)
+			continue
+		}
+		for _, banned := range []string{"unsafe-inline", "unsafe-eval"} {
+			if strings.Contains(csp, banned) {
+				t.Errorf("%s: CSP allows %s: %q", path, banned, csp)
+			}
+		}
+		for _, h := range []string{"X-Content-Type-Options", "X-Frame-Options",
+			"Referrer-Policy", "Cross-Origin-Resource-Policy", "Permissions-Policy"} {
+			if w.Header().Get(h) == "" {
+				t.Errorf("%s: missing %s", path, h)
+			}
+		}
+	}
+}
+
+// W2/H8: /admin/static/ must not render a directory listing — the public
+// handler forbids them, and the consoles must not be the exception.
+func TestAdminStaticNoDirectoryListing(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	if w := f.do(t, http.MethodGet, "/admin/static/", nil, nil, false); w.Code != http.StatusNotFound {
+		t.Fatalf("listing attempt = %d, want 404", w.Code)
+	}
+	if w := f.do(t, http.MethodGet, "/admin/static/htmx.min.js", nil, nil, false); w.Code != http.StatusOK {
+		t.Fatalf("htmx.min.js = %d, want 200", w.Code)
+	}
+}
+
+// W2/B2: the owner dash's one-sentence summary must come from the catalog.
+// Before W2 the keys owner.fresh/late/stale did not exist and the live panel
+// rendered the raw key text ("owner.fresh") where the sentence belongs.
+func TestOwnerDashSummaryFromCatalog(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	ck := f.login(t)
+	ctx := t.Context()
+	w := f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{
+		"slug": {"jadro"}, "name": {"Jadro"}, "tz": {"Europe/Sarajevo"}, "style": {"poster"},
+	}, nil), ck, true)
+	if w.Header().Get("HX-Redirect") == "" {
+		t.Fatalf("create venue: %q", w.Body.String())
+	}
+	jadro, _ := f.st.VenueBySlug(ctx, "jadro")
+	if err := f.st.SetOwnerHash(ctx, jadro.ID, mustHash(t, "owner-sekret-1")); err != nil {
+		t.Fatal(err)
+	}
+	// A frame two minutes old → the fresh branch of the summary (venue.Classify
+	// turns Late at 3 min).
+	if _, err := f.st.InsertFrame(ctx, store.Frame{
+		VenueID: jadro.ID, CaptureID: "C1-1-aaaa", ReceivedAt: time.Now().Add(-2 * time.Minute),
+		Preset: "poster", PresetVer: 2, Width: 160, Height: 120, Status: "ok",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ow := f.do(t, http.MethodPost, "/owner/login",
+		url.Values{"slug": {"jadro"}, "password": {"owner-sekret-1"}}, nil, false)
+	var ock *http.Cookie
+	for _, c := range ow.Result().Cookies() {
+		if c.Name == auth.OwnerSessionCookieName {
+			ock = c
+		}
+	}
+	if ock == nil {
+		t.Fatalf("owner login = %d %q", ow.Code, ow.Body.String())
+	}
+	body := f.do(t, http.MethodGet, "/owner/", nil, ock, false).Body.String()
+	for _, key := range []string{"owner.fresh", "owner.late", "owner.stale"} {
+		if strings.Contains(body, key) {
+			t.Fatalf("dash renders raw i18n key %q: %s", key, body[:400])
+		}
+	}
+	if !strings.Contains(body, "Slika je svježa") {
+		t.Fatalf("dash missing the fresh summary sentence: %s", body[:400])
+	}
+}
+
+// W2/B4: the no-JS contract (DESIGN §8) — every console action is a plain
+// form POST + redirect; htmx only enhances. Before W2 the create, mint,
+// revoke and details forms carried hx-post with no method/action and did
+// nothing at all without JS.
+func TestFormsWorkWithoutJS(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	ck := f.login(t)
+	body := f.do(t, http.MethodGet, "/admin/", nil, ck, false).Body.String()
+	if !strings.Contains(body, `method="post" action="/admin/venues"`) {
+		t.Error("fleet page missing no-JS fragment for the create form")
+	}
+	// (The mint form only renders once a venue exists — checked below.)
+	// A real no-JS POST (no HX-Request header) must create the venue.
+	w := f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{
+		"slug": {"nojs"}, "name": {"NoJS"}, "tz": {"Europe/Sarajevo"}, "style": {"poster"},
+	}, nil), ck, false)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("no-JS create venue = %d, want 303: %q", w.Code, w.Body.String())
+	}
+	if _, err := f.st.VenueBySlug(t.Context(), "nojs"); err != nil {
+		t.Fatalf("venue not created: %v", err)
+	}
+	// With a venue existing, the mint form ships too.
+	body = f.do(t, http.MethodGet, "/admin/", nil, ck, false).Body.String()
+	if !strings.Contains(body, `method="post" action="/admin/devices"`) {
+		t.Error("fleet page missing no-JS fragment for the mint form")
 	}
 }

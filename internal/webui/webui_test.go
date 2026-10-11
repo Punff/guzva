@@ -26,3 +26,20 @@ func TestAppPathIsContentHashed(t *testing.T) {
 		t.Fatal("embedded stylesheet is empty — the build did not run")
 	}
 }
+
+// W2/B1: the chip templates assemble state class names at render time
+// (`class="text-{{.StateClass}}"`), so no scanner can generate them as
+// utilities — they must ship as explicit CSS from web/tokens.css. Before
+// W2 they did not exist at all and every chip on every surface rendered its
+// silhouette in inherited ink. Pin each state class in BOTH stylesheets;
+// the public page and the consoles share the same vocabulary.
+func TestStateColourClassesShip(t *testing.T) {
+	states := []string{"fresh", "late", "stale", "nosignal", "closed", "waiting", "unknown"}
+	for name, css := range map[string]string{"app.css": string(App()), "public.css": string(Public())} {
+		for _, s := range states {
+			if !strings.Contains(css, "text-"+s) {
+				t.Errorf("%s lacks .text-%s — the %s chip would render in ink (W2/B1)", name, s, s)
+			}
+		}
+	}
+}

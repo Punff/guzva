@@ -17,7 +17,8 @@
 <section class="border-2 border-ink bg-paper shadow-step p-4 mb-5">
   <h2 class="text-lg font-bold mb-1">Details</h2>
   <p class="text-sm text-muted mb-3">Slug <code class="font-mono text-ink">/{{.Venue.Slug}}/</code> is identity and never changes. <a class="underline" href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">Open the public page ↗</a></p>
-  <form class="grid gap-3" hx-post="/admin/venues/{{.Venue.ID}}" hx-target="#flash" hx-swap="innerHTML">
+  <form class="grid gap-3" method="post" action="/admin/venues/{{.Venue.ID}}"
+        hx-post="/admin/venues/{{.Venue.ID}}" hx-target="#flash" hx-swap="innerHTML">
     <div class="fieldset">
       <label class="lbl" for="v-name">Name</label>
       <input class="inp" id="v-name" name="name" value="{{.Venue.Name}}" required>

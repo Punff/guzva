@@ -26,9 +26,6 @@ func (s *Server) registerOwner(mux *http.ServeMux) {
 	mux.HandleFunc("POST /owner/login", s.ownerLoginSubmit)
 	mux.HandleFunc("POST /owner/logout", s.requireOwner(s.ownerLogout))
 	mux.HandleFunc("GET /owner/{$}", s.requireOwner(s.ownerDash))
-	mux.HandleFunc("GET /owner", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/owner/", http.StatusSeeOther)
-	})
 	mux.HandleFunc("POST /owner/venue", s.requireOwner(s.ownerUpdateVenue))
 }
 
@@ -172,7 +169,7 @@ func (s *Server) ownerDash(w http.ResponseWriter, r *http.Request, v *store.Venu
 			dv.RSSIText = "—"
 		} else {
 			dv.RSSIText = fmt.Sprintf("%d dBm", d.RSSI)
-			dv.Weak = d.RSSI <= -65
+			dv.Weak = d.RSSI <= InstallGateRSSI
 		}
 		m.Devices = append(m.Devices, dv)
 	}

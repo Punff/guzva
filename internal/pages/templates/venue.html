@@ -16,7 +16,7 @@
      meta tag here would reload the document every 30s even with the in-place
      swap running (measured: 3 full navigations in 95s). -->
 <noscript><meta http-equiv="refresh" content="60"></noscript>
-<title>{{.Name}}</title>
+<title>{{.Name}} — {{.Tagline}} · guzva.ba</title>
 <meta name="description" content="{{.StateText}} — {{.Name}}.">
 <meta name="theme-color" content="#f2ede2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0d151c" media="(prefers-color-scheme: dark)">
@@ -29,7 +29,10 @@
 <style>{{.CSS}}</style>
 </head>
 <body class="min-h-dvh bg-paper text-ink font-sans"
-      data-tz="{{.TZName}}" data-still="{{.StillFile}}" data-lang="{{.Lang}}" data-poll="30">
+      data-tz="{{.TZName}}" data-still="{{.StillFile}}" data-lang="{{.Lang}}" data-poll="30"
+      data-offline="{{.StrOffline}}" data-idle="{{.StrIdle}}" data-resume="{{.StrResume}}"
+      data-newpic="{{.StrNewPic}}" data-today="{{.StrToday}}" data-yesterday="{{.StrYesterday}}"
+      data-altprefix="{{.AltPrefix}}">
 <div class="mx-auto w-full max-w-[40rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
 
   <header class="flex items-center gap-2">
@@ -74,7 +77,7 @@
         <img id="still" src="{{.StillFile}}?v={{.StillVer}}"
              width="{{if .StillW}}{{.StillW}}{{else}}160{{end}}" height="{{if .StillH}}{{.StillH}}{{else}}120{{end}}"
              decoding="async" fetchpriority="high"
-             alt="{{if .Updated}}Stilizirana slika prostora {{.Name}}, snimljena u {{.Updated}}{{else}}Stilizirana slika prostora {{.Name}}{{end}}"
+             alt="{{if .Updated}}{{.AltStill}}{{else}}{{.AltNow}}{{end}}"
              class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
         {{/* Late / no-signal overlays are CSS only — the picture itself is
              never altered (§5.6). */}}
@@ -113,7 +116,7 @@
 
   {{if .HoursToday}}
   <section class="border-t-2 border-ink pt-3">
-    <h2 class="text-xs font-semibold uppercase tracking-widest text-muted mb-1">Radno vrijeme</h2>
+    <h2 class="text-xs font-semibold uppercase tracking-widest text-muted mb-1">{{.HoursTitle}}</h2>
     <p class="text-sm tnum">{{.HoursToday}}</p>
   </section>
   {{end}}
@@ -167,21 +170,14 @@
   var fmtDay = new Intl.DateTimeFormat(lang,
     { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
 
-  // Copy strings: keep them beside the catalog keys they mirror
-  // (internal/i18n). No relative-time sentences, ever (§11).
-  var STR = (d.lang === 'en') ? {
-    offline: 'No internet connection. Trying again…',
-    idle: 'Refreshing is paused.',
-    resume: 'Resume',
-    newpic: 'New picture.',
-    today: 'today', yesterday: 'yesterday'
-  } : {
-    offline: 'Nema internetske veze. Pokušavamo ponovno…',
-    idle: 'Osvježavanje je pauzirano.',
-    resume: 'Nastavi',
-    newpic: 'Nova slika.',
-    today: 'danas', yesterday: 'jučer'
+  // Copy comes from the page's data-* attributes, which internal/i18n
+  // rendered in the venue's language — one catalog, no second dictionary
+  // inside this script (W2). No relative-time sentences, ever (§11).
+  var STR = {
+    offline: d.offline, idle: d.idle, resume: d.resume,
+    newpic: d.newpic, today: d.today, yesterday: d.yesterday
   };
+  var ALT_PREFIX = d.altprefix || '';
   $('idletext').textContent = STR.idle;
   resume.textContent = STR.resume;
 
@@ -207,10 +203,9 @@
     }
     day.textContent = word + (tzName ? ' · ' + tzName : '');
     if (img) {
-      var alt = img.getAttribute('alt') || '';
-      img.setAttribute('alt', alt.replace(/, snimljena u .*|, taken at .*|$/, function () {
-        return (d.lang === 'en' ? ', taken at ' : ', snimljena u ') + fmtTime.format(lmDate);
-      }));
+      // Rebuild the alt from the catalog prefix + the fresh time, so the
+      // venue's language is right even for frames that arrive via JS.
+      if (ALT_PREFIX) img.setAttribute('alt', ALT_PREFIX + fmtTime.format(lmDate));
     }
   }
 

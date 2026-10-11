@@ -13,16 +13,16 @@
   {{if .Saved}}<div class="card card--inset text-sm" role="status">Config saved as ver {{.Cfg.Ver}} — the device applies it on its next POST.</div>{{end}}
 </div>
 
-<section class="border-2 border-ink bg-paper shadow-step p-4 mb-5">
+<section class="card card--raised mb-5">
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-    <div><div class="lbl">Status</div><div class="font-semibold" style="color:{{if eq .Device.Status "active"}}var(--fresh){{else}}var(--muted){{end}}">{{.Device.Status}}</div></div>
+    <div><div class="lbl">Status</div><div class="font-semibold {{if eq .Device.Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Device.Status}}</div></div>
     <div><div class="lbl">Firmware</div><div>{{if .Device.FW}}{{.Device.FW}}{{else}}—{{end}}</div></div>
-    <div><div class="lbl">Signal</div><div class="tnum"{{if .Weak}} style="color:var(--accent)" title="Below the −65 dBm install gate"{{end}}>{{if not .Seen}}—{{else}}{{.Device.RSSI}} dBm{{end}}</div></div>
-    <div><div class="lbl">Config</div><div class="tnum"{{if .Amber}} style="color:var(--late)" title="device has not applied the latest config"{{end}}>{{.Device.CfgVer}} / {{.Device.CfgAppliedVer}}</div></div>
+    <div><div class="lbl">Signal</div><div class="tnum{{if .Weak}} text-accent{{end}}"{{if .Weak}} title="Below the −65 dBm install gate"{{end}}>{{if not .Seen}}—{{else}}{{.Device.RSSI}} dBm{{end}}</div></div>
+    <div><div class="lbl">Config</div><div class="tnum{{if .Amber}} text-late{{end}}"{{if .Amber}} title="device has not applied the latest config"{{end}}>{{.Device.CfgVer}} / {{.Device.CfgAppliedVer}}</div></div>
   </div>
 </section>
 
-<section class="border-2 border-ink bg-paper shadow-step p-4 mb-5">
+<section class="card card--raised mb-5">
   <h2 class="text-lg font-bold mb-2">Failures since boot</h2>
   <p class="text-sm text-muted mb-3">Counters reset when the board reboots, so read them as "since the last restart", not "since forever".</p>
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -71,7 +71,7 @@
       {{end}}{{end}}
     </div>
 
-    <button class="inline-flex items-center justify-center border-2 border-ink bg-accent text-paper px-4 min-h-11 font-semibold shadow-step-sm tap" type="submit">Save config (bumps ver)</button>
+    <button class="btn btn--primary" type="submit">Save config (bumps ver)</button>
   </form>
 </section>
 

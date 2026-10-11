@@ -246,6 +246,23 @@
 }
 
 @layer utilities {
+  /* ---- state colours (§3.2): whole literals, never assembled ---- */
+  /* The chip templates render class="text-{{.StateClass}}" at template
+     EXECUTION time, which no scanner can see — as generated utilities these
+     never compiled and every chip rendered its shape in inherited ink,
+     including in the kit gallery (maintenance W2/B1). They live here as
+     plain CSS instead: the design system owns state colour, both entries
+     import this file, and the runtime-assembled names resolve everywhere.
+     Colour is redundant by design (shape + sentence carry the state), so
+     dropping one must be a decision, never a purger's accident. */
+  .text-fresh    { color: var(--fresh); }
+  .text-late     { color: var(--late); }
+  .text-stale    { color: var(--stale); }
+  .text-nosignal { color: var(--stale); }
+  .text-closed   { color: var(--muted); }
+  .text-waiting  { color: var(--muted); }
+  .text-unknown  { color: var(--muted); }
+
   /* ---- textures: CSS only, ~100 B each (§3.3) ---- */
 
   /* Hatch — stale overlays, section rules. */

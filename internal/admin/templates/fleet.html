@@ -20,7 +20,7 @@
     <code class="text-sm text-muted font-mono">/{{.Slug}}/</code>
     {{template "chip.html" .Fresh}}
     <span class="push text-sm text-muted">{{.LastAge}}</span>
-    <a class="inline-flex items-center justify-center border-2 border-ink bg-paper px-3 min-h-11 text-sm font-semibold shadow-step-sm tap" href="/admin/venues/{{.ID}}">Edit</a>
+    <a class="btn btn--quiet" href="/admin/venues/{{.ID}}">Edit</a>
   </div>
   {{if .Devices}}
   <div class="hidden md:block">
@@ -36,7 +36,7 @@
         <td class="font-mono"><a class="hover:underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a></td>
         <td>{{if eq .Status "active"}}<span class="text-fresh font-semibold">active</span>{{else}}<span class="text-muted">revoked</span>{{end}}</td>
         <td>{{if .FW}}{{.FW}}{{else}}—{{end}}</td>
-        <td class="tnum"{{if .Weak}} style="color:var(--accent)" title="Below the −65 dBm install gate — move the camera or add an access point"{{end}}>{{.RSSIText}}</td>
+        <td class="tnum{{if .Weak}} text-accent{{end}}"{{if .Weak}} title="Below the −65 dBm install gate — move the camera or add an access point"{{end}}>{{.RSSIText}}</td>
         <td>{{.SeenAge}}</td>
         {{/* Plain sentences, never a counter soup like b181·bo4·j0 (§8.1) */}}
         <td class="text-muted">
@@ -44,10 +44,12 @@
           <span title="Uploads that failed">{{.Counters.PostFail}} upload</span> ·
           <span title="TLS connections that failed">{{.Counters.TLSFail}} tls</span>
         </td>
-        <td class="tnum"{{if .Amber}} style="color:var(--late)"{{end}}>{{.CfgVer}}/{{.CfgApplied}}</td>
+        <td class="tnum{{if .Amber}} text-late{{end}}">{{.CfgVer}}/{{.CfgApplied}}</td>
         <td>
           {{if eq .Status "active"}}
-          <form class="inline" method="post" hx-post="/admin/devices/{{.ID}}/revoke" hx-confirm="Revoke {{.Serial}}? It stops being able to post.">
+          {{/* method+action: revoke works without JS (DESIGN §8); htmx adds
+               the confirm + partial swap on top. */}}
+          <form class="inline" method="post" action="/admin/devices/{{.ID}}/revoke" hx-post="/admin/devices/{{.ID}}/revoke" hx-confirm="Revoke {{.Serial}}? It stops being able to post.">
             <button class="btn btn--danger" type="submit">Revoke</button>
           </form>
           {{else}}<span class="text-muted text-xs">revoked</span>{{end}}
@@ -63,21 +65,21 @@
     <div class="border-2 border-ink bg-paper-2 p-3">
       <div class="flex items-baseline justify-between gap-2">
         <a class="font-mono font-bold hover:underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a>
-        <span class="text-sm font-semibold" style="color:{{if eq .Status "active"}}var(--fresh){{else}}var(--muted){{end}}">{{.Status}}</span>
+        <span class="text-sm font-semibold {{if eq .Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Status}}</span>
       </div>
       <div class="text-sm text-muted mt-1 flex flex-wrap gap-x-3 gap-y-1">
         {{if .FW}}<span>fw {{.FW}}</span>{{end}}
-        <span class="tnum"{{if .Weak}} style="color:var(--accent)"{{end}}>{{.RSSIText}}</span>
+        <span class="tnum{{if .Weak}} text-accent{{end}}">{{.RSSIText}}</span>
         <span>{{.SeenAge}}</span>
-        <span class="tnum"{{if .Amber}} style="color:var(--late)"{{end}}>config {{.CfgVer}}/{{.CfgApplied}}</span>
+        <span class="tnum{{if .Amber}} text-late{{end}}">config {{.CfgVer}}/{{.CfgApplied}}</span>
       </div>
       <div class="text-xs text-muted mt-1">
         {{.Counters.JoinFail}} wifi · {{.Counters.PostFail}} upload · {{.Counters.TLSFail}} tls
         <span class="block">failed since last boot</span>
       </div>
       {{if eq .Status "active"}}
-      <form class="mt-2" method="post" hx-post="/admin/devices/{{.ID}}/revoke" hx-confirm="Revoke {{.Serial}}? It stops being able to post.">
-        <button class="inline-flex items-center justify-center border-2 border-accent text-accent px-4 min-h-11 w-full text-sm font-semibold tap" type="submit">Revoke</button>
+      <form class="mt-2" method="post" action="/admin/devices/{{.ID}}/revoke" hx-post="/admin/devices/{{.ID}}/revoke" hx-confirm="Revoke {{.Serial}}? It stops being able to post.">
+        <button class="btn btn--danger btn--block" type="submit">Revoke</button>
       </form>
       {{end}}
     </div>
@@ -97,7 +99,8 @@
 
 <section class="mt-6">
   <h2 class="text-lg font-bold mb-3">New venue</h2>
-  <form class="card card--inset grid gap-3 max-w-2xl" hx-post="/admin/venues" hx-target="#flash" hx-swap="innerHTML">
+  <form class="card card--inset grid gap-3 max-w-2xl" method="post" action="/admin/venues"
+        hx-post="/admin/venues" hx-target="#flash" hx-swap="innerHTML">
     <div class="fieldset">
       <label class="lbl" for="v-slug">Slug</label>
       <input class="inp" id="v-slug" name="slug" placeholder="jadro" required pattern="[a-z0-9][a-z0-9-]{0,39}">
@@ -130,7 +133,8 @@
 <section class="mt-6">
   <h2 class="text-lg font-bold mb-3">New device</h2>
   {{if .DeviceOpts}}
-  <form class="card card--inset grid gap-3 max-w-2xl" hx-post="/admin/devices" hx-target="#token-out" hx-swap="innerHTML">
+  <form class="card card--inset grid gap-3 max-w-2xl" method="post" action="/admin/devices"
+        hx-post="/admin/devices" hx-target="#token-out" hx-swap="innerHTML">
     <div class="fieldset">
       <label class="lbl" for="d-venue">Venue</label>
       <select class="inp" id="d-venue" name="venue_id">

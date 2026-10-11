@@ -114,7 +114,17 @@ type view struct {
 	UpdatedDay string // "danas" | "jučer" | "10.10.2026." — disambiguates
 	// the bare clock time without a relative age
 	HoursToday string // "09:00–17:00" venue-local, empty if hours unset
-	TZ         string // venue tz abbreviation, e.g. "CET"
+	HoursTitle string // localized section heading, from the catalog (W2)
+	TZ         string // venue tz abbreviation, e.g. "CET"; "" before any frame
+	Tagline    string // "Ima li gužve?" — title suffix (DESIGN §7.4)
+	AltStill   string // full alt with the capture time (localized, W2)
+	AltNow     string // alt before the first JS frame swap (localized)
+	AltPrefix  string // alt.still up to the time; the poller appends to it
+
+	// Poller copy, read from data-* attributes so the script carries no
+	// second hand-written dictionary (W2: one catalog, internal/i18n).
+	StrOffline, StrIdle, StrResume    string
+	StrNewPic, StrToday, StrYesterday string
 
 	// DESIGN.md §3.2: a state is a SHAPE, a COLOUR and a SENTENCE. Colour is
 	// never the only signal, so all three travel together.
@@ -165,9 +175,16 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	// index.html is rewritten only on state flips and settings edits — not
 	// per frame. Style/TZ/lang ARE part of it, because a settings edit must
 	// reach the page on the next sched tick even though no frame arrived.
+	// The still FILENAME is part of it too (W2/B8): on a jpg→png row-kind
+	// flip the page must be rewritten once, or the poller keeps fetching a
+	// just-deleted latest.jpg until the next state flip.
 	cat0 := i18n.For(i18n.Normalize(v.Lang))
-	stateKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", fresh, open, v.Name, v.Style,
-		v.TZ, v.Lang, hoursToday(cat0, hours, localNow))
+	stillFile := "latest.png"
+	if latest != nil && latest.Status == "ok" && latest.Path != "" && !strings.HasSuffix(latest.Path, ".png") {
+		stillFile = "latest.jpg"
+	}
+	stateKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s", fresh, open, v.Name, v.Style,
+		v.TZ, v.Lang, hoursToday(cat0, hours, localNow), stillFile)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -185,10 +202,6 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	// latest.png for new rows, latest.jpg until a venue's first v2 frame.
 	// The stale counterpart is removed, so the web root still holds exactly
 	// two files. Within one capture interval every venue converges to .png.
-	stillFile := "latest.png"
-	if latest != nil && latest.Status == "ok" && latest.Path != "" && !strings.HasSuffix(latest.Path, ".png") {
-		stillFile = "latest.jpg"
-	}
 	if force && latest != nil && latest.Status == "ok" && latest.Path != "" {
 		src := filepath.Join(w.dataDir, latest.Path)
 		if err := copyAtomic(src, filepath.Join(dir, stillFile)); err != nil {
@@ -212,15 +225,25 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 
 	cat := i18n.For(i18n.Normalize(v.Lang))
 	vw := view{
-		Name:        v.Name,
-		HasFrame:    latest != nil && latest.Status == "ok",
-		TZ:          zoneLabel(last.In(loc), loc),
-		TZName:      v.TZ,
-		CSS:         template.CSS(webui.Public()),
-		Lang:        string(cat.Lang),
-		PrivacyLine: cat.Get("privacy.line"),
-		ShowStill:   true,
-		StillFile:   stillFile,
+		Name:         v.Name,
+		HasFrame:     latest != nil && latest.Status == "ok",
+		TZ:           tzLabel(last, loc),
+		TZName:       v.TZ,
+		CSS:          template.CSS(webui.Public()),
+		Lang:         string(cat.Lang),
+		PrivacyLine:  cat.Get("privacy.line"),
+		ShowStill:    true,
+		StillFile:    stillFile,
+		Tagline:      cat.Get("tagline"),
+		HoursTitle:   cat.Get("hours.title"),
+		AltNow:       cat.F("alt.nowframe", v.Name),
+		AltPrefix:    cat.F("alt.still", v.Name, ""),
+		StrOffline:   cat.Get("net.offline"),
+		StrIdle:      cat.Get("idle.paused"),
+		StrResume:    cat.Get("idle.resume"),
+		StrNewPic:    cat.Get("live.newpic"),
+		StrToday:     cat.Get("when.today"),
+		StrYesterday: cat.Get("when.yesterday"),
 	}
 	if vw.HasFrame {
 		// The cache-buster is the frame row id, NOT received_at: ids are
@@ -233,6 +256,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		local := last.In(loc)
 		vw.Updated = cat.Time(local)
 		vw.UpdatedDay = cat.DayName(local, now.In(loc))
+		vw.AltStill = cat.F("alt.still", v.Name, vw.Updated)
 		if latest.Width > 0 && latest.Height > 0 {
 			vw.StillW, vw.StillH = latest.Width, latest.Height
 		}
@@ -270,6 +294,17 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	}
 	w.last[v.Slug] = stateKey
 	return nil
+}
+
+// tzLabel abbreviates the venue timezone for display ("CET", "GMT+2"), but
+// a frame-less venue has a zero `last`, and rendering the zero time in a
+// zone yields "LMT" (Sarajevo's pre-1916 local mean time) — a nonsense label
+// a waiting venue used to print. Empty means the template hides the slot.
+func tzLabel(last time.Time, loc *time.Location) string {
+	if last.IsZero() {
+		return ""
+	}
+	return zoneLabel(last.In(loc), loc)
 }
 
 // zoneLabel abbreviates the venue's timezone for display ("CET", "GMT+2").
