@@ -50,6 +50,7 @@
 #include <esp_system.h>
 #include <esp_random.h>
 #include <esp_heap_caps.h>
+#include <esp_task_wdt.h>
 
 #include "settings.h"
 
@@ -60,8 +61,16 @@
 #define INSECURE_TLS 0
 #endif
 
-// Firmware semver — reported in every meta "fw" field (proto-v1).
-#define FW_VERSION "1.0.0"
+// Firmware version — reported in every meta "fw" field (proto-v1) and the
+// serial banner. tools/fwversion.py stamps `git describe` into
+// include/fw_version.h at build time (W4); "dev" means an unstamped build,
+// which only happens outside the repo — the fleet board flags it.
+#if __has_include("fw_version.h")
+#include "fw_version.h"
+#endif
+#ifndef FW_VERSION
+#define FW_VERSION "dev"
+#endif
 
 // ============================ HARDWARE PINS ================================
 // AI-Thinker ESP32-CAM camera wiring (classic mapping: Y2..Y9 =
@@ -95,8 +104,10 @@ static const uint32_t WIFI_RETRY_MAX_MS   = 60000;
 // Bench-measured (2026-10-08): lwIP RTO ≈ 3 s on the weak link → SYN at
 // 0/3/9 s, ClientHello retransmit at 9 s. An 8 s budget cut the connection
 // off BEFORE the retransmit; 12 s covers it (ops-log).
+// TLS_CONNECT_MS is DERIVED, never written again: the same budget once
+// lived here twice in two units and drifted by construction (W4/F4).
 static const uint32_t TLS_HANDSHAKE_S     = 12;
-static const uint32_t TLS_CONNECT_MS      = 12000;   // TCP phase: SYN at 0/3/9 s
+static const uint32_t TLS_CONNECT_MS     = TLS_HANDSHAKE_S * 1000UL;
 static const uint32_t POST_TIMEOUT_MS     = 25000;   // 25 s POST (write+response)
 static const uint8_t  POST_ATTEMPTS       = 3;       // transport retries/tick
 static const uint32_t POST_RETRY_GAP_MS   = 6000;    // decorrelate bursts
@@ -111,6 +122,15 @@ static const uint32_t CAM_BACKOFF_MIN_S   = 10;      // camera probe backoff
 static const uint32_t CAM_BACKOFF_MAX_S   = 1800;
 static const uint8_t  CAM_FAIL_LIMIT      = 5;       // degraded after 5
 static const uint8_t  FRAMESIZE_MAX_OV2640 = 10;     // FRAMESIZE_UXGA
+// Task-watchdog backstop (W4/F1). Every blocking path in this firmware has
+// its own deadline, but before W4 nothing recovered an UNEXPECTED stall: a
+// driver edge or a logic deadlock hung the board forever with the LED dark.
+// The WDT is armed above the worst legitimate blocking envelope — one tick
+// = capture ≈8 s + 3×(12 s connect + 25 s POST) + 2×6 s gaps ≈ 131 s — so
+// it only ever fires on a true stall, and a fire reboots into an honest
+// STALE gap instead of a silent hang. (This replaces the spec's old
+// "hourly-max reboot": the watchdog is the mechanism that was meant.)
+static const uint32_t WDT_TIMEOUT_S       = 150;
 
 // ============================ MULTIPART (proto-v1) =========================
 #define MP_BOUNDARY "guzva-v1-9f3a"
@@ -1023,8 +1043,14 @@ static void runTick() {
       for (int i = 0; i < 2 && !fb; i++) fb = esp_camera_fb_get();
       if (fb) {
         // Copy into PSRAM, return the frame buffer immediately (spec 5),
-        // upload streams from our copy in 6 KiB chunks.
+        // upload streams from our copy in 6 KiB chunks. A PSRAM alloc
+        // failure is NOT camera death (W4/F3): a PSRAM-less board or an
+        // exhausted heap fell into capture_fail → degraded mode with a
+        // 30-min backoff while the sensor was perfectly healthy. DRAM
+        // holds a QVGA frame easily.
         frameCopy = (uint8_t *)heap_caps_malloc(fb->len, MALLOC_CAP_SPIRAM);
+        if (!frameCopy)
+          frameCopy = (uint8_t *)heap_caps_malloc(fb->len, MALLOC_CAP_8BIT);
         if (frameCopy) {
           memcpy(frameCopy, fb->buf, fb->len);
           frameLen = fb->len;
@@ -1108,15 +1134,22 @@ static void runTick() {
                     (unsigned long)sleepS);
     } else if (status == 422 || status == 413) {
       char why[48] = {0};
-      jsonStr(respBody, "\"reason\":", why, sizeof why);
+      // The key includes the value's OPENING quote — jsonStr's contract
+      // (W4/B9): passing "\"reason\":" without it made strchr find that
+      // same quote and copy an empty string, so the server's reject reason
+      // always printed as "?".
+      jsonStr(respBody, "\"reason\":\"", why, sizeof why);
       sleepS = respNextS();
       Serial.printf("[HTTP] %d rejected (%s) -> not fatal, sleep %lu s\n",
                     status, why[0] ? why : "?", (unsigned long)sleepS);
     } else {                           // 507 / 5xx: retry next tick
       postFail++;
-      sleepS = intervalS;
-      Serial.printf("[HTTP] %d server-side failure -> retry next tick "
-                    "(post_fail=%lu)\n", status, (unsigned long)postFail);
+      // Honor Retry-After when the server sends one (a full disk wants us
+      // slow, not hammering); otherwise the configured cadence.
+      sleepS = strstr(respHdr, "Retry-After:") ? retryAfterS() : intervalS;
+      Serial.printf("[HTTP] %d server-side failure -> retry in %lu s "
+                    "(post_fail=%lu)\n", status, (unsigned long)sleepS,
+                    (unsigned long)postFail);
     }
   }
 
@@ -1300,7 +1333,8 @@ static void handleSerialCmd(char *cmd) {
 }
 
 static void serialPoll() {
-  static char line[32];
+  static char line[64];   // W4: was 32 — overflow chars were dropped silently
+                          // and a mangled command just didn't match anything
   static size_t n = 0;
   while (Serial.available()) {
     char c = (char)Serial.read();
@@ -1328,6 +1362,18 @@ void setup() {
   delay(100);
   Serial.println();
   Serial.println("=== guzva firmware " FW_VERSION " ===");
+
+  // Watchdog backstop (W4/F1, see WDT_TIMEOUT_S above). The IDF startup
+  // code has ALREADY initialized the task WDT (arduino-esp32 2.x sdkconfig:
+  // 5 s, watching IDLE0) — a second esp_task_wdt_init would return
+  // INVALID_STATE and leave that 5 s watchdog live, and subscribing loopTask
+  // to IT would reboot-loop on every long tick. So: deconfigure the
+  // default, install ours, then subscribe THIS task (loopTask). loop()
+  // feeds it every pass; the long blocking paths (tick, serviceIdle) all
+  // finish well inside the budget, so a fire means a genuine stall.
+  esp_task_wdt_deinit();
+  esp_task_wdt_init(WDT_TIMEOUT_S, true);   // panic → reboot, bootCount++ visible server-side
+  esp_task_wdt_add(nullptr);
 
   pinMode(INDICATOR_LED_PIN, OUTPUT);
   ledWrite(false);
@@ -1368,13 +1414,14 @@ void setup() {
                 (unsigned long)brownoutCount, (unsigned long)cfgVerApplied,
                 (unsigned long)intervalS);
   // Never print the token itself — only its presence/length (secret).
-  Serial.printf("[BOOT] PSRAM=%s free_heap=%u camera=%s token_len=%u\n",
+  Serial.printf("[BOOT] PSRAM=%s free_heap=%u camera=%s token_len=%u wdt=%lus\n",
                 psramFound() ? "yes" : "no", (unsigned)ESP.getFreeHeap(),
                 camInited ? "ok" : "DEGRADED",
-                (unsigned)strlen(deviceToken));
+                (unsigned)strlen(deviceToken), (unsigned long)WDT_TIMEOUT_S);
 }
 
 void loop() {
+  esp_task_wdt_reset();          // feed the backstop once per pass (W4/F1)
   serviceWiFi();                 // non-blocking reconnect with backoff
   server.handleClient();         // LAN cage
   tickService();                 // capture + HTTPS ingest when due

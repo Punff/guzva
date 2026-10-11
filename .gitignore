@@ -5,6 +5,7 @@ firmware/.pio/
 # Per-device firmware secrets — copy from settings.example.h
 # (maintenance W0: this file is the only one with device credentials)
 firmware/include/settings.h
+firmware/include/fw_version.h
 
 # Editor state
 .vscode/
