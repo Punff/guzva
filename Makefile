@@ -4,10 +4,15 @@
 #
 #   make test              fmt + vet + unit tests
 #   make build             static binary → dist/guzva (version-stamped)
+#   make tag V=v0.4.0      annotated release tag (VERSION comes from tags)
 #   make deploy            test + build + push release + restart + healthcheck
 #   make rollback TAG=…    point `current` back, restart, healthcheck
+#   make drill             restore drill on the VPS (log it in ops-log.md)
 #   make logs | ssh        tail the journal / open a shell
 #   make backup            run one snapshot now (the timer does it nightly)
+#
+# Release flow: tag → deploy → log. VERSION is `git describe --tags`, so an
+# untagged deploy ships under a bare SHA and rollback has no name to hold.
 #
 # The UI stylesheet is a third release artifact: `make css` runs the Tailwind
 # CLI over the templates when `make deploy` runs. `make test` fails CI if
@@ -25,7 +30,7 @@ LDFLAGS  := -s -w -X main.version=$(VERSION)
 
 include Makefile.web.mk
 
-.PHONY: test build deploy rollback logs ssh backup help
+.PHONY: test build tag deploy rollback drill logs ssh backup help
 
 help: ## this list
 	@grep -E '^[a-z]+:.*?##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?##"}{printf "  %-10s %s\n",$$1,$$2}'
@@ -60,6 +65,17 @@ rollback: ## rollback to a previous release: make rollback TAG=<tag>
 	  systemctl restart guzva; sleep 3; systemctl is-active guzva'
 	@$(MAKE) --no-print-directory check VERSION=$(TAG)
 	@echo "rolled back to $(TAG) — log it in docs/ops-log.md"
+
+tag: test ## create an annotated release tag: make tag V=v0.4.0 (then deploy)
+	@test -n "$(V)" || (echo "usage: make tag V=v0.4.0   (VERSION = git describe)"; exit 2)
+	@git diff-index --quiet HEAD || (echo "working tree is dirty — commit first (a tag must name a real state)"; exit 2)
+	git tag -a "$(V)" -m "release $(V)"
+	@echo "tagged $(V); make deploy ships it as releases/$(V)"
+
+drill: ## restore drill on the VPS (W5: prove the nightly backup restorable)
+	scp -q tools/restore-drill.sh $(SSH):/tmp/guzva-restore-drill.sh
+	ssh $(SSH) 'bash /tmp/guzva-restore-drill.sh; rc=$$?; rm -f /tmp/guzva-restore-drill.sh; exit $$rc'
+	@echo "drill finished — record it in docs/ops-log.md (mandatory before the pilot, then quarterly)"
 
 check: ## verify what is actually serving (used by deploy/rollback)
 	@V=$$(ssh $(SSH) 'curl -sk https://127.0.0.1/healthz'); \

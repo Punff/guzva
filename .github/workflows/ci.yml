@@ -1,0 +1,93 @@
+# guzva CI — the PLAN §12 PR gate.
+#
+# NOTE (maintenance W5): this repository currently has NO git remote, so
+# this workflow has never run. It is landed ready: the moment a remote
+# exists and the first push happens (after the W0 history scrub for the
+# old settings.h secrets — docs/maintenance.md §4), every push and PR runs
+# the full gate below.
+
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TAILWIND_VERSION: v4.3.3
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: test -z "$(gofmt -l cmd internal tools)" || (gofmt -l cmd internal tools; exit 1)
+
+      - name: vet
+        run: go vet ./...
+
+      - name: unit tests
+        run: go test ./...
+
+      - name: race tests (PLAN §12)
+        run: go test -race ./...
+
+      # The committed stylesheets in internal/webui must be exactly what
+      # the tokens + templates compile to — a stale sheet is the "console
+      # rendered unstyled" incident (ops-log dd36f44).
+      - name: tailwind binary (cached)
+        uses: actions/cache@v4
+        with:
+          path: tools/bin/tailwindcss
+          key: tailwindcss-linux-x64-${{ env.TAILWIND_VERSION }}
+
+      - name: css freshness + budgets
+        run: make css-check
+
+      - name: release build (linux/amd64, static)
+        run: |
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o dist/guzva ./cmd/guzva
+          ./dist/guzva version
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: platformio + toolchains (cached)
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-esp32cam-espressif32-7.0.1-cam2.0.4
+
+      - name: pio run
+        run: |
+          pip install platformio
+          cd firmware && pio run
+
+      # The prod TLS gate (grep, not policy): setInsecure must exist only
+      # inside the INSECURE_TLS guard, and INSECURE_TLS must be 0.
+      - name: TLS grep-gate
+        run: |
+          ! grep -rn 'setInsecure' firmware/src firmware/include | grep -v 'INSECURE_TLS'
+          grep -q 'INSECURE_TLS=0' firmware/platformio.ini
+
+      # The privacy contract, mechanically: no raw-persist path in the
+      # server, proven by the package's own tests (already run in `go`,
+      # re-stated here because it is the one gate that must never flake).
+      - name: privacy tests
+        run: go test ./internal/privacy/ ./internal/render/ ./internal/frames/ -run 'Privacy|EXIF|Zeroed|RawNever' -v

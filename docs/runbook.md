@@ -21,13 +21,17 @@ are shown **once** at provision time and never stored recoverably.
    frame arrived recently. Check age: `ls -l /var/lib/guzva/public/bench/`.
 2. Check the journal — one line per device-visible response:
    `journalctl -u guzva -n 20 --no-pager | grep ingest`
-   - `status=201` arriving → frames flow; page rewrites on each frame.
+   - `status=201` arriving → frames flow. The still file is replaced on
+     every frame; index.html is rewritten only on a state flip (⚑2 — the
+     time is burned into the picture, so the page itself need not change).
    - only `409` same `capture_id` → device retrying; usually clears next tick.
    - nothing at all → device offline or link down (see below).
    - `post_fail` climbing in successive 201 lines → transport trouble on the
      device side; `rssi` below −70 and `brownout` rising point at link/supply.
-3. Page reloads every 30 s but the device posts every `interval_s` (45 s), so
-   ~1 in 3 reloads legitimately repeats the previous photo. Not a fault.
+3. In a browser with JS, the page re-fetches only the still every 30 s and
+   swaps it in place; without JS it reloads itself every 60 s. Either way,
+   the device posts every `interval_s` (60 s) — a repeated photo between
+   posts is a quiet tick, not a fault.
 
 ## Device offline (no 201s in the journal)
 
@@ -89,8 +93,10 @@ it does).
 ## Deploy / rollback (Makefile is the only supported path)
 
 ```sh
+make tag V=v0.4.0      # annotated tag first: VERSION = git describe --tags,
+                       # and rollback needs a name to point back to
 make deploy            # build → test → push release → restart → healthcheck
-make rollback TAG=…    # switch the `current` symlink back → restart
+make rollback TAG=v0.4.0   # switch the `current` symlink back → restart
 make backup            # nightly snapshot now; timer installs it
 ```
 
@@ -101,11 +107,15 @@ shows what is running.
 
 ## Backup / restore
 
-- Nightly: `guzva-backup.timer` snapshots SQLite (`VACUUM INTO`), gzips with
-  `data/ref/`, keeps 14 under `/var/backups/guzva/`. RPO ≈ 24 h is fine: the
-  DB holds config only, frames are a disposable ring.
-- Restore drill is mandatory before the pilot, then quarterly — log each one
-  in `docs/ops-log.md` (silent backup rot is a top risk).
+- Nightly: `guzva-backup.timer` snapshots SQLite (`sqlite3 .backup`),
+  gzips with `data/ref/`, keeps 14 under `/var/backups/guzva/`. RPO ≈ 24 h
+  is fine: the DB holds config only, frames are a disposable ring.
+- **The drill is the backup:** `make drill` runs `tools/restore-drill.sh`
+  on the VPS — gunzip, `integrity_check`, schema-version parity with the
+  live DB, venue/device counts, and the shipped binary opening the restored
+  file. Mandatory before the pilot, then quarterly; log every run in
+  `docs/ops-log.md` (silent backup rot is a top risk, and until the first
+  drill passes the snapshot is a hope, not a backup).
 - Disaster order: new VM (`deploy/provision.sh`) → IP/DNS → latest nightly
   DB + refs → secrets (`/etc/guzva/guzva.env`) → verify → fleet recovers by
   itself (devices keep capturing through a VM outage; first tick back wins).
