@@ -361,3 +361,62 @@ intact across the v4→v5 migration.
 Errors are structured (day + code) and sentenced per language: Croatian in the
 owner panel ("Ponedjeljak: …"), English in the console. All-closed rows =
 empty Hours = no badge, same as the old empty spec.
+
+## 2026-10-12 — maintenance pass W0–W5 (docs/maintenance.md)
+
+Trigger: a four-way audit (firmware, server, UI/docs, DevOps) found the
+architecture sound but the hygiene, a set of live bugs, the missing CI
+substrate and doc drift worth a planned pass. Plan: docs/maintenance.md;
+every workstream below landed as its own commit series with its tests.
+
+- **W0 hygiene:** `settings.h` untracked (it carried the WiFi password +
+  device token against its own header warning; `settings.example.h` is the
+  committed template, real file gitignored), the 4.2 MB `styleproof` ELF
+  untracked, the retired Python rig and the vestigial tailwind config
+  deleted, bench-cert.sh's dead pointer fixed.
+  `ACTION:` the secrets in git history are burned — history scrub is
+  MANDATORY before the first push to any remote (maintenance §4), and the
+  bench WiFi password + device token rotate at the next physical session.
+- **W1 CLI:** real dispatcher — `guzva <typo>` used to silently start the
+  server; now help/version/exit 2. `provision` validates -slug + -tz like
+  the admin form, and `store.CreateVenue` enforces the slug rule for every
+  writer (an operator typo could previously publish pages outside the web
+  root). docs/cli.md shipped.
+- **W2 surfaces:** the state-chip colour classes never compiled (assembled
+  `text-{{.Cls}}` — invisible to the Tailwind scanner), so every chip on
+  every surface rendered its shape in ink, the kit gallery included; they
+  are now explicit CSS in tokens.css and pinned by webui tests.
+  `owner.fresh/late/stale` did not exist and rendered as raw keys on the
+  owner dash (never caught because the bench owner password was lost) —
+  catalog test now scans every fetch in Go + templates. Consoles got the C1
+  header set (CSP with no unsafe-inline — the inline styles went to
+  classes), no `/admin/static/` listing, and no-JS `method/action` on every
+  hx-post form. One favicon pixel was `#3607F`.
+- **W3 correctness:** parse-stage 422s now advance the beat when the meta
+  unmarshalled (bad_capture_id) and key a quarantined row so retries answer
+  409 — they previously froze last_seen and re-processed forever. Dead code
+  out (auth ctx helpers, sameDayMinusOne, PresetNames, Prometheus + its
+  write-only histogram, test_pattern case). render speaks proto's reason
+  constants. sched got a pure advance() + tests. Comments and design.md now
+  match the shipped things (preset @2, double masks, styleproof, budgets).
+- **W4 firmware (needs a bench session to verify on hardware):** task WDT
+  deinit→150 s→subscribe loopTask — nothing recovered an unexpected stall
+  before; PSRAM alloc failure falls back to DRAM instead of faking camera
+  death; the 422 reason call passes the quote jsonStr expects (server
+  reasons always printed `?`); platform + driver pinned, `-w` dropped
+  (warning-clean today); FW_VERSION stamps `git describe` via a generated
+  header (CPPDEFINES ate the quotes — first attempt failed the build);
+  5xx honors Retry-After. The spec's "hourly-max reboot" is dropped in
+  favour of the watchdog; decision recorded in maintenance.md.
+- **W5 devops:** CI workflow landed ready (no remote exists yet — it runs
+  from the first push, which must follow the W0 scrub). The restore drill
+  is a script now, proven both ways locally (clean snapshot PASSes,
+  truncated one fails); `make drill` runs it on the VPS. `make tag` starts
+  the release flow — zero tags existed, every release dir was a bare SHA.
+
+`ACTION:` run `make drill` on the VPS and log the pass here (first drill
+ever). `ACTION:` bench session for W4: reflash, confirm the WDT banner
+(`wdt=150s`), the real FW_VERSION in meta, and rotate the burned secrets.
+Not done this pass, sequenced in the plan: W7 (fleet attention sort,
+paused state, venue description/contact, QR poster) and W8 (filter tuning
+from real bright-room frames).

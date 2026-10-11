@@ -314,8 +314,18 @@ biometrics ever (D9). Research items, sequenced:
 | Date | Workstream | What happened |
 |------|------------|---------------|
 | 2026-10-11 | plan | Four audits (firmware, server, UI/docs, DevOps) → this plan. Baseline `make test` green at `c6f66b8`. |
+| 2026-10-11 | W0 | `settings.h` untracked → `settings.example.h` template (secrets gitignored; rotation + pre-push history scrub recorded as ACTIONs), 4.2 MB `styleproof` ELF untracked, retired testrig + vestigial tailwind config deleted, bench-cert.sh pointer fixed. `a55bde0` |
+| 2026-10-11 | W1 | Real dispatcher (help/version, unknown ≠ serve), provision validates slug+tz, `store.CreateVenue` enforces the slug rule for every writer, docs/cli.md. `0176eb6` |
+| 2026-10-11 | W2 | State-chip classes ship as explicit CSS (B1) + webui test pins both sheets; owner-dash i18n keys + full owner-console catalog wiring (B2); console CSP + no dir listing + no-JS forms (B4, H8); favicon hex; pages state key + LMT fix (B8). `691cbd9` |
+| 2026-10-11 | W4 | Firmware: task-WDT backstop, pinned toolchain, `-w` dropped, git-stamped FW_VERSION, PSRAM→DRAM fallback, jsonStr reason fix, Retry-After on 5xx. `pio run` SUCCESS, zero warnings. Hardware verification pending (bench ACTION). `1b1f235` |
+| 2026-10-11 | docs | README.md (front door), dev-setup.md, firmware/README.md (runbook referenced one that didn't exist). `e5f5783` |
+| 2026-10-12 | W3 | Parse-stage 422 parity (beat + quarantined row + 409 on retry), dead code out, render speaks proto reason constants, sched pure advance() + tests, comment/design-doc truth sweep. `0dfad83` |
+| 2026-10-12 | W5 | CI workflow landed ready (no remote yet), restore drill scripted and proven both ways, `make tag`/`make drill`, runbook truth fixes. `907a6b2` |
 
-*(Append one line per commit series as work lands.)*
+**Open after this pass** (ACTIONs, also in ops-log): run the first real
+`make drill` on the VPS and log it; bench session to verify W4 on hardware
+and rotate the burned secrets; create the remote **after** the history
+scrub; W7 and W8 below.
 
 ---
 
