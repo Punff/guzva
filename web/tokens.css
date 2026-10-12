@@ -78,7 +78,7 @@
     --paper: #0d151c;
     --paper-2: #17222c;
     --ink: #eee9dd;
-    --muted: #a9b5bf;
+    --muted: #b8c2cc;
     --accent: #ff7a5c;
     --fresh: #5ed394;
     --late: #f2b84b;
@@ -90,7 +90,7 @@
   --paper: #0d151c;
   --paper-2: #17222c;
   --ink: #eee9dd;
-  --muted: #a9b5bf;
+  --muted: #b8c2cc;
   --accent: #ff7a5c;
   --fresh: #5ed394;
   --late: #f2b84b;
@@ -190,6 +190,14 @@
     white-space: nowrap;
   }
   .chip > svg { flex: none; }
+  /* The print label's chip carries the page's answer ("is it fresh?"),
+     so it is the loud half of the label bar — the clock beside it is the
+     quiet detail (design-pass2 v3: the clock used to out-shout the chip). */
+  .chip--lg {
+    font-size: 1rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .chip--lg > svg { width: 14px; height: 14px; }
 
   .tnum { font-variant-numeric: tabular-nums; }
 }

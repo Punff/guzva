@@ -487,3 +487,26 @@ Verified live: figcaption + chip-fresh + clock on /bench/, user_version 6,
 calib.js 200. `ACTION:` eyeball the three surfaces in a real browser (the
 rendered-template tests cover content, not taste) — chip contrast in the
 label bar at 360 px is the one thing to squint at.
+
+## 2026-10-12 — orchestrator watch: frontend-tisak handoff, gate RED
+
+- Watched `guzva-frontend-tisak` (`ses_ecfef6c4…`) to idle. Its report:
+  overhaul items 1–5 already shipped in v0.3.1 (verified live vs sandbox,
+  not re-implemented); screenshots
+  `.openchamber/screenshots/tisak-{pub-desktop,pub-m360,fleet,venue,device,kit,admin-login}.png`;
+  kit renders, zero JS/console/network errors.
+- One real defect found, reverted with recipe (same W2/B1 shape): `calib.js`
+  sets runtime classes (`absolute/inset-0/h-full/pointer-events-none`) absent
+  from `app.css`, so the mask overlay renders as a static block below the
+  picture and stretches the preview box. Fix: explicit
+  `#calib-preview svg{position:absolute;inset:0;…}` in `web/app.css`, drop the
+  runtime class, pin with `TestCalibOverlayNeedsNoRuntimeClasses`, `make css`,
+  re-screenshot. `ACTION:` re-dispatch frontend-tisak for this one commit.
+- `BLOCKED` claim triaged: NO second frontend session exists in session.list
+  (single `guzva-frontend-tisak`); the 2 dirty files (`venue.html` info-card,
+  `web/tokens.css` dark-muted + `.chip--lg`) match the ses_ecff9370 left-off
+  mods, not a concurrent writer. Verdict: unattributed dirty tree, not a
+  single-writer violation — needs owner confirm, downgraded from BLOCKED.
+- Gate RED: `make test` fails at `css-check` (tokens changed, compiled CSS
+  stale). Frontend-tisak must run `make css` + commit its 2 files before any
+  merge. No commits made by anyone this watch; `HEAD` still `25bce48`.

@@ -24,3 +24,7 @@ mydata/
 __pycache__/
 *.pyc
 tools/bin/
+
+# Local agent/dev artifacts
+.devbin
+.openchamber/
