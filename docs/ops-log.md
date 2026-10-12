@@ -607,3 +607,17 @@ label bar at 360 px is the one thing to squint at.
   remaining `hour12`/time-input rendering is JS-side (frontend's).
 - Frontend unblocked on: one-shift editor, week cards, location fields,
   JS 24h. `hours.err.second` stays live (legacy path, docs-i18n's key).
+
+## 2026-10-12 — orchestrator: docs-i18n `a131292` landed (truth sweep)
+
+- 3 files: README (7-stage pipeline, label-carries-time, `version`
+  subcommand), runbook (⚑2 reason = Last-Modified clock), proto-v1
+  (rig retired, 507 Retry-After matches firmware W4).
+- B2 gate green (`TestFetchedKeysExist` + identical-key-sets, -count=1).
+  `hours.err.second` live in both catalogs.
+- 5 findings forwarded to frontend-tisak (owner_login full-HR form,
+  owner_dash QR placeholder, Šablon island ×2, poller `fmtDay` undotted
+  on en, stale stage-7 comment). Catalog keys for Phase B strings:
+  docs-i18n adds on frontend landing.
+- Still open: user's answers to frontend's three decisions (requested,
+  not yet received) → backend briefing pending.
