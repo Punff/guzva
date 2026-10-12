@@ -364,23 +364,133 @@ func (h Hours) NextOpen(t time.Time) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// DayForm is one row of the hours editor (DESIGN.md §9): two intervals
-// (split shifts), a closed checkbox, and the weekday index in Go convention
-// (Sunday-first) so the handler never has to think about display order.
+// SingleShift is the longest span an owner may declare in the editor: a venue
+// is open from one time to one time, with a closed flag (⚑ single-shift, 12 Oct
+// 2026). A lunch break is expressed by closing the day and opening it again
+// the next day, not by two ranges — one interval is what the public page and
+// the QR guest need, and it is what "open until HH:MM" can honestly say.
+//
+// The SPLIT SHIFT is still readable, never destroyed. Hours remains a list of
+// ranges per day so rows written by the two-interval editor keep parsing and
+// keep classifying exactly as before (stored data is not migrated, only the
+// write path narrows). Days carrying more than one range are reported by
+// MultiDay, so the console can show them instead of pretending they are one.
+const SingleShift = true
+
+// MultiDay returns the Mo-first indexes of days that carry more than one
+// range — the legacy two-interval rows. Pure read-side reporting; the owner
+// panel uses it to tell the owner their old schedule is still being honoured
+// (and to decide, with them, how to collapse it). Empty for a schedule the
+// single-shift editor could have written itself.
+func (h Hours) MultiDay() []int {
+	order := []int{1, 2, 3, 4, 5, 6, 0}
+	var out []int
+	for i, dow := range order {
+		if len(h[dow]) > 1 {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// DayCard is one day of the week as the page renders it (design-pass2 §5
+// weekly hours): the localized day name, whether the day is closed, and the
+// day's hours as ready-to-print 24 h text. Ranges are already venue-local
+// minutes, so no timezone decision belongs in here (PLAN §6.4: an absolute
+// clock, never a relative age).
+type DayCard struct {
+	// Dow is time.Sunday..time.Saturday as int, matching Hours indexing.
+	Dow int
+	// Name is the day name from the catalog, already localized by the caller.
+	Name string
+	// Closed is true when the day has no range at all.
+	Closed bool
+	// Text is "09:00–17:00", or "09:00–13:00, 14:00–18:00" for a legacy
+	// two-interval day. Empty when Closed.
+	Text string
+	// Ranges is how many intervals the day actually holds: 0 closed, 1 the
+	// single-shift normal, 2+ a legacy split shift. The console uses it to
+	// flag a day the single-shift editor cannot round-trip.
+	Ranges int
+}
+
+// WeekCards renders the whole week, Mo-first (the order every surface and
+// every locale uses), ready for a template. It is pure: the caller supplies
+// the localized day names, so no catalog is imported here and the venue
+// package stays dependency-free (PLAN §3).
+func (h Hours) WeekCards(names [7]string) [7]DayCard {
+	order := []int{1, 2, 3, 4, 5, 6, 0}
+	var out [7]DayCard
+	for i, dow := range order {
+		d := DayCard{Dow: dow, Name: names[i], Ranges: len(h[dow])}
+		d.Closed = len(h[dow]) == 0
+		d.Text = DayText(h[dow])
+		out[i] = d
+	}
+	return out
+}
+
+// DayText renders one day's ranges as ready-to-print 24 h text: "" when
+// closed, "09:00–17:00" for a normal day, "09:00–13:00, 14:00–18:00" for a
+// legacy split shift. Exported because two surfaces print it — today's line
+// on the page label and the weekly cards — and they must not drift apart.
+// An always-open day closes at 24:00, which the form cannot enter; it is
+// written as 23:59 rather than "24:00" so the rendered text stays something a
+// browser and a guest both read the same way.
+func DayText(rs []Range) string {
+	if len(rs) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, r := range rs {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%s–%s", mins(r.OpenMin), closeClock(r.CloseMin))
+	}
+	return b.String()
+}
+
+// closeClock renders a closing minute, folding 24:00 to 23:59.
+func closeClock(m int) string {
+	if m >= 1440 {
+		m = 1439
+	}
+	return mins(m)
+}
+
+// DayForm is one row of the hours editor (DESIGN.md §9). Open/Close are the
+// single-shift contract the NEW editor renders (⚑ 12 Oct 2026): one interval,
+// one closed checkbox, and the weekday index in Go convention (Sunday-first)
+// so the handler never has to think about display order.
+//
+// Open1..Close2 are the DEPRECATED two-interval aliases, still populated so
+// the shipped editor template keeps rendering while frontend rebuilds it. They
+// are read-only from the template's point of view and are removed once the
+// new editor lands; nothing new should read them.
 type DayForm struct {
 	// Dow is time.Sunday..time.Saturday as int, matching Hours indexing.
 	Dow    int
 	Name   string // display name from the catalog (nominative, not accusative)
-	Open1  string // "09:00" or ""
-	Close1 string
-	Open2  string
-	Close2 string
+	Open   string // "09:00" or ""
+	Close  string
 	Closed bool
+	// Split is true when the stored day holds a legacy second interval. The
+	// single-shift form cannot show it, so the console warns instead of
+	// silently dropping it on save.
+	Split bool
+
+	Open1  string // deprecated: alias of Open
+	Close1 string // deprecated: alias of Close
+	Open2  string // deprecated: the second interval, if the day had one
+	Close2 string
 }
 
 // EditModel renders Hours as seven Mo-first rows for the editor. Days with
-// no ranges come back unchecked and un-closed — the editor, not this
-// function, decides what an untouched row means.
+// no ranges come back checked as Closed — the editor, not this function,
+// decides what an untouched row means. A stored day with a second interval
+// keeps BOTH intervals in the deprecated fields and raises Split, so an owner
+// is never shown a schedule that silently lost half of itself.
 func EditModel(h Hours, names [7]string) [7]DayForm {
 	// Display order is Mo-first; Go weekday index is Su-first.
 	order := []int{1, 2, 3, 4, 5, 6, 0}
@@ -388,12 +498,15 @@ func EditModel(h Hours, names [7]string) [7]DayForm {
 	for i, dow := range order {
 		d := DayForm{Dow: dow, Name: names[i]}
 		rs := h[dow]
-		if len(rs) == 0 {
+		switch {
+		case len(rs) == 0:
 			d.Closed = true
-		} else {
-			d.Open1, d.Close1 = mins(rs[0].OpenMin), mins(rs[0].CloseMin)
+		default:
+			d.Open, d.Close = mins(rs[0].OpenMin), closeClock(rs[0].CloseMin)
+			d.Split = len(rs) > 1
+			d.Open1, d.Close1 = d.Open, d.Close
 			if len(rs) > 1 {
-				d.Open2, d.Close2 = mins(rs[1].OpenMin), mins(rs[1].CloseMin)
+				d.Open2, d.Close2 = mins(rs[1].OpenMin), closeClock(rs[1].CloseMin)
 			}
 		}
 		out[i] = d
@@ -404,10 +517,18 @@ func EditModel(h Hours, names [7]string) [7]DayForm {
 func mins(m int) string { return fmt.Sprintf("%02d:%02d", m/60, m%60) }
 
 // ParseHoursForm reads the editor's fields back into Hours. Field names are
-// h<d>_open1, h<d>_close1, h<d>_open2, h<d>_close2, h<d>_closed with d = 0..6
-// Mo-first. copyMon copies Monday's intervals onto Tue–Fri before parsing
+// h<d>_open, h<d>_close, h<d>_closed with d = 0..6 Mo-first (⚑ single-shift:
+// one interval per day). copyMon copies Monday onto Tue–Fri before parsing
 // (the "copy Monday to weekdays" button). Errors name the day, because
 // "Bad hours: group 3" helps nobody behind a bar.
+//
+// The LEGACY two-interval names (h<d>_open1/close1/open2/close2) are still
+// accepted, because the shipped editor template posts them and that template
+// is not this role's to change: refusing them would 500 the console between
+// this contract landing and frontend's rebuild. A legacy second interval is
+// parsed and stored as-is — collapsing it here would silently delete an
+// owner's lunch break, the one thing this change must never do. The legacy
+// branch goes away with the old template.
 //
 // An untouched row (no times, unchecked) is an error naming the day —
 // "closed" is a checkbox, not an empty field, so ambiguity is refused rather
@@ -420,40 +541,55 @@ type HoursError struct {
 	Day     int    // Mo-first day index
 	DayName string // display name, already localized by the caller
 	Code    string // "clock" | "backwards" | "closed_times" | "untouched"
-	Second  bool   // the second (split-shift) interval
-	Open    string // for "backwards"
-	Close   string
+	// Second marks the second (split-shift) interval, so the catalog can say
+	// which one is wrong. Only the legacy form can set it.
+	Second bool
+	Open   string // for "backwards"
+	Close  string
 }
 
 func ParseHoursForm(get func(string) string, names [7]string, copyMon bool) (Hours, *HoursError) {
-	var noErr *HoursError
 	type iv struct{ open, close string }
-	rows := make([][2]iv, 7)
-	closed := make([]bool, 7)
+	type row struct {
+		ivs    [2]iv
+		closed bool
+	}
+	rows := make([]row, 7)
 	for d := 0; d < 7; d++ {
 		p := fmt.Sprintf("h%d_", d)
-		rows[d][0] = iv{strings.TrimSpace(get(p + "open1")), strings.TrimSpace(get(p + "close1"))}
-		rows[d][1] = iv{strings.TrimSpace(get(p + "open2")), strings.TrimSpace(get(p + "close2"))}
-		closed[d] = get(p+"closed") == "1"
+		// Single-shift names first; fall back to the legacy pair so the
+		// shipped template keeps saving.
+		o, c := get(p+"open"), get(p+"close")
+		if strings.TrimSpace(o) == "" && strings.TrimSpace(c) == "" {
+			o, c = get(p+"open1"), get(p+"close1")
+		}
+		rows[d] = row{
+			ivs: [2]iv{
+				{strings.TrimSpace(o), strings.TrimSpace(c)},
+				{strings.TrimSpace(get(p + "open2")), strings.TrimSpace(get(p + "close2"))},
+			},
+			closed: get(p+"closed") == "1",
+		}
 	}
 	if copyMon {
 		for d := 1; d < 5; d++ {
 			rows[d] = rows[0]
-			closed[d] = closed[0]
 		}
 	}
 	var h Hours
 	order := []int{1, 2, 3, 4, 5, 6, 0}
 	for i, dow := range order {
 		name := names[i]
-		if closed[i] {
-			if rows[i][0].open != "" || rows[i][0].close != "" || rows[i][1].open != "" || rows[i][1].close != "" {
-				return h, &HoursError{Day: i, DayName: name, Code: "closed_times"}
+		if rows[i].closed {
+			for _, v := range rows[i].ivs {
+				if v.open != "" || v.close != "" {
+					return h, &HoursError{Day: i, DayName: name, Code: "closed_times"}
+				}
 			}
 			continue
 		}
 		var rs []Range
-		for k, v := range rows[i] {
+		for k, v := range rows[i].ivs {
 			if v.open == "" && v.close == "" {
 				continue
 			}
@@ -472,10 +608,9 @@ func ParseHoursForm(get func(string) string, names [7]string, copyMon bool) (Hou
 		}
 		h[dow] = rs
 	}
-	return h, noErr
+	return h, nil
 }
 
-// parseClock parses "HH:MM" in 24 h time. 24:00 is not accepted here — the
 // editor writes closing times explicitly, and "24:00" in a time input is a
 // typo for "00:00" next day, which same-day ranges cannot express.
 func parseClock(s string) (int, bool) {

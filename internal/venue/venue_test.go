@@ -2,6 +2,7 @@ package venue
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -154,39 +155,51 @@ func TestParseHoursForm(t *testing.T) {
 	get := func(v map[string]string) func(string) string {
 		return func(k string) string { return v[k] }
 	}
-	// One interval Monday, closed Sunday, split shift Wednesday.
+	// One interval per day (⚑ single-shift), closed Sunday.
 	h, herr := ParseHoursForm(get(map[string]string{
-		"h0_open1": "09:00", "h0_close1": "17:00",
-		"h1_open1": "09:00", "h1_close1": "17:00",
-		"h2_open1": "09:00", "h2_close1": "12:00",
-		"h2_open2": "14:00", "h2_close2": "18:00",
-		"h3_open1": "09:00", "h3_close1": "17:00",
-		"h4_open1": "09:00", "h4_close1": "17:00",
-		"h5_open1": "10:00", "h5_close1": "14:00",
+		"h0_open": "09:00", "h0_close": "17:00",
+		"h1_open": "09:00", "h1_close": "17:00",
+		"h2_open": "09:00", "h2_close": "12:00",
+		"h3_open": "09:00", "h3_close": "17:00",
+		"h4_open": "09:00", "h4_close": "17:00",
+		"h5_open": "10:00", "h5_close": "14:00",
 		"h6_closed": "1",
 	}), names, false)
 	if herr != nil {
 		t.Fatalf("valid form: %+v", herr)
 	}
-	if len(h[1]) != 1 || h[1][0] != (Range{OpenMin: 540, CloseMin: 1020}) {
-		t.Fatalf("Monday = %+v", h[1])
+	for _, dow := range []int{1, 2, 4, 5} {
+		if len(h[dow]) != 1 || h[dow][0] != (Range{OpenMin: 540, CloseMin: 1020}) {
+			t.Fatalf("dow %d = %+v", dow, h[dow])
+		}
 	}
-	if len(h[3]) != 2 {
-		t.Fatalf("Wednesday split = %+v", h[3])
+	if len(h[6]) != 1 || h[6][0] != (Range{OpenMin: 600, CloseMin: 840}) {
+		t.Fatalf("saturday = %+v", h[6])
+	}
+	// Wednesday closes at noon in this schedule, not 17:00.
+	if len(h[3]) != 1 || h[3][0] != (Range{OpenMin: 540, CloseMin: 720}) {
+		t.Fatalf("wednesday = %+v", h[3])
 	}
 	if len(h[0]) != 0 {
 		t.Fatalf("Sunday should be closed: %+v", h[0])
 	}
+	// A schedule the single-shift editor wrote itself is never "multi".
+	if md := h.MultiDay(); len(md) != 0 {
+		t.Fatalf("MultiDay = %v, want none for a single-shift schedule", md)
+	}
+
 	// Round-trips through the editor model.
 	model := EditModel(h, names)
-	if model[0].Open1 != "09:00" || model[0].Close1 != "17:00" {
+	if model[0].Open != "09:00" || model[0].Close != "17:00" {
 		t.Fatalf("Monday model = %+v", model[0])
 	}
 	if !model[6].Closed {
 		t.Fatalf("Sunday model should be closed: %+v", model[6])
 	}
-	if model[2].Open2 != "14:00" {
-		t.Fatalf("Wednesday second shift = %+v", model[2])
+	for i, d := range model {
+		if d.Split {
+			t.Errorf("row %d flagged split on a single-shift schedule", i)
+		}
 	}
 
 	// Errors name the day. fill makes every row valid except the ones the
@@ -207,8 +220,8 @@ func TestParseHoursForm(t *testing.T) {
 			if touched[d] {
 				continue
 			}
-			f["h"+itoa(d)+"_open1"] = "09:00"
-			f["h"+itoa(d)+"_close1"] = "17:00"
+			f["h"+itoa(d)+"_open"] = "09:00"
+			f["h"+itoa(d)+"_close"] = "17:00"
 		}
 		return f
 	}
@@ -217,10 +230,10 @@ func TestParseHoursForm(t *testing.T) {
 		want   string // day name
 		code   string
 	}{
-		{map[string]string{"h0_close1": "17:00"}, "Mo", "clock"},                          // close without open
-		{map[string]string{"h1_open1": "17:00", "h1_close1": "09:00"}, "Tu", "backwards"}, // backwards
-		{map[string]string{"h2_open1": "25:00", "h2_close1": "26:00"}, "We", "clock"},     // not a clock
-		{map[string]string{"h0_closed": "1", "h0_open1": "09:00"}, "Mo", "closed_times"},  // closed + times
+		{map[string]string{"h0_close": "17:00"}, "Mo", "clock"},                         // close without open
+		{map[string]string{"h1_open": "17:00", "h1_close": "09:00"}, "Tu", "backwards"}, // backwards
+		{map[string]string{"h2_open": "25:00", "h2_close": "26:00"}, "We", "clock"},     // not a clock
+		{map[string]string{"h0_closed": "1", "h0_open": "09:00"}, "Mo", "closed_times"}, // closed + times
 	} {
 		if _, herr := ParseHoursForm(get(fill(tc.fields)), names, false); herr == nil || herr.DayName != tc.want || herr.Code != tc.code {
 			t.Errorf("fields %v: err %+v, want %s/%s", tc.fields, herr, tc.want, tc.code)
@@ -231,10 +244,48 @@ func TestParseHoursForm(t *testing.T) {
 		t.Errorf("empty form: err %+v, want untouched Mo", herr)
 	}
 
+	// A LEGACY two-interval form post (the shipped template) still parses and
+	// still stores both intervals: the lunch break is the owner's data and
+	// collapsing it here would delete it silently. The single-shift contract
+	// narrows what we WRITE from the new form, not what we can read.
+	stale := map[string]string{"h0_open1": "09:00", "h0_close1": "17:00"}
+	for d := 1; d < 7; d++ {
+		stale["h"+itoa(d)+"_closed"] = "1"
+	}
+	hLegacy, herr := ParseHoursForm(get(stale), names, false)
+	if herr != nil {
+		t.Fatalf("legacy post must still parse: %+v", herr)
+	}
+	if len(hLegacy[1]) != 1 || hLegacy[1][0] != (Range{OpenMin: 540, CloseMin: 1020}) {
+		t.Errorf("legacy Monday = %+v", hLegacy[1])
+	}
+	// Legacy SECOND interval survives the round trip, both halves.
+	legacySplit := map[string]string{"h0_open1": "09:00", "h0_close1": "13:00",
+		"h0_open2": "14:00", "h0_close2": "18:00"}
+	for d := 1; d < 7; d++ {
+		legacySplit["h"+itoa(d)+"_closed"] = "1"
+	}
+	hSplit, herr := ParseHoursForm(get(legacySplit), names, false)
+	if herr != nil {
+		t.Fatalf("legacy split post: %+v", herr)
+	}
+	if len(hSplit[1]) != 2 {
+		t.Errorf("legacy split lost its second interval: %+v", hSplit[1])
+	}
+	// An error on the second interval says so, so the catalog can name it.
+	badSecond := map[string]string{"h0_open1": "09:00", "h0_close1": "17:00",
+		"h0_open2": "18:00", "h0_close2": "17:00"}
+	for d := 1; d < 7; d++ {
+		badSecond["h"+itoa(d)+"_closed"] = "1"
+	}
+	if _, herr := ParseHoursForm(get(badSecond), names, false); herr == nil || !herr.Second || herr.Code != "backwards" {
+		t.Errorf("bad second interval: err %+v, want backwards with Second", herr)
+	}
+
 	// Copy-Monday spreads Monday over Tue–Fri, leaving Sat/Sun alone.
 	h2, herr := ParseHoursForm(get(map[string]string{
-		"h0_open1": "08:00", "h0_close1": "20:00",
-		"h5_open1": "10:00", "h5_close1": "14:00",
+		"h0_open": "08:00", "h0_close": "20:00",
+		"h5_open": "10:00", "h5_close": "14:00",
 		"h6_closed": "1",
 	}), names, true)
 	if herr != nil {
@@ -247,6 +298,127 @@ func TestParseHoursForm(t *testing.T) {
 	}
 	if len(h2[6]) != 1 {
 		t.Errorf("Saturday changed by copy-monday: %+v", h2[6])
+	}
+}
+
+// A stored two-interval row (written before ⚑ single-shift) still parses,
+// still classifies, and is REPORTED rather than silently collapsed: stored
+// data is not migrated, only the write path narrows.
+func TestLegacySplitShiftSurvivesRead(t *testing.T) {
+	h, err := ParseSpec("Mo 09:00-13:00;Mo 14:00-18:00;Tu 09:00-17:00")
+	if err != nil {
+		t.Fatalf("legacy spec must still parse: %v", err)
+	}
+	if len(h[1]) != 2 {
+		t.Fatalf("Monday should hold two ranges: %+v", h[1])
+	}
+	if md := h.MultiDay(); len(md) != 1 || md[0] != 0 {
+		t.Errorf("MultiDay = %v, want [0] (Monday, Mo-first)", md)
+	}
+	// Classification is unchanged: the lunch break is still closed.
+	lunch := time.Date(2026, 10, 5, 13, 30, 0, 0, time.UTC) // Monday 13:30
+	if h.OpenAt(lunch) {
+		t.Error("13:30 must fall in the lunch break")
+	}
+	if !h.OpenAt(time.Date(2026, 10, 5, 9, 30, 0, 0, time.UTC)) {
+		t.Error("09:30 should be open")
+	}
+	// Both intervals still print, so the page tells the truth.
+	if got, want := DayText(h[1]), "09:00–13:00, 14:00–18:00"; got != want {
+		t.Errorf("DayText = %q, want %q", got, want)
+	}
+	// The editor shows the first interval and flags the day, so the owner is
+	// never shown a schedule that quietly lost half of itself.
+	names := [7]string{"Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"}
+	model := EditModel(h, names)
+	if !model[0].Split || model[0].Open != "09:00" || model[0].Close != "13:00" {
+		t.Errorf("Monday model = %+v, want Split with 09:00–13:00", model[0])
+	}
+	if model[1].Split {
+		t.Errorf("Tuesday should not be flagged: %+v", model[1])
+	}
+}
+
+// WeekCards is what the public page renders (7 small day cards, Mo-first).
+func TestWeekCards(t *testing.T) {
+	names := [7]string{"Pon", "Uto", "Sri", "Čet", "Pet", "Sub", "Ned"}
+	h, err := ParseSpec("Mo-Fr 09:00-17:00;Sa 10:00-14:00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cards := h.WeekCards(names)
+	// Mo-first ordering is the contract every locale and surface uses.
+	for i, want := range names {
+		if cards[i].Name != want {
+			t.Errorf("card %d name = %q, want %q", i, cards[i].Name, want)
+		}
+	}
+	if cards[0].Text != "09:00–17:00" || cards[0].Closed {
+		t.Errorf("Monday card = %+v", cards[0])
+	}
+	if cards[5].Text != "10:00–14:00" || cards[5].Ranges != 1 {
+		t.Errorf("Saturday card = %+v", cards[5])
+	}
+	if !cards[6].Closed || cards[6].Text != "" || cards[6].Ranges != 0 {
+		t.Errorf("Sunday should be closed and empty: %+v", cards[6])
+	}
+	// Dow stays Go-convention (Sunday-first) so the caller can index Hours.
+	if cards[0].Dow != 1 || cards[6].Dow != 0 {
+		t.Errorf("Dow convention broken: Monday=%d Sunday=%d", cards[0].Dow, cards[6].Dow)
+	}
+	// Unconfigured hours: every day closed, nothing invented.
+	var empty Hours
+	for i, c := range empty.WeekCards(names) {
+		if !c.Closed || c.Text != "" {
+			t.Errorf("unconfigured day %d = %+v, want closed", i, c)
+		}
+	}
+}
+
+// An always-open day (24:00) prints as 23:59: "24:00" is not a time a form or
+// a browser will agree on, and the schedule must not change meaning by being
+// displayed differently.
+func TestDayTextAlwaysOpen(t *testing.T) {
+	h, err := ParseSpec("Mo-Su 00:00-24:00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := DayText(h[1]), "00:00–23:59"; got != want {
+		t.Errorf("DayText = %q, want %q", got, want)
+	}
+}
+
+// Every clock time Go renders is 24 h, zero-padded, Europe/Sarajevo — the
+// house format (item: 24h). DayText is the one formatter both the page label
+// and the weekly cards use, so pinning it here pins every surface they feed.
+// i18n.Catalog.Time ("15:04") is the other Go-side renderer and is covered by
+// its own package.
+func TestDayTextIs24Hour(t *testing.T) {
+	for _, tc := range []struct {
+		rs   []Range
+		want string
+	}{
+		{[]Range{{0, 65}}, "00:00–01:05"},                               // after midnight, single digits
+		{[]Range{{540, 1020}}, "09:00–17:00"},                           // the normal case
+		{[]Range{{0, 1439}}, "00:00–23:59"},                             // all day
+		{[]Range{{720, 780}, {1080, 1200}}, "12:00–13:00, 18:00–20:00"}, // legacy split
+	} {
+		got := DayText(tc.rs)
+		if got != tc.want {
+			t.Errorf("DayText(%v) = %q, want %q", tc.rs, got, tc.want)
+		}
+		// No 12-hour markers and no AM/PM ever reach a guest.
+		if strings.ContainsAny(got, "apmAPM") {
+			t.Errorf("DayText(%v) = %q contains a 12-hour marker", tc.rs, got)
+		}
+		// Every rendered time is exactly HH:MM.
+		for _, part := range strings.FieldsFunc(got, func(r rune) bool {
+			return r == '–' || r == ',' || r == ' '
+		}) {
+			if len(part) != 5 || part[2] != ':' {
+				t.Errorf("DayText(%v) = %q: %q is not HH:MM", tc.rs, got, part)
+			}
+		}
 	}
 }
 

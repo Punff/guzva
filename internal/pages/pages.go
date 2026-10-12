@@ -365,20 +365,11 @@ func zoneLabel(at time.Time, loc *time.Location) string {
 }
 
 // hoursToday formats today's ranges in venue-local time, "" when unset.
+// venue.DayText is the single place that knows how a day reads, so the page
+// label and the seven weekly cards can never disagree.
 func hoursToday(cat *i18n.Catalog, h venue.Hours, t time.Time) string {
-	rs := h[int(t.Weekday())]
-	if len(rs) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for i, r := range rs {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		fmt.Fprintf(&b, "%02d:%02d–%02d:%02d",
-			r.OpenMin/60, r.OpenMin%60, r.CloseMin/60, r.CloseMin%60)
-	}
-	return b.String()
+	_ = cat
+	return venue.DayText(h[int(t.Weekday())])
 }
 
 // copyAtomic copies src over dst via a same-directory temp file + rename.
