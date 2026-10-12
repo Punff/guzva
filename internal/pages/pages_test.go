@@ -2,6 +2,7 @@ package pages
 
 import (
 	"context"
+	"html"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -42,6 +43,13 @@ func newFixture(t *testing.T) *fixture {
 	})
 	if err != nil {
 		t.Fatalf("create venue: %v", err)
+	}
+	// CreateVenue cannot carry the public info card fields (it writes slug,
+	// name, tz, style and nothing else), so the phone goes in through the
+	// same setter the admin and owner panels use. Stored as typed; the page
+	// normalizes it for the tel: href (telHref).
+	if err := st.UpdateVenue(ctx, vid, "Jadro", "poster", "Europe/Sarajevo", "", "+387 61 234 567"); err != nil {
+		t.Fatalf("update venue: %v", err)
 	}
 	h, err := venue.ParseSpec("Mo-Fr 09:00-17:00")
 	if err != nil {
@@ -133,12 +141,12 @@ func TestOnFrameWritesOnlyPublicFiles(t *testing.T) {
 		// armed at parse time and reloaded the document every 30s even with
 		// the swap running (measured: 3 full navigations in 95s).
 		`<noscript><meta http-equiv="refresh" content="60">`,
-		"16:00",              // venue-local, absolute (§6.4)
-		"danas",              // day word, localised
-		"CEST",               // venue timezone, not the viewer's
-		`src="latest.jpg?v=`, // cache-busted by frame id (collision-proof)
-		"09:00–17:00",        // today (Friday) hours, venue-local
-		"Radno vrijeme",
+		"16:00",                           // venue-local, absolute (§6.4)
+		"danas",                           // day word, localised
+		"CEST",                            // venue timezone, not the viewer's
+		`src="latest.jpg?v=`,              // cache-busted by frame id (collision-proof)
+		"09:00–17:00",                     // today (Friday) hours, in the info card
+		"Otvoreno do",                     // the card's open-state headline
 		"namjerno grubo stilizirana",      // privacy footer, Croatian
 		`aspect-ratio:`,                   // box reserved before the JPEG loads
 		`alt="Stilizirana slika prostora`, // alt text says what it is
@@ -151,6 +159,13 @@ func TestOnFrameWritesOnlyPublicFiles(t *testing.T) {
 		if !strings.Contains(idx, want) {
 			t.Errorf("index.html missing %q", want)
 		}
+	}
+	// The tel: href is asserted on what the BROWSER resolves, not the bytes:
+	// html/template escapes "+" in a URL attribute, so the wire carries
+	// href="tel:&#43;38761234567". The point of the phone is that it is stored
+	// as typed and normalized to digits for dialling.
+	if got := html.UnescapeString(idx); !strings.Contains(got, `href="tel:+38761234567"`) {
+		t.Errorf("index.html missing %q (after unescaping)", `href="tel:+38761234567"`)
 	}
 	// §3.2: a state is a SHAPE as well as a colour and a sentence. The shape
 	// is what carries the state without colour, so it must be in the markup.

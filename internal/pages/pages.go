@@ -177,13 +177,21 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	open := hours.ClassifyOpen(localNow)
 
 	// The state key is everything the page shows. The per-frame clock is NOT
-	// part of it: the stamp burned into the picture carries the time (⚑2), so
-	// index.html is rewritten only on state flips and settings edits — not
-	// per frame. Style/TZ/lang ARE part of it, because a settings edit must
-	// reach the page on the next sched tick even though no frame arrived.
-	// The still FILENAME is part of it too (W2/B8): on a jpg→png row-kind
-	// flip the page must be rewritten once, or the poller keeps fetching a
-	// just-deleted latest.jpg until the next state flip.
+	// part of it: the poller re-derives the label clock per frame from the
+	// still's Last-Modified, which is the frame's received_at (§1: server
+	// received_at is canonical), so index.html is rewritten only on state
+	// flips and settings edits — not per frame. Style/TZ/lang ARE part of it,
+	// because a settings edit must reach the page on the next sched tick even
+	// though no frame arrived. The still FILENAME is part of it too (W2/B8):
+	// on a jpg→png row-kind flip the page must be rewritten once, or the
+	// poller keeps fetching a just-deleted latest.jpg until the next flip.
+	//
+	// Known limit (12 Oct 2026, stamp removal 25bce48, ⚑2): the burned-in
+	// HH:MM stamp used to be the per-frame time carrier for the no-JS
+	// <meta refresh> fallback. That path revalidates index.html, which is
+	// only rewritten on a state flip, so without JS the rendered clock
+	// advances at the next flip rather than per frame. The still itself
+	// always updates.
 	cat0 := i18n.For(i18n.Normalize(v.Lang))
 	stillFile := "latest.png"
 	if latest != nil && latest.Status == "ok" && latest.Path != "" && !strings.HasSuffix(latest.Path, ".png") {
