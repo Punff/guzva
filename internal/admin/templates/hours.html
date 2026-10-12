@@ -1,19 +1,23 @@
-{{/* Hours editor v2 (design-pass2 §2): seven day-rows, each with three
-      zones — the day + its closed toggle, then two labeled shift fieldsets.
-      Field names are the parser's contract (h<i>_open1/close1/open2/close2/
-      closed, i = 0..6 Mo-first) and are UNCHANGED: venue.ParseHoursForm and
-      every error test keep working. Every input carries a real label —
-      the audit's a11y fix, not a cosmetic. Inputs stay submitted even on a
-      closed day so the server's closed_times validation stays reachable.
+{{/* Hours editor (one-shift contract, venue.SingleShift): seven day-rows,
+      each one labeled interval + closed toggle. Field names are the new
+      contract (h<i>_open/close/closed, i = 0..6 Mo-first); the parser still
+      accepts the legacy pair, but nothing here posts it. Every input stays
+      enabled — even on a closed day — so the server's closed_times
+      validation stays reachable: no disabled-input submission bug, and the
+      loop index (not the weekday) names the fields, so no out-of-bounds
+      row can be addressed. Every input carries a real label.
+      A stored legacy second interval raises $d.Split: the form cannot show
+      it, so it warns (split text carries one %s for the kept times) instead
+      of silently dropping it on save.
 
       Call with a dict: "days" ([7]venue.DayForm, Mo-first), "closed"
-      (closed-checkbox label), "copy" (copy-button label), "first" /
-      "second" / "optional" (shift legends), "openL" / "closeL" (the two
-      time-input labels). */}}
+      (closed-checkbox label), "copy" (copy-button label), "openL" /
+      "closeL" (time-input labels), "split" (second-interval warning with
+      one %s; "" skips the warning). */}}
 {{define "hours-editor.html"}}
 <div class="grid gap-2">
   {{range $i, $d := .days}}
-  <div class="grid gap-2 border-2 border-ink bg-paper p-3 sm:grid-cols-[8rem_1fr_1fr] sm:items-start">
+  <div class="grid gap-2 border-2 border-ink bg-paper p-3 sm:grid-cols-[8rem_1fr] sm:items-start">
     <div class="flex items-center justify-between sm:block">
       <span class="font-semibold">{{$d.Name}}</span>
       <label class="text-sm text-muted flex items-center gap-2 sm:mt-2 min-h-11">
@@ -21,32 +25,17 @@
         <span class="lbl">{{$.closed}}</span>
       </label>
     </div>
-    <fieldset class="border-2 border-ink bg-paper-2 p-2 m-0">
-      <legend class="lbl px-1">{{$.first}}</legend>
-      <div class="grid grid-cols-2 gap-2">
-        <div class="fieldset">
-          <label class="sr-only" for="h{{$i}}_open1">{{$d.Name}} — {{$.openL}}</label>
-          <input class="inp tnum" type="time" id="h{{$i}}_open1" name="h{{$i}}_open1" value="{{$d.Open1}}">
-        </div>
-        <div class="fieldset">
-          <label class="sr-only" for="h{{$i}}_close1">{{$d.Name}} — {{$.closeL}}</label>
-          <input class="inp tnum" type="time" id="h{{$i}}_close1" name="h{{$i}}_close1" value="{{$d.Close1}}">
-        </div>
+    <div class="grid grid-cols-2 gap-2">
+      <div class="fieldset">
+        <label class="sr-only" for="h{{$i}}_open">{{$d.Name}} — {{$.openL}}</label>
+        <input class="inp tnum" type="time" id="h{{$i}}_open" name="h{{$i}}_open" value="{{$d.Open}}">
       </div>
-    </fieldset>
-    <fieldset class="border-2 border-ink bg-paper-2 p-2 m-0">
-      <legend class="lbl px-1">{{$.second}} <span class="normal-case tracking-normal text-muted">({{$.optional}})</span></legend>
-      <div class="grid grid-cols-2 gap-2">
-        <div class="fieldset">
-          <label class="sr-only" for="h{{$i}}_open2">{{$d.Name}} — {{$.openL}}, {{$.second}}</label>
-          <input class="inp tnum" type="time" id="h{{$i}}_open2" name="h{{$i}}_open2" value="{{$d.Open2}}">
-        </div>
-        <div class="fieldset">
-          <label class="sr-only" for="h{{$i}}_close2">{{$d.Name}} — {{$.closeL}}, {{$.second}}</label>
-          <input class="inp tnum" type="time" id="h{{$i}}_close2" name="h{{$i}}_close2" value="{{$d.Close2}}">
-        </div>
+      <div class="fieldset">
+        <label class="sr-only" for="h{{$i}}_close">{{$d.Name}} — {{$.closeL}}</label>
+        <input class="inp tnum" type="time" id="h{{$i}}_close" name="h{{$i}}_close" value="{{$d.Close}}">
       </div>
-    </fieldset>
+    </div>
+    {{if and $d.Split $.split}}<p class="text-xs text-late sm:col-span-2" role="note">{{printf $.split (print $d.Open2 "–" $d.Close2)}}</p>{{end}}
   </div>
   {{end}}
 </div>

@@ -51,9 +51,14 @@
       </div>
     </div>
     <div class="fieldset">
+      <label class="lbl" for="v-loc">Location (public)</label>
+      <input class="inp" id="v-loc" name="location" value="{{.Venue.Location}}" maxlength="160"
+             placeholder="One line: street, landmark">
+    </div>
+    <div class="fieldset">
       <span class="lbl mb-2">Hours</span>
       {{template "hours-editor.html" dict "days" .Days "closed" "closed" "copy" "Copy Monday to weekdays"
-        "first" "First shift" "second" "Second shift" "optional" "optional" "openL" "Opens" "closeL" "Closes"}}
+        "openL" "Opens" "closeL" "Closes" "split" "Second interval kept on the page (%s) — saving here keeps only the first."}}
     </div>
     <button class="btn btn--primary" type="submit">Save details</button>
   </form>

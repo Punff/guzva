@@ -55,8 +55,8 @@
     <div class="fieldset">
       <span class="lbl mb-2">{{.Cat.Get "hours.title"}}</span>
       {{template "hours-editor.html" dict "days" .Days "closed" (.Cat.Get "hours.closed") "copy" (.Cat.Get "hours.copy")
-        "first" (.Cat.Get "hours.first") "second" (.Cat.Get "hours.second") "optional" (.Cat.Get "hours.optional")
-        "openL" (.Cat.Get "hours.open") "closeL" (.Cat.Get "hours.close")}}
+        "openL" (.Cat.Get "hours.open") "closeL" (.Cat.Get "hours.close")
+        "split" "Stranica i dalje poštuje drugi interval (%s) — spremanje zadržava samo prvi."}}
     </div>
     <button class="btn btn--primary" type="submit">{{.Cat.Get "owner.save"}}</button>
   </form>
