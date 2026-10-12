@@ -7,7 +7,13 @@ each other instead of reading as one thing. Nothing here changes a token or
 a component — it changes how the components compose, plus the two flows that
 were never really designed (hours, calibration).
 
-Status: implementing. Each section lists its acceptance checks.
+Status: **shipped as v0.3.1** (12 Oct 2026) — all six sections implemented,
+tested, deployed to the bench and verified live. Section 2's "greys its
+shift inputs" idea was dropped during implementation: disabled inputs are
+not submitted, which would have made the server's closed_times validation
+unreachable — the labeled fieldsets are the fix that mattered. The
+component layer moved from tokens.css into the app.css entry while
+trimming the public budget (§1 landed at 92% of the gate).
 
 ---
 

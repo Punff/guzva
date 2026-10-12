@@ -327,6 +327,14 @@ biometrics ever (D9). Research items, sequenced:
 and rotate the burned secrets; create the remote **after** the history
 scrub; W7 and W8 below.
 
+**Closed 2026-10-12 (design pass 2, shipped as v0.3.1):** the W7 surface
+rework landed early — public page composed as print+label (design-pass2 §1),
+hours editor labeled (§2), print & privacy setup with a live mask preview
+and tone ramp (§3 + the first W8 deliverable), device page regrouped (§4),
+venue description/phone via migration v6 (§5), fleet attention sort (§6).
+Remaining W7/W8: QR poster, paused state, dark toggle, server-side
+calibration candidates, real-frame threshold tuning (docs/design-pass2.md).
+
 **Closed 2026-10-12 (the ops session):** v0.3.0 deployed and healthchecked;
 the device token rotated end-to-end (old git-history token revoked and
 proven 401 on replay; bench device row is now `bd2a58b`); W4 verified on

@@ -460,3 +460,30 @@ the first push to any remote (no remote exists yet).
 `ACTION:` `pio device monitor` is broken by a duplicate PIO Core
 (6.1.19 vs 6.2.0) — upload works, monitor crashes; clean up the cores.
 Serial reads via pyserial worked for verification in the meantime.
+
+## 2026-10-12 — design pass 2 live (v0.3.1): public page, hours editor, print & privacy setup, device page
+
+Deployed `v0.3.1`. The migration v6 (venue description + phone) ran on the
+live box at boot: user_version 6, reopen clean. The bench page now composes
+as the print + its gallery label (state chip + clock in one bar, caption
+below), which is the whole point of the pass: the facts about the picture
+read as one object instead of four scattered elements.
+
+- Public page: label bar live (`chip-fresh` + `#hl` in a figcaption), the
+  old floating 56 px clock retired. Description/phone empty on bench — the
+  section renders nothing, exactly the D5-honest behavior.
+- Hours editor: every time input labeled, shifts as titled fieldsets
+  (1./2. smjena, neobavezno), same parser contract.
+- Print & privacy setup: preview pane + calib.js (3.7 KB, same-origin,
+  CSP-clean) — masks draw over the current print live; tone ramp shows the
+  threshold mapping. Server validation untouched.
+- Device page: Health / Capture & upload / Diagnostics with per-group
+  explainers; fleet sorts needs-attention first.
+- CSS: console form/table components moved from tokens.css to the app
+  entry — the public sheet was at 98% of its gz budget carrying .card/.inp/
+  .tbl it never used; now 92% with the new composition in.
+
+Verified live: figcaption + chip-fresh + clock on /bench/, user_version 6,
+calib.js 200. `ACTION:` eyeball the three surfaces in a real browser (the
+rendered-template tests cover content, not taste) — chip contrast in the
+label bar at 360 px is the one thing to squint at.
