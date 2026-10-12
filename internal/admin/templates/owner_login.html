@@ -2,26 +2,26 @@
 <html lang="hr">
 <head>
 {{template "shell-head.html" .}}
-<title>guzva — prijava</title>
+<title>guzva — {{.Cat.Get "owner.login.title"}}</title>
 </head>
 <body class="bg-paper text-ink font-sans">
 <main class="min-h-dvh grid place-items-center p-4">
   <div class="w-full max-w-sm">
     <h1 class="text-2xl font-bold tracking-tight mb-1">guzva</h1>
-    <p class="text-sm text-muted mb-5">Prijava vlasnika objekta.</p>
+    <p class="text-sm text-muted mb-5">{{.Cat.Get "owner.login.tag"}}</p>
     {{if .Err}}<div class="card text-sm mb-4" role="alert">{{.Err}}</div>{{end}}
     <form method="post" action="/owner/login" class="border-2 border-ink bg-paper shadow-step p-4 grid gap-3">
       <div class="fieldset">
-      <label class="lbl" for="slug">Objekat</label>
+      <label class="lbl" for="slug">{{.Cat.Get "owner.login.venue"}}</label>
         <input class="inp" id="slug" name="slug" placeholder="jadro" autofocus autocomplete="username">
       </div>
       <div class="fieldset">
-      <label class="lbl" for="password">Lozinka</label>
+      <label class="lbl" for="password">{{.Cat.Get "owner.login.password"}}</label>
         <input class="inp" type="password" id="password" name="password" autocomplete="current-password">
       </div>
-      <button class="btn btn--primary" type="submit">Prijava</button>
+      <button class="btn btn--primary" type="submit">{{.Cat.Get "owner.login.submit"}}</button>
     </form>
-    <p class="text-xs text-muted mt-4">Pristup izdaje administrator. Tokeni uređaja i postavke kamere ostaju kod njega — ovaj panel pokriva podatke o objektu i stanje.</p>
+    <p class="text-xs text-muted mt-4">{{.Cat.Get "owner.login.note"}}</p>
   </div>
 </main>
 </body>
