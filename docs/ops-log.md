@@ -572,3 +572,18 @@ label bar at 360 px is the one thing to squint at.
   between state flips (ACTION open, §6.4 question).
 - NOT done: push (no remote; scrub still mandatory first), docs-i18n
   truth sweep (rides the next release).
+
+## 2026-10-12 — orchestrator: user issue round planned + delegated (post-v0.4.0)
+
+- Admin: (1) one-shift hours editor (2nd shift removed; out-of-bounds
+  fixed) — backend contract + compat first, frontend editor after;
+  (2) admin EN copy polish (short/tasteful); (3) 24h everywhere.
+- Public: (4) poster defaults less destructive (backend evaluates bias/
+  thresholds with goldens, small safe change); (5) drop redundant
+  `danas · CEST`; (6) 7 small weekly day-cards, closed grayed out
+  (backend data funcs → frontend cards); (7) light theme default;
+  (8) telephone own section (location only if a field exists — backend
+  confirms, no invented storage).
+- Order: backend-go Phase A contracts → frontend-tisak Phase B UI →
+  docs-i18n copy/review → tag/deploy. Firmware stands down (nothing
+  device-side). Devops-qa keeps the demo warm.
