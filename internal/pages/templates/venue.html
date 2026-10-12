@@ -113,17 +113,32 @@
   <p class="text-sm text-muted border-l-2 border-ink pl-3">{{.StateDetail}}</p>
   {{end}}
 
-  {{/* The info card (design-pass2 v3): open state + hours + about + phone
-         in ONE contained block with real mass — the reviewer's finding was
-         "image + footnotes"; this is the placard that anchors the page
-         under the print. Rows render only when they have content. */}}
-  {{if or .OpenText .Description .Phone}}
+  {{/* The info card: open state + hours + the week's seven day-cards +
+       about + location in ONE contained block. Rows render only when
+       they have content. Contact (phone) stands alone below: a phone
+       number is an action, not a footnote of the about text. */}}
+  {{if or .OpenText .Description .Location}}
   <section class="border-2 border-ink bg-paper-2 p-4 flex flex-col gap-2">
     {{if .OpenText}}
     <p class="text-lg font-bold tracking-tight leading-snug">{{.OpenText}}</p>
     {{if .HoursToday}}<p class="text-sm tnum text-muted -mt-1">{{.HoursToday}}</p>{{end}}
     {{end}}
+    {{/* The week, Mo-first, directly under the current day: closed days
+         gray out with a dash, open days print their DayText hours. Text
+         comes ready-print from WeekCards, so the cards and the headline
+         above can never drift apart. */}}
+    {{if .HoursToday}}
+    <ul class="grid gap-1 border-t-2 border-ink mt-1 pt-2">
+      {{range $c := .Week}}
+      <li class="flex items-baseline justify-between gap-2 text-sm{{if $c.Closed}} text-muted{{end}}">
+        <span>{{$c.Name}}</span>
+        {{if $c.Closed}}<span aria-hidden="true">—</span>{{else}}<span class="tnum">{{$c.Text}}</span>{{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
     {{if .Description}}<p class="text-base">{{.Description}}</p>{{end}}
+    {{if .Location}}<p class="text-base">{{.Location}}</p>{{end}}
   </section>
   {{end}}
   {{if .Phone}}
