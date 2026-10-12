@@ -6,8 +6,10 @@
   file:
     D5  the web root holds exactly index.html + latest.png per venue, so the
         stylesheet and the script are INLINED here and never a third file;
-    ⚑2 the still carries its own time (render stage 7), so this page is
-        rewritten only on state flips and settings edits — not per frame.
+    ⚑2 the still carries no per-frame time since the stamp removal
+        (poster@3): the label clock is re-derived per frame from the
+        still's Last-Modified, so this page is rewritten only on state
+        flips and settings edits — not per frame.
   The poller's contract (element ids, data-* attributes) is stable; it is
   NOT part of the page's design.
 -->

@@ -25,12 +25,12 @@
     <div><div class="lbl">Signal</div><div class="tnum{{if .Weak}} text-accent{{end}}"{{if .Weak}} title="Below the −65 dBm install gate"{{end}}>{{if not .Seen}}—{{else}}{{.Device.RSSI}} dBm{{end}}</div></div>
     <div><div class="lbl">Config</div><div class="tnum{{if .Amber}} text-late{{end}}"{{if .Amber}} title="device has not applied the latest config"{{end}}>{{.Device.CfgVer}} / {{.Device.CfgAppliedVer}}</div></div>
   </div>
-  <p class="text-xs text-muted mt-3">Config shows <span class="tnum">desired / applied</span>: the board confirms new config on its next POST — the applied number stays amber until it does.</p>
+  <p class="text-xs text-muted mt-3">Desired / applied: the board confirms new config on its next POST; applied stays amber until then.</p>
 </section>
 
 <section class="card card--raised mb-5">
   <h2 class="text-lg font-bold mb-3">Capture & upload</h2>
-  <p class="text-sm text-muted mb-4">Ranges come from the same table as <code class="font-mono text-ink">guzva cfg -set</code>. Out-of-range values never reach a field unit. Saving bumps <code class="font-mono text-ink">ver</code>; the board fetches it on its next POST — no reflash for config, ever.</p>
+  <p class="text-sm text-muted mb-4">Ranges match <code class="font-mono text-ink">guzva cfg -set</code>; out-of-range values never reach the board. Saving bumps <code class="font-mono text-ink">ver</code>, fetched on the next POST.</p>
 
   <form method="post" action="/admin/devices/{{.Device.ID}}/cfg">
     <h3 class="lbl mb-2 mt-1">Cadence</h3>
@@ -75,7 +75,7 @@
 
 <section class="card card--raised">
   <h2 class="text-lg font-bold mb-1">Diagnostics since boot</h2>
-  <p class="text-xs text-muted mb-3">Counters reset when the board reboots — read them as "since the last restart", not "since forever". Rising <span class="tnum">power dips</span> means the supply, not the code; rising <span class="tnum">wifi</span> with a weak signal means the install gate (−65 dBm) was not met at the mounting point.</p>
+  <p class="text-xs text-muted mb-3">Counters reset on reboot. Rising <span class="tnum">power dips</span> means the supply, not the code; rising <span class="tnum">wifi</span> on a weak signal means the install gate (−65 dBm) was missed.</p>
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
     <div><div class="lbl">WiFi joins failed</div><div class="tnum text-lg font-bold">{{.Device.Counters.JoinFail}}</div></div>
     <div><div class="lbl">Uploads failed</div><div class="tnum text-lg font-bold">{{.Device.Counters.PostFail}}</div></div>

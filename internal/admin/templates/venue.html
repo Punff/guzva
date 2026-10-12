@@ -33,8 +33,8 @@
       <div class="fieldset">
       <label class="lbl" for="v-style">Picture style</label>
         <select class="inp" id="v-style" name="style">
-          <option value="poster"{{if eq .Venue.Style "poster"}} selected{{end}}>Tisak (4 tones)</option>
-          <option value="mono"{{if eq .Venue.Style "mono"}} selected{{end}}>Šablon (2 tones)</option>
+          <option value="poster"{{if eq .Venue.Style "poster"}} selected{{end}}>Tisak (print, 4 tones)</option>
+          <option value="mono"{{if eq .Venue.Style "mono"}} selected{{end}}>Šablon (stencil, 2 tones)</option>
         </select>
       </div>
     </div>
@@ -78,10 +78,10 @@
 <section class="card card--raised">
   <h2 class="text-lg font-bold mb-1">Print & privacy setup</h2>
   <p class="text-sm text-muted mb-4">
-    <strong class="text-ink">Tones</strong> — thresholds and bias decide how room light maps onto the print's four tones (invert for dark rooms, bright doors).
-    <strong class="text-ink">Masks</strong> — rectangles that are always rendered black: draw them where people sit too close (static geometry only, never detection).
-    <strong class="text-ink">Grid</strong> — the picture is 160×120 cells; mask coordinates are cell numbers, not pixels.
-    Takes effect on the next frame. <a class="underline" href="/{{.Venue.Slug}}/latest.png" target="_blank" rel="noreferrer">Open the current print ↗</a>
+    <strong class="text-ink">Tones</strong> — thresholds and bias map room light onto the print's four tones.
+    <strong class="text-ink">Masks</strong> — rectangles always rendered black, where people sit too close (static geometry, never detection).
+    <strong class="text-ink">Grid</strong> — 160×120 cells; mask coordinates are cell numbers, not pixels.
+    Applies to the next frame. <a class="underline" href="/{{.Venue.Slug}}/latest.png" target="_blank" rel="noreferrer">Open the current print ↗</a>
   </p>
 
   <div class="grid gap-4 lg:grid-cols-2">
@@ -127,7 +127,7 @@
       </div>
     </form>
   </div>
-  <p class="text-xs text-muted mt-3">Clearing every field restores defaults. A second empty mask row appears after saving, up to four. Candidates for a new install: <code class="font-mono text-ink">tools/styleproof</code> renders a contact sheet locally.</p>
+  <p class="text-xs text-muted mt-3">Clearing every field restores defaults. Empty rows appear as you save, up to four. For a new install, <code class="font-mono text-ink">tools/styleproof</code> renders a contact sheet locally.</p>
 </section>
 
 {{template "shell-foot.html" .}}
