@@ -1,9 +1,9 @@
-// Tisak pipeline (DESIGN.md §5.2, poster@1 / mono@1).
+// Tisak pipeline (DESIGN.md §5.2, poster@3 / mono@3).
 //
 // All stages are pure, integer-only, stdlib-only. Input: a decoded frame;
 // output: a 160×120 paletted PNG. Same inputs → same bytes, always: no clock,
-// no randomness, no globals. (The venue-local HH:MM for the stamp and the
-// venue calib arrive as arguments — see Calib.)
+// no randomness, no globals. (The venue calib arrives as an argument — see
+// Calib.)
 //
 // Stage order matters for privacy, not just looks:
 //  1. luminance only — colour (skin, hair, clothes, branding) is discarded
@@ -19,10 +19,13 @@
 //     brightness between frames and make an empty room and a full one render
 //     the same tone mix.
 //  6. 3×3 mode filter — speckle where a smooth area sits on a threshold.
-//  7. HH:MM stamp, burned into the bottom-left on its own plate — a
-//     screenshot shared in a chat dates itself (§5.6).
-//  8. paletted PNG, fixed palette, best compression — tiny, lossless, no
+//  7. paletted PNG, fixed palette, best compression — tiny, lossless, no
 //     JPEG ringing on flat art, no ancillary chunks.
+//
+// (The HH:MM stamp that was stage 7 was removed 12 Oct 2026 — the page's
+// print label carries the time now, and two clocks on one picture read as
+// a bug, not a feature. The honesty contract is unchanged: the label clock
+// is the frame's server received_at, the same instant the stamp showed.)
 package render
 
 import (
@@ -44,10 +47,10 @@ const (
 // the preset version — changing a colour ships a new preset version, because
 // old frames on disk keep their meaning.
 var ramp = [4]color.RGBA{
-	{0x12, 0x20, 0x2d, 0xff}, // s0 ink — people, hair, shadows, stamp plate
+	{0x12, 0x20, 0x2d, 0xff}, // s0 ink — people, hair, shadows
 	{0x33, 0x60, 0x7f, 0xff}, // s1 dark mid
 	{0x7e, 0xa5, 0xc0, 0xff}, // s2 light mid
-	{0xf2, 0xed, 0xe2, 0xff}, // s3 paper — walls, windows, stamp digits
+	{0xf2, 0xed, 0xe2, 0xff}, // s3 paper — walls, windows, lights
 }
 
 // Default thresholds (DESIGN.md §5.2 stage 5). A venue calib may move them,
@@ -297,76 +300,6 @@ func mode3(q []uint8, levels int) []uint8 {
 	return out
 }
 
-// Stamp geometry (DESIGN.md §5.2 stage 7). "HH:MM" is 5 glyphs × 5 columns +
-// 4 single-column gaps = 29 wide; the plate adds 2 cells of S0 around the 7
-// rows of digits. Bottom-left with a 2-cell margin, so the stamp never touches
-// the frame edge and the rect is stable enough to assert against.
-const (
-	StampCols, StampRows     = 29, 7
-	StampPlateW, StampPlateH = 29, 11
-	StampX, StampY           = 2, GH - 2 - StampPlateH
-)
-
-// stampRect is the plate rectangle, for the "stamp cells only in the stamp
-// rectangle" invariant.
-func stampRect() Rect { return Rect{StampX, StampY, StampX + StampPlateW, StampY + StampPlateH} }
-
-// font57 is the 5×7 digit font, column-major, LSB = top row. Digits 0-9 and
-// the colon; nothing else can appear in an HH:MM stamp, so nothing else is
-// stored — a full font would be bytes spent on glyphs that can never render.
-var font57 = map[byte][5]uint8{
-	'0': {0x3e, 0x51, 0x49, 0x45, 0x3e},
-	'1': {0x00, 0x42, 0x7f, 0x40, 0x00},
-	'2': {0x42, 0x61, 0x51, 0x49, 0x46},
-	'3': {0x21, 0x41, 0x45, 0x4b, 0x31},
-	'4': {0x18, 0x14, 0x12, 0x7f, 0x10},
-	'5': {0x27, 0x45, 0x45, 0x45, 0x39},
-	'6': {0x3c, 0x4a, 0x49, 0x49, 0x30},
-	'7': {0x01, 0x71, 0x09, 0x05, 0x03},
-	'8': {0x36, 0x49, 0x49, 0x49, 0x36},
-	'9': {0x06, 0x49, 0x49, 0x29, 0x1e},
-	':': {0x00, 0x14, 0x00, 0x00, 0x00},
-}
-
-// stamp burns hhmm ("HH:MM", venue-local, already formatted by the caller)
-// into the level grid (stage 7): S3 digits on an S0 plate. It runs on levels,
-// not luma, so the digits are exactly palette entries — never a dithered
-// almost-white that a screenshot would smear.
-//
-// A malformed string stamps nothing rather than something wrong: a half-
-// burned time would date every shared screenshot incorrectly, which is worse
-// than an undated one.
-func stamp(q []uint8, hhmm string) {
-	if len(hhmm) != 5 || hhmm[2] != ':' {
-		return
-	}
-	for _, c := range []byte{hhmm[0], hhmm[1], hhmm[2], hhmm[3], hhmm[4]} {
-		if _, ok := font57[c]; !ok {
-			return
-		}
-	}
-	// Plate first: S0 everywhere in the rect, so the digits sit on a flat
-	// 14:1 field whatever the room behind them is doing.
-	for y := StampY; y < StampY+StampPlateH; y++ {
-		for x := StampX; x < StampX+StampPlateW; x++ {
-			q[y*GW+x] = 0
-		}
-	}
-	// Digits: 5 columns each, 1-column gaps, 2 rows of plate above and below.
-	for gi, c := range []byte(hhmm) {
-		gx := StampX + gi*6
-		cols := font57[c]
-		for cx := 0; cx < 5; cx++ {
-			col := cols[cx]
-			for ry := 0; ry < 7; ry++ {
-				if col&(1<<ry) != 0 {
-					q[(StampY+2+ry)*GW+gx+cx] = 3
-				}
-			}
-		}
-	}
-}
-
 // encode renders the level grid as a paletted PNG (stage 8): the four fixed
 // ramp entries in order, best compression. Go picks 2-bit depth for ≤4
 // colours; the encoder writes no ancillary chunks by construction (EXIF,
@@ -383,31 +316,36 @@ func encode(q []uint8) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Pipeline runs all eight stages over img: grid → masks → blur → quant →
-// mode → masks again → stamp → encode. Masks are applied twice (stage 3 and
-// again after the blur): the first application keeps masked content out of
-// the blur kernel, the second kills the 1-cell gradient bleed the blur leaves
+// Pipeline runs all seven stages over img: grid → masks → blur → quant →
+// mode → masks again → encode. Masks are applied twice (stage 3 and again
+// after the blur): the first application keeps masked content out of the
+// blur kernel, the second kills the 1-cell gradient bleed the blur leaves
 // at the rect border — so every mask cell is exactly level 0 whatever the
 // input is, which the invariant test pins.
-func Pipeline(img image.Image, levels int, cal Calib, hhmm string) ([]byte, error) {
+//
+// The burned-in HH:MM stamp (design §5.2 stage 7) was removed 12 Oct 2026:
+// the page's print label carries the time now, and a rendered time on the
+// picture read as a second, different clock (user feedback). The honesty
+// contract moves with it — the label clock is server-received_at, exactly
+// what the stamp was, so the two could never disagree anyway.
+func Pipeline(img image.Image, levels int, cal Calib) ([]byte, error) {
 	g, err := lumaGrid(img)
 	if err != nil {
 		return nil, err
 	}
-	return renderGrid(g, levels, cal, hhmm)
+	return renderGrid(g, levels, cal)
 }
 
-// renderGrid runs stages 3–8 from an already-built grid, so callers that
+// renderGrid runs stages 3–7 from an already-built grid, so callers that
 // needed the grid for validation stats (dark/dead-sensor) do not pay for it
 // twice. The grid is the caller's to keep mutating afterwards — renderGrid
 // copies before the blur overwrites anything.
-func renderGrid(g []uint8, levels int, cal Calib, hhmm string) ([]byte, error) {
+func renderGrid(g []uint8, levels int, cal Calib) ([]byte, error) {
 	work := append([]uint8(nil), g...)
 	applyMasks(work, cal.Masks)
 	work = blur121(work)
 	q := quant(work, levels, cal.thresholds(), cal.Bias, cal.Invert)
 	q = mode3(q, levels)
 	applyMasks(q, cal.Masks)
-	stamp(q, hhmm)
 	return encode(q)
 }

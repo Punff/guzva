@@ -85,7 +85,12 @@ func provisionMain(args []string) int {
 
 	// Token: mint one, or import the flashed board's existing token (cutover
 	// — the device keeps working, no re-flash). Auth stores only its sha256.
-	if *token == "" {
+	// imported distinguishes the two paths below: *token is always set by
+	// the time we print, so testing it directly would lie (found while
+	// setting up the demo env — the import banner fired for fresh mints
+	// and the "Next:" checklist never printed).
+	imported := *token != ""
+	if !imported {
 		tok, err := auth.GenerateToken()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "provision: token: %v\n", err)
@@ -172,7 +177,7 @@ token  %s
 		fmt.Printf("device %q  (id %d)\ntoken  %s\n", serial, id, tok)
 	}
 
-	if *token != "" {
+	if imported {
 		fmt.Printf(`
 Imported existing token for %q (no re-flash needed — the board already
 carries it; only its POST will now hit this server).

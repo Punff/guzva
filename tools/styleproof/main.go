@@ -31,17 +31,16 @@ func main() {
 	in := flag.String("in", "", "local JPEG frame to proof (never uploaded anywhere)")
 	out := flag.String("out", "", "output directory for the contact sheet")
 	masks := flag.String("masks", "", "optional static masks as x0,y0,x1,y1 triples, ';'-separated, in grid cells")
-	stamp := flag.String("stamp", "21:48", "HH:MM to burn into the candidates")
 	flag.Parse()
-	if err := run(*in, *out, *masks, *stamp); err != nil {
+	if err := run(*in, *out, *masks); err != nil {
 		fmt.Fprintln(os.Stderr, "styleproof:", err)
 		os.Exit(1)
 	}
 }
 
-func run(in, out, masksRaw, stamp string) error {
+func run(in, out, masksRaw string) error {
 	if in == "" || out == "" {
-		return fmt.Errorf("usage: styleproof -in frame.jpg -out sheet/ [-masks x0,y0,x1,y1[;...]] [-stamp HH:MM]")
+		return fmt.Errorf("usage: styleproof -in frame.jpg -out sheet/ [-masks x0,y0,x1,y1[;...]]")
 	}
 	raw, err := os.ReadFile(in)
 	if err != nil {
@@ -80,7 +79,7 @@ func run(in, out, masksRaw, stamp string) error {
 	}
 	var rows []candRow
 	for _, c := range cands {
-		pngBytes, err := render.Pipeline(img, c.levels, c.cal, stamp)
+		pngBytes, err := render.Pipeline(img, c.levels, c.cal)
 		if err != nil {
 			return fmt.Errorf("%s: %w", c.name, err)
 		}

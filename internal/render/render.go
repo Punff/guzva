@@ -1,7 +1,7 @@
 // Package render implements the server-side image pipeline (PLAN §7, D1):
 //
 //	decode (4 MiB cap) → validate → luma grid 160×120 → masks → blur →
-//	quantise → mode filter → masks again → HH:MM stamp → paletted PNG
+//	quantise → mode filter → masks again → paletted PNG
 //
 // The raw JPEG exists only inside one Process call: it is never written, and
 // the input buffer is zeroed on return (privacy proof: input-zeroed test).
@@ -52,14 +52,10 @@ type FrameIn struct {
 	CaptureID string
 	Preset    string // venue style; unknown names fall back to the default
 	Raw       []byte // the JPEG exactly as it arrived off the wire
-	// StampLoc is the venue's timezone for the burned-in HH:MM stamp
-	// (DESIGN.md ⚑2). Nil renders UTC. The engine formats ReceivedAt in this
-	// location itself rather than taking a preformatted string, so the stamp
-	// can never disagree with the stored timestamp by a minute-boundary skew
-	// between two clock reads.
-	StampLoc *time.Location
 	// Calib is the venue's render calibration: thresholds, bias, invert and
 	// static privacy masks (DESIGN.md ⚑5/⚑6). Zero value = defaults, no masks.
+	// (The burned-in HH:MM stamp is gone — the page's print label carries
+	// the time; see tisak.go. ReceivedAt remains the canonical instant.)
 	Calib Calib
 }
 
@@ -73,7 +69,6 @@ type Output struct {
 	Preset     string
 	PresetVer  int
 	ReceivedAt time.Time // server clock, canonical freshness (§1)
-	Stamped    string    // HH:MM burned into the render, venue-local
 }
 
 // RejectError marks a frame the pipeline refused. Reason is one of the
@@ -195,16 +190,8 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 		return Output{}, Reject(proto.ReasonDead)
 	}
 
-	// --- the print: masks → blur → quantise → mode → masks → stamp → PNG.
-	// All eight stages live in Pipeline; the stamp time is ReceivedAt in the
-	// venue's location, so the burned-in time and the stored timestamp are
-	// the same instant by construction, never two clock reads apart.
-	loc := in.StampLoc
-	if loc == nil {
-		loc = time.UTC
-	}
-	out.Stamped = out.ReceivedAt.In(loc).Format("15:04")
-	pngBytes, err := renderGrid(g, preset.Levels(), in.Calib, out.Stamped)
+	// --- the print: masks → blur → quantise → mode → masks → PNG.
+	pngBytes, err := renderGrid(g, preset.Levels(), in.Calib)
 	if err != nil {
 		return Output{}, err
 	}

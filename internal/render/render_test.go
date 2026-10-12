@@ -103,7 +103,7 @@ func TestProcessNormalizesAndStyles(t *testing.T) {
 	if out.Width != GW || out.Height != GH {
 		t.Errorf("dims = %dx%d, want %dx%d", out.Width, out.Height, GW, GH)
 	}
-	if out.Preset != "poster" || out.PresetVer != 2 {
+	if out.Preset != "poster" || out.PresetVer != 3 {
 		t.Errorf("preset = %s@%d", out.Preset, out.PresetVer)
 	}
 	if !out.ReceivedAt.Equal(testNow) {
@@ -119,12 +119,8 @@ func TestProcessNormalizesAndStyles(t *testing.T) {
 	if cfg.Width != GW || cfg.Height != GH {
 		t.Errorf("output dims = %dx%d", cfg.Width, cfg.Height)
 	}
-	// The stamp is ReceivedAt in UTC by default (no venue loc passed): the
-	// fixed clock reads 12:00, so the burned-in time and the stored instant
-	// are the same by construction.
-	if out.Stamped != "12:00" {
-		t.Errorf("stamped = %q, want 12:00", out.Stamped)
-	}
+	// The burned-in HH:MM stamp is gone (removed 12 Oct 2026 — the page's
+	// print label carries the time); nothing to assert here beyond dims.
 }
 
 // Privacy (§7 input-zeroed): the raw buffer is zeroed on return, success or
@@ -315,7 +311,7 @@ func TestPresetsDifferAndAgreeOnShape(t *testing.T) {
 	if bytes.Equal(poster.PNG, mono.PNG) {
 		t.Fatal("poster and mono must differ")
 	}
-	if mono.Preset != "mono" || mono.PresetVer != 2 {
+	if mono.Preset != "mono" || mono.PresetVer != 3 {
 		t.Errorf("mono metadata = %s@%d", mono.Preset, mono.PresetVer)
 	}
 }

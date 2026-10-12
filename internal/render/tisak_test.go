@@ -72,7 +72,7 @@ func decodePNG(t *testing.T, b []byte) (levels []uint8, pal color.Palette) {
 }
 
 func TestPipelineInvariants(t *testing.T) {
-	out, err := Pipeline(scene(t, 640, 480, 7), 4, Calib{}, "21:48")
+	out, err := Pipeline(scene(t, 640, 480, 7), 4, Calib{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestPipelineSizeBound(t *testing.T) {
 		{"tisak-busy", busy, 4},
 		{"sablon", scene(t, 640, 480, 7), 2},
 	} {
-		out, err := Pipeline(tc.img, tc.levels, Calib{}, "21:48")
+		out, err := Pipeline(tc.img, tc.levels, Calib{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,12 +173,12 @@ func TestPipelineSizeBound(t *testing.T) {
 
 func TestPipelineDeterministic(t *testing.T) {
 	img := scene(t, 320, 240, 3)
-	first, err := Pipeline(img, 4, Calib{}, "09:05")
+	first, err := Pipeline(img, 4, Calib{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 100; i++ {
-		got, err := Pipeline(scene(t, 320, 240, 3), 4, Calib{}, "09:05")
+		got, err := Pipeline(scene(t, 320, 240, 3), 4, Calib{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -188,59 +188,13 @@ func TestPipelineDeterministic(t *testing.T) {
 	}
 }
 
-func TestStampCellsOnlyInStampRect(t *testing.T) {
-	img := scene(t, 640, 480, 7)
-	g, err := lumaGrid(img)
-	if err != nil {
-		t.Fatal(err)
-	}
-	g = blur121(g)
-	q := quant(g, 4, defaultThresholds, 0, false)
-	q = mode3(q, 4)
-	before := append([]uint8(nil), q...)
-	stamp(q, "21:48")
-
-	sr := stampRect()
-	changed := 0
-	for y := 0; y < GH; y++ {
-		for x := 0; x < GW; x++ {
-			if q[y*GW+x] == before[y*GW+x] {
-				continue
-			}
-			changed++
-			if x < sr.X0 || x >= sr.X1 || y < sr.Y0 || y >= sr.Y1 {
-				t.Fatalf("stamp touched cell (%d,%d) outside %v", x, y, sr)
-			}
-		}
-	}
-	if changed == 0 {
-		t.Fatal("stamp changed nothing — font or rect is dead")
-	}
-	// Digits are exactly S3 on an S0 plate: nothing in between.
-	for y := sr.Y0; y < sr.Y1; y++ {
-		for x := sr.X0; x < sr.X1; x++ {
-			if v := q[y*GW+x]; v != 0 && v != 3 {
-				t.Fatalf("stamp cell (%d,%d) = level %d, want 0 or 3", x, y, v)
-			}
-		}
-	}
-	// A malformed time stamps nothing rather than something wrong.
-	q2 := append([]uint8(nil), before...)
-	stamp(q2, "9:48pm")
-	stamp(q2, "21948")
-	stamp(q2, "")
-	if !bytes.Equal(q2, before) {
-		t.Fatal("malformed stamp string altered the grid")
-	}
-}
-
 func TestMasksAreLevelZeroWhateverTheInput(t *testing.T) {
 	// A bright scene with a mask over the brightest part: after the pipeline
 	// every mask cell must read level 0, including the 1-cell border the blur
 	// would otherwise smear a gradient across.
 	img := scene(t, 640, 480, 7)
 	m := []Rect{{X0: 100, Y0: 80, X1: 140, Y1: 110}}
-	out, err := Pipeline(img, 4, Calib{Masks: m}, "21:48")
+	out, err := Pipeline(img, 4, Calib{Masks: m})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +230,7 @@ func TestMasksAreLevelZeroWhateverTheInput(t *testing.T) {
 func TestNon43IsDimsReject(t *testing.T) {
 	for _, dim := range [][2]int{{640, 360}, {800, 500}, {100, 100}} {
 		img := image.NewRGBA(image.Rect(0, 0, dim[0], dim[1]))
-		if _, err := Pipeline(img, 4, Calib{}, "21:48"); err == nil {
+		if _, err := Pipeline(img, 4, Calib{}); err == nil {
 			t.Fatalf("%dx%d accepted, want dims reject", dim[0], dim[1])
 		} else if r, ok := IsReject(err); !ok || r != "dims" {
 			t.Fatalf("%dx%d: reason %q, want dims", dim[0], dim[1], r)
@@ -285,7 +239,7 @@ func TestNon43IsDimsReject(t *testing.T) {
 	// Exact 4:3 at several widths, including odd ones (Q8 edge weights).
 	for _, w := range []int{160, 320, 480, 640, 800, 1600} {
 		img := scene(t, w, w*3/4, 5)
-		if _, err := Pipeline(img, 4, Calib{}, "21:48"); err != nil {
+		if _, err := Pipeline(img, 4, Calib{}); err != nil {
 			t.Fatalf("%dx%d rejected: %v", w, w*3/4, err)
 		}
 	}

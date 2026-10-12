@@ -19,23 +19,23 @@ type Preset interface {
 	Levels() int
 }
 
-// TisakPreset: the 4-tone print (DESIGN.md §5, poster@2).
+// TisakPreset: the 4-tone print (DESIGN.md §5, poster@3).
 //
-// Version 2, not 1: the previous poster v1 rendered a 640-wide colour JPEG,
-// and D2 requires a bump whenever the output changes for the same input.
-// DESIGN.md §5.8 numbers the new pipeline "poster@1", but the PLAN contract
-// outranks the design doc's numbering — old rows on disk are v1 JPEGs and
-// new rows are v2 PNGs, and the sidecar must tell them apart.
+// Version 3: v1 was the 640-wide colour JPEG era, v2 the stamped PNG
+// pipeline. v3 drops the burned-in HH:MM stamp (12 Oct 2026 — the page's
+// print label carries the time; a rendered clock next to the label's clock
+// read as two clocks). D2's rule: a bump whenever the output changes for
+// the same input, so old sidecars keep their meaning.
 type TisakPreset struct{}
 
 func (TisakPreset) Name() string { return "poster" }
-func (TisakPreset) Version() int { return 2 }
+func (TisakPreset) Version() int { return 3 }
 func (TisakPreset) Levels() int  { return 4 }
 
-// SablonPreset: the 2-tone stencil (DESIGN.md §5, mono@2). Same version
-// reasoning as Tisak: the old mono v1 was a 640-wide greyscale JPEG.
+// SablonPreset: the 2-tone stencil (DESIGN.md §5, mono@3). Same version
+// reasoning as Tisak; v3 drops the stamp with it.
 type SablonPreset struct{}
 
 func (SablonPreset) Name() string { return "mono" }
-func (SablonPreset) Version() int { return 2 }
+func (SablonPreset) Version() int { return 3 }
 func (SablonPreset) Levels() int  { return 2 }
