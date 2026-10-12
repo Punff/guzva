@@ -128,6 +128,15 @@ var hr = &Catalog{
 		"owner.location":          "Lokacija (javno)",
 		"owner.about.placeholder": "Jedna rečenica za goste koji skeniraju QR kod",
 
+		"owner.login.title":        "prijava",
+		"owner.login.tag":          "Prijava vlasnika objekta.",
+		"owner.login.venue":        "Objekat",
+		"owner.login.password":     "Lozinka",
+		"owner.login.submit":       "Prijava",
+		"owner.login.note":         "Pristup izdaje administrator. Tokeni uređaja i postavke kamere ostaju kod njega — ovaj panel pokriva podatke o objektu i stanje.",
+		"owner.login.err.throttle": "Previše pokušaja — pričekajte minutu.",
+		"owner.login.err.badcreds": "Prijava nije uspjela.",
+
 		"hours.err.clock":        "{day}{shift}: upiši vrijeme kao 09:00",
 		"hours.err.backwards":    "{day}{shift}: zatvara u {close}, a otvara u {open}",
 		"hours.err.closed_times": "{day}: označeno je zatvoreno, a ima upisano vrijeme — obriši jedno",
@@ -220,6 +229,15 @@ var en = &Catalog{
 		"owner.step3":             "If nothing helps, contact the administrator.",
 		"owner.location":          "Location (public)",
 		"owner.about.placeholder": "One sentence for guests scanning the QR code",
+
+		"owner.login.title":        "sign in",
+		"owner.login.tag":          "Venue owner sign-in.",
+		"owner.login.venue":        "Venue",
+		"owner.login.password":     "Password",
+		"owner.login.submit":       "Sign in",
+		"owner.login.note":         "Access is issued by the administrator. Device tokens and camera settings stay with them — this panel covers venue details and status.",
+		"owner.login.err.throttle": "Too many attempts — wait a minute.",
+		"owner.login.err.badcreds": "Sign-in failed.",
 
 		"hours.err.clock":        "{day}{shift}: use HH:MM times like 09:00",
 		"hours.err.backwards":    "{day}{shift}: closes {close} before it opens at {open}",

@@ -670,3 +670,20 @@ label bar at 360 px is the one thing to squint at.
 - Dispatched: frontend final render (Location row, 7 day-cards grayed
   closed, owner-login via Cat) + docs-i18n `owner.login.err.throttle`/
   `badcreds` keys; backend swaps the two literal call sites after.
+
+## 2026-10-12 — orchestrator: v0.5.0 — frontend render round in, docs-i18n override
+
+- Frontend landed `a6f11f0` (public week cards Mo-first, closed grayed,
+  location row, tel block; proven 360px + desktop; public 3793/4096 gz)
+  and `1c9530f` (owner login through `{{.Cat.Get}}`, red-flagged by
+  design). Flag for later: "today" highlight on the week strip would
+  need `view.TodayIdx` — user design call, not requested.
+- **EMERGENCY OVERRIDE (single-writer exception, user-authorized):**
+  docs-i18n went unresponsive (3 sends, zero replies, spare model not
+  consuming). Orchestrator added the 8 keys hr+en to `internal/i18n/
+  i18n.go` directly per frontend's exact spec (`owner.login.title/tag/
+  venue/password/submit/note` + `err.throttle`/`err.badcreds`). Gate
+  GREEN (13 pkgs, budgets hold). Follow-ups for docs-i18n when it
+  responds: review the wording + own the file again.
+- Backend follow-up (post-deploy): swap the two literal login-error
+  sentences in `owner.go` to the new `owner.login.err.*` keys.
