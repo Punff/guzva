@@ -75,10 +75,17 @@ type ownerLoginModel struct {
 	Cat *i18n.Catalog
 }
 
-func (s *Server) renderOwnerLogin(w http.ResponseWriter, status int, errMsg string) {
+// renderOwnerLogin renders the owner login page. errKey is a catalog KEY,
+// never a sentence: copy lives in internal/i18n, and a literal here is how
+// the panel drifted into hard-coded Croatian in the first place. "" renders
+// no error box (Get falls through to the empty key and yields an empty Err).
+// The catalog is Croatian (D7) — the page is lang="hr" and the owner has not
+// yet identified a venue, so there is no v.Lang to normalize from.
+func (s *Server) renderOwnerLogin(w http.ResponseWriter, status int, errKey string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	m := ownerLoginModel{Err: errMsg, Cat: i18n.For(i18n.HR)}
+	cat := i18n.For(i18n.HR)
+	m := ownerLoginModel{Err: cat.Get(errKey), Cat: cat}
 	if err := s.tmpl.ExecuteTemplate(w, "owner_login.html", m); err != nil {
 		s.log.Error("admin: render owner login", "err", err.Error())
 	}
@@ -88,7 +95,7 @@ func (s *Server) ownerLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	ip := auth.ClientIP(r)
 	if !s.loginLim.AllowIP(ip) {
 		s.log.Warn("owner: login throttled", "ip", ip)
-		s.renderOwnerLogin(w, http.StatusTooManyRequests, "Previše pokušaja — pričekajte minutu.")
+		s.renderOwnerLogin(w, http.StatusTooManyRequests, "owner.login.err.throttle")
 		return
 	}
 	r.ParseForm()
@@ -100,7 +107,7 @@ func (s *Server) ownerLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	if err != nil || v.OwnerHash == "" ||
 		!auth.CheckAdminPassword(v.OwnerHash, r.FormValue("password")) {
 		s.log.Warn("owner: bad login", "ip", ip)
-		s.renderOwnerLogin(w, http.StatusUnauthorized, "Pogrešan objekt ili lozinka.")
+		s.renderOwnerLogin(w, http.StatusUnauthorized, "owner.login.err.badcreds")
 		return
 	}
 	s.ownerSess.IssueOwner(w, v.ID, auth.SessionTTL, s.secure)

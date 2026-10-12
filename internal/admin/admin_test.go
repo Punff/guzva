@@ -164,6 +164,29 @@ func TestLoginThrottle(t *testing.T) {
 	}
 }
 
+// The owner panel shares the throttle, and its 429 page must render the
+// catalog sentence — the throttle key has no template fetch, so
+// TestFetchedKeysExist cannot see it. Asserted here end-to-end instead: a
+// removed or renamed key would print itself raw to a locked-out owner.
+func TestOwnerLoginThrottleCopy(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	for i := 0; i < 5; i++ {
+		f.do(t, http.MethodPost, "/owner/login",
+			url.Values{"slug": {"jadro"}, "password": {"nope"}}, nil, false)
+	}
+	w := f.do(t, http.MethodPost, "/owner/login",
+		url.Values{"slug": {"jadro"}, "password": {"nope"}}, nil, false)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("6th attempt = %d, want 429", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "Previše pokušaja") {
+		t.Fatalf("throttled owner login missing catalog sentence: %q", w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "owner.login.err") {
+		t.Fatalf("throttled owner login rendered a raw i18n key: %q", w.Body.String())
+	}
+}
+
 func TestFailClosedWithoutHash(t *testing.T) {
 	f := newFixture(t, "") // GUZVA_ADMIN_HASH unset
 	w := f.do(t, http.MethodPost, "/admin/login", url.Values{"password": {"anything"}}, nil, false)
@@ -302,11 +325,16 @@ func TestOwnerPanel(t *testing.T) {
 		return nil
 	}
 
-	// Unknown venue, unset password, wrong password: one generic message.
+	// Unknown venue, unset password, wrong password: one generic message,
+	// from the catalog (owner.login.err.badcreds). Asserted two ways: the
+	// sentence is the catalog's, and no raw key ever reaches the page.
 	for _, tc := range [][2]string{{"nope", "x"}, {"other", "x"}, {"jadro", "wrong"}} {
 		w := ownerLogin(tc[0], tc[1])
-		if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "Pogrešan objekt ili lozinka") {
+		if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "Prijava nije uspjela") {
 			t.Fatalf("login %v = %d %q", tc, w.Code, w.Body.String())
+		}
+		if strings.Contains(w.Body.String(), "owner.login.err") {
+			t.Fatalf("login %v rendered a raw i18n key: %q", tc, w.Body.String())
 		}
 	}
 
