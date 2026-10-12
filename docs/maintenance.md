@@ -327,6 +327,14 @@ biometrics ever (D9). Research items, sequenced:
 and rotate the burned secrets; create the remote **after** the history
 scrub; W7 and W8 below.
 
+**Closed 2026-10-12 (the ops session):** v0.3.0 deployed and healthchecked;
+the device token rotated end-to-end (old git-history token revoked and
+proven 401 on replay; bench device row is now `bd2a58b`); W4 verified on
+hardware (boot banner `v0.3.0`, `wdt=150s`, steady 201s); **first restore
+drill PASS** — which also fixed the drill itself (count parity with a live
+DB is a warning; only impossible states fail). Still open: the WiFi
+password rotation (needs the router) and the pre-push history scrub.
+
 ---
 
 ## 4. Deferred, with triggers (extends PLAN §14)

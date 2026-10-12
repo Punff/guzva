@@ -12,7 +12,8 @@ are shown **once** at provision time and never stored recoverably.
 - VPS: `ssh root@guzva` (34.139.58.143) · service: `guzva.service`
   (the retired Python rig is deleted from the tree — git history keeps it)
 - Data: `/var/lib/guzva` (`guzva.db` + `venues/`) · env+certs: `/etc/guzva/`
-- Device: ESP32-CAM serial `bd2a58`, `http://guzva-bd2a58.local`,
+- Device: ESP32-CAM serial `bd2a58b` (gen b, rotated 12 Oct 2026),
+  `http://guzva-bd2a58.local` (mDNS name follows the board, not the row),
   bench IP 192.168.1.6, serial 115200 on `/dev/ttyUSB0`
 
 ## "The feed is stale" (most common call)
@@ -59,8 +60,8 @@ journalctl -u guzva -f | grep ingest
 # restart (gap <2 s, absorbed by idempotent ingest + device retry)
 systemctl restart guzva
 # show / change device config (takes effect on the device's next POST)
-guzva cfg -serial bd2a58 -data /var/lib/guzva
-guzva cfg -serial bd2a58 -data /var/lib/guzva -set led_pwm=0
+guzva cfg -serial bd2a58b -data /var/lib/guzva
+guzva cfg -serial bd2a58b -data /var/lib/guzva -set led_pwm=0
 # add a device (prints token ONCE — record it offline immediately)
 guzva provision -slug <slug> -name <name> -serial <serial> -data /var/lib/guzva
 # rotate the admin password (bcrypt; restart to pick up the env file)

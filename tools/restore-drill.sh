@@ -64,13 +64,26 @@ if [[ -n "$LIVE_V" && "$LIVE_V" != "$RESTORED_V" ]]; then
 fi
 log "schema ok (user_version=$RESTORED_V)"
 
-# --- 4. content parity --------------------------------------------------------
+# --- 4. content sanity ----------------------------------------------------------
+# Count parity is a WARNING, not a failure: a nightly snapshot legitimately
+# trails the live DB by up to 24 h (RPO, runbook). What must FAIL is the
+# impossible or the empty: a snapshot with MORE rows than live (wrong file /
+# foreign DB) or zero rows where live has content (truncated restore).
 if [[ -f "$LIVE_DB" ]]; then
   for table in venues devices; do
     LIVE_N=$(sqlite3 "$LIVE_DB" "SELECT COUNT(*) FROM $table;")
     REST_N=$(sqlite3 "$RESTORED" "SELECT COUNT(*) FROM $table;")
-    [[ "$LIVE_N" == "$REST_N" ]] || fail "$table count: live=$LIVE_N restored=$REST_N"
-    log "$table count ok ($REST_N)"
+    if [[ "$REST_N" -gt "$LIVE_N" ]]; then
+      fail "$table count: restored=$REST_N > live=$LIVE_N — snapshot is not of this DB"
+    fi
+    if [[ "$REST_N" -eq 0 && "$LIVE_N" -gt 0 ]]; then
+      fail "$table count: restored=0, live=$LIVE_N — restore came up empty"
+    fi
+    if [[ "$REST_N" -lt "$LIVE_N" ]]; then
+      log "WARN $table: live=$LIVE_N restored=$REST_N (backup lag — expected on a live system)"
+    else
+      log "$table count ok ($REST_N)"
+    fi
   done
 fi
 

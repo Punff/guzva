@@ -420,3 +420,43 @@ ever). `ACTION:` bench session for W4: reflash, confirm the WDT banner
 Not done this pass, sequenced in the plan: W7 (fleet attention sort,
 paused state, venue description/contact, QR poster) and W8 (filter tuning
 from real bright-room frames).
+
+## 2026-10-12 — v0.3.0 deployed; token rotated + burned secret dead; first restore drill PASS; W4 verified on hardware
+
+Release flow used for the first time: `make tag V=v0.3.0` (the repo's first
+tag ever — every release dir before this was a bare SHA) → `make deploy` →
+healthcheck OK (version v0.3.0, page + admin answer). The restart gap was
+absorbed by device retry as designed; no missed 201s in the journal.
+
+**Token rotation (the W0 ACTION, done at the bench session):** new device
+row `bd2a58b` minted for venue bench, token imported, board re-flashed with
+it in settings.h (v0.3.0). First POST 201 at 07:06:19 with `fw=v0.3.0` —
+the version stamp working. Old row `bd2a58` revoked; a replay of the
+git-history token answers **401** (caught live in the journal as
+"auth: token revoked" at 07:08:34). The burned device token is dead. NVS
+survived the reflash: boot=217, brownout=4 — history intact.
+Bench cadence restored on the new row (`cfg -set interval_s=45,quality=12`,
+ver 2 on next POST) so the runbook stays true.
+
+**W4 on hardware:** boot banner shows `=== guzva firmware v0.3.0 ===` and
+`wdt=150s` (the task-watchdog backstop is armed; a stall now reboots into an
+honest STALE instead of hanging). TLS connect 1.9 s, render ~8–10 ms on the
+server, 201s steady at RSSI −70…−73 (the usual marginal link). Sensor
+values from NVS persisted across the flash (the rig-era fs=5/br=1/fx=2).
+
+**First restore drill (the pre-pilot mandate): PASS.** `make drill` against
+tonight's snapshot: gunzip → integrity_check → schema parity → the shipped
+binary opens the restored store. First run FAILED for a real reason —
+live devices=3 vs snapshot=2, because the rotation happened after the 03:17
+snapshot — and that taught the drill its own lesson: count parity with a
+live DB must be a warning (backup lag is RPO working as documented), not a
+failure. Impossible states (restored > live, restored empty) still fail.
+Script fixed, re-run: PASS with the lag warning.
+
+`ACTION:` the WiFi password (***REMOVED***) remains in git history and live —
+rotation needs the router, which this session cannot reach. The scrub of
+settings.h + the styleproof blob from history is still mandatory before
+the first push to any remote (no remote exists yet).
+`ACTION:` `pio device monitor` is broken by a duplicate PIO Core
+(6.1.19 vs 6.2.0) — upload works, monitor crashes; clean up the cores.
+Serial reads via pyserial worked for verification in the meantime.
