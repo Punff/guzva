@@ -510,3 +510,49 @@ label bar at 360 px is the one thing to squint at.
 - Gate RED: `make test` fails at `css-check` (tokens changed, compiled CSS
   stale). Frontend-tisak must run `make css` + commit its 2 files before any
   merge. No commits made by anyone this watch; `HEAD` still `25bce48`.
+
+## 2026-10-12 — orchestrator: all 5 tasked, first handoffs in
+
+- `764986b` frontend round 1 landed (chip-led label bar, info card,
+  dark-muted bump). Dirty tree is now round 2 + one unattributed test edit.
+- **backend-go STOPPED clean, no edits** — `pages_test.go` diff is another
+  writer's logic change (drops `Radno vrijeme` ✓, adds `Otvoreno do` ✓,
+  adds failing `tel:` — fixture never sets Phone). Ruled: (a) backend takes
+  ownership, fixes fixture via existing `UpdateVenue` path, gofmt, commits;
+  (b) `tel:` assertion stands; (c) `pages.go:179-186` comment gets the true
+  justification (JS poller + meta-refresh re-render, not the deleted stamp).
+  No state-key change. Stamp verification itself HOLDS (zero StampLoc/
+  Stamped refs, @3 goldens + 409 + no-failure + state-key tests pass).
+- **devops-qa:** demo GREEN (fakecam window had lapsed, relaunched; `:8080`,
+  page, admin guard all healthy). Release checklist ready: proposes `v0.4.0`
+  (render-contract bump), fire sequence `test → tag → backup → deploy`,
+  rollback anchor `v0.3.1` verified, SSH/disk probed. Correction to my
+  earlier note: scrub gates only the first *push*, not tag/deploy.
+- **firmware-esp32:** confirm CLEAN — 22-key surface matches proto doc,
+  `TestCfgKeysMatchDoc` holds, no edits.
+- **frontend-tisak:** re-applying overlay fix (busy). **docs-i18n:**
+  restarted, baseline survey running.
+- Gate still RED (gofmt + 1 failing test) → tag/deploy wait on backend's
+  commit + frontend round 2.
+
+## 2026-10-12 — orchestrator: backend `c877c65` green, frontend round 2 in flight
+
+- **backend-go `c877c65`** (2 files, staged by path): fixture owns Phone via
+  `UpdateVenue`, `tel:` asserted on unescaped HTML. Two corrections to my
+  ruling, both evidenced: `html/template` escapes `+`→`&#43;`, so the
+  unattributed literal could never match (was never run); and my (c)
+  sentence was false — `static.go:101` serves index.html with no-cache +
+  modtime and rewrites only on state-key change, so a no-JS visitor gets
+  304 with a frozen clock. Comment records this as a Known limit of
+  `25bce48`. `ACTION:` the no-JS clock gap is a genuine §6.4 honesty
+  question from the stamp removal (per-frame rewrite vs accept) —
+  frontend's call after round 2, sequenced by orchestrator. Stamp
+  verification HOLDS (zero StampLoc/Stamped refs, @3 goldens, 409,
+  no-failure, state-key tests pass).
+- **frontend-tisak** (busy): overlay fix re-applied on round 1, now chasing
+  a harness issue (login redirect with valid profile cookie). Dirty:
+  `calib.js`, `admin/templates/venue.html`, `webui/app.css`, `web/app.css`,
+  untracked `calib_test.go`.
+- **docs-i18n:** ack + survey running, baseline test in background.
+- Backend's commit is green (13 pkgs ok per handoff); full-tree gate waits
+  on frontend round 2 commit. Tag proposal `v0.4.0` held.
