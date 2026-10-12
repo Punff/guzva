@@ -125,7 +125,14 @@ type view struct {
 	Description string // public one-liner, plain text
 	Phone       string // public phone, displayed as typed
 	PhoneHref   string // phone normalized for tel: (digits + leading +)
+	Location    string // public "where we are" line, plain text (schema v7)
 	AboutTitle  string // localized "about" heading
+	// Week is the whole schedule, Mo-first, ready for seven small day cards
+	// (design-pass2 §5). Derived from Hours + the page language, both of
+	// which are already in the state key, so it needs no key component of
+	// its own: an hours edit or a language edit already forces the rewrite
+	// that re-renders it.
+	Week [7]venue.DayCard
 
 	// Poller copy, read from data-* attributes so the script carries no
 	// second hand-written dictionary (W2: one catalog, internal/i18n).
@@ -197,9 +204,9 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	if latest != nil && latest.Status == "ok" && latest.Path != "" && !strings.HasSuffix(latest.Path, ".png") {
 		stillFile = "latest.jpg"
 	}
-	stateKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", fresh, open, v.Name, v.Style,
+	stateKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", fresh, open, v.Name, v.Style,
 		v.TZ, v.Lang, hoursToday(cat0, hours, localNow), stillFile,
-		v.Description, v.Phone)
+		v.Description, v.Phone, v.Location)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -255,6 +262,8 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		Description:  v.Description,
 		Phone:        v.Phone,
 		PhoneHref:    telHref(v.Phone),
+		Location:     v.Location,
+		Week:         hours.WeekCards(cat.DayNames()),
 		AltNow:       cat.F("alt.nowframe", v.Name),
 		AltPrefix:    cat.F("alt.still", v.Name, ""),
 		StrOffline:   cat.Get("net.offline"),

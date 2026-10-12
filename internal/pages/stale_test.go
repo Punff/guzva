@@ -342,3 +342,51 @@ func TestSettingsEditFlipsStateKey(t *testing.T) {
 		t.Fatal("rename did not reach the page on refresh")
 	}
 }
+
+// A location edit must force a rewrite — Location is on the page, so it is
+// part of the state key — and must then SETTLE: a second refresh with no
+// change may not rewrite again (that would move Last-Modified every sched
+// tick and defeat the 60s state-flip check). Asserted via mtime, like the
+// frame test above, because a rewrite with identical bytes still moves it.
+func TestLocationEditFlipsStateKey(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.w.OnFrame(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	idxPath := filepath.Join(f.w.Root(), "jadro", "index.html")
+	fi, err := os.Stat(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mtime := fi.ModTime()
+
+	// Changing the location flips the key: one rewrite. (The fixture seeds a
+	// location already, so a *different* one is a real change.)
+	if err := f.st.UpdateVenue(ctx, f.vid, "Jadro", "poster", "Europe/Sarajevo",
+		"", "+387 61 234 567", "Maršala Tita 1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.w.Refresh(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(idxPath); err != nil {
+		t.Fatal(err)
+	} else if fi.ModTime().Equal(mtime) {
+		t.Fatal("location edit did not flip the state key — it could never reach the page")
+	}
+
+	// ... and it settles: no further rewrite without a change.
+	fi, err = os.Stat(idxPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.w.Refresh(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	if fi2, err := os.Stat(idxPath); err != nil {
+		t.Fatal(err)
+	} else if !fi2.ModTime().Equal(fi.ModTime()) {
+		t.Fatal("state key is not stable: the page would be rewritten every tick")
+	}
+}
