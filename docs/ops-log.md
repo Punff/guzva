@@ -687,3 +687,21 @@ label bar at 360 px is the one thing to squint at.
   responds: review the wording + own the file again.
 - Backend follow-up (post-deploy): swap the two literal login-error
   sentences in `owner.go` to the new `owner.login.err.*` keys.
+
+## 2026-10-12 — `v0.5.0` deployed (user-issue round: hours, cards, location, copy)
+
+- Fire sequence: gate green (13 pkgs) → `022b987` (override keys + ops
+  log) → `make tag V=v0.5.0` → `make backup`
+  (`guzva-20261012-1917.db.gz`) → `make deploy`. Healthcheck OK:
+  `version v0.5.0`, page + admin answer, disk 42 %. Rollback anchor:
+  `releases/v0.4.0` kept (last 3).
+- Contains the whole user-issue round: one-shift hours editor
+  (`371a29c` + `e25ebc1`), weekly day cards + public location row
+  (`a6f11f0`, schema v7 `77e60a6`), light-default verified, admin copy
+  trims (`73a9887`), caption de-redundancy + phone section (`b2e24eb`),
+  owner console fully through the catalog (`98dbcbf`, `1c9530f`,
+  `022b987`), calib overlay fix (`2dcb78f`). Poster thresholds NOT
+  changed (no real frames — W8.1 bench session owns that).
+- Open: docs-i18n unresponsive (override on record; wording review when
+  it returns); backend `owner.login.err.*` call-site swap (next
+  release); push still gated on history scrub + no remote.
