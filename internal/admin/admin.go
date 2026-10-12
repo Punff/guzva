@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -281,6 +282,9 @@ type venueView struct {
 	Fresh   chip // shape + colour + sentence for the status chip
 	LastAge string
 	Devices []deviceView
+	// attention is the fleet sort key (design-pass2 §6): lower = reads
+	// first. Never rendered.
+	attention int
 }
 
 // chip is the "needs attention" state of a venue, ready for the chip partial
@@ -333,10 +337,18 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 	defHours, _ := venue.ParseSpec("Mo-Fr 09:00-17:00")
 	model := fleetModel{DeviceOpts: venues, ShowCreated: r.URL.Query().Get("created") != "",
 		Days: venue.EditModel(defHours, i18n.For(i18n.EN).DayNames())}
+	// Needs attention first (design-pass2 §6): the board is the "is
+	// everything OK" screen, so it must read top-down — no signal beats
+	// late, late beats fresh; a venue with no frame yet is last (it is
+	// usually a setup in progress, not an incident). The rank is computed
+	// once per venue and the sort is stable, so nothing jumps around while
+	// you look at it.
+	attention := map[venue.Freshness]int{venue.Stale: 0, venue.Late: 1, venue.Fresh: 2, venue.Unknown: 3}
 	for _, v := range venues {
 		vv := venueView{
 			ID: v.ID, Slug: v.Slug, Name: v.Name,
 			LastAge: age(now, v.LastFrameAt), Devices: byVenue[v.ID],
+			attention: attention[venue.Classify(v.LastFrameAt, now)],
 		}
 		switch venue.Classify(v.LastFrameAt, now) {
 		case venue.Fresh:
@@ -350,6 +362,9 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 		}
 		model.Venues = append(model.Venues, vv)
 	}
+	slices.SortStableFunc(model.Venues, func(a, b venueView) int {
+		return a.attention - b.attention
+	})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	if err := s.tmpl.ExecuteTemplate(w, "fleet.html", model); err != nil {
@@ -413,6 +428,37 @@ func parseHours(r *http.Request, cat *i18n.Catalog) (venue.Hours, string) {
 		return h, cat.HoursErrorText(herr)
 	}
 	return h, ""
+}
+
+// Bounds for the public venue info (design-pass2 §5).
+const (
+	maxVenueDescription = 200
+	maxVenuePhone       = 20
+)
+
+// parseVenueInfo validates the optional public info fields. Description is
+// free plain text with a hard length bound; the phone allows the characters
+// people actually type and is stored as typed (the page normalizes it for
+// the tel: href — display keeps the human form).
+func parseVenueInfo(descRaw, phoneRaw string) (string, string, string) {
+	desc := strings.TrimSpace(descRaw)
+	if len(desc) > maxVenueDescription {
+		return "", "", fmt.Sprintf("Description must be at most %d characters.", maxVenueDescription)
+	}
+	phone := strings.TrimSpace(phoneRaw)
+	if phone != "" {
+		if len(phone) > maxVenuePhone {
+			return "", "", fmt.Sprintf("Phone number must be at most %d characters.", maxVenuePhone)
+		}
+		for _, r := range phone {
+			switch {
+			case '0' <= r && r <= '9', r == '+', r == ' ', r == '-', r == '.', r == '(', r == ')':
+			default:
+				return "", "", "Phone number: only digits, spaces and + - . ( ) please."
+			}
+		}
+	}
+	return desc, phone, ""
 }
 
 func (s *Server) createVenue(w http.ResponseWriter, r *http.Request) {
@@ -588,13 +634,18 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 		s.flash(w, ferr)
 		return
 	}
+	desc, phone, ierr := parseVenueInfo(r.FormValue("description"), r.FormValue("phone"))
+	if ierr != "" {
+		s.flash(w, ierr)
+		return
+	}
 	h, hferr := parseHours(r, i18n.For(i18n.EN))
 	if hferr != "" {
 		s.flash(w, hferr)
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
-	if err := s.st.UpdateVenue(r.Context(), v.ID, name, r.FormValue("style"), tz); err != nil {
+	if err := s.st.UpdateVenue(r.Context(), v.ID, name, r.FormValue("style"), tz, desc, phone); err != nil {
 		s.internal(w, "update venue", err)
 		return
 	}

@@ -1,11 +1,15 @@
 <!doctype html>
 <!--
-  guzva public venue page — DESIGN.md §7.
-  Two hard constraints shape this file:
+  guzva public venue page — DESIGN.md §7, composed per design-pass2 §1:
+  the still and every fact about it (state, time, day) read as ONE object —
+  a mounted print with its gallery label. Two hard constraints shape this
+  file:
     D5  the web root holds exactly index.html + latest.png per venue, so the
         stylesheet and the script are INLINED here and never a third file;
     ⚑2 the still carries its own time (render stage 7), so this page is
         rewritten only on state flips and settings edits — not per frame.
+  The poller's contract (element ids, data-* attributes) is stable; it is
+  NOT part of the page's design.
 -->
 <html lang="{{.Lang}}">
 <head>
@@ -55,55 +59,51 @@
 
   <h1 class="text-[2rem] leading-9 font-bold tracking-tight sm:text-[2.5rem] sm:leading-11 break-words">{{.Name}}</h1>
 
-  <!-- Status: SHAPE + COLOUR + SENTENCE (DESIGN.md §3.2). The shape is
-       aria-hidden; the sentence is the signal, so colour is never alone. -->
-  <div class="flex flex-wrap items-center gap-x-3 gap-y-2" id="status">
-    <span class="inline-flex items-center gap-2 border-2 border-ink bg-paper px-2 py-1 text-sm font-semibold"
-          id="chip-{{.StateClass}}">
-      <span class="text-{{.StateClass}} inline-flex">{{.StateShape}}</span>{{.StateText}}
-    </span>
-    {{if .OpenText}}<span class="text-sm text-muted" id="opentxt">{{.OpenText}}</span>{{end}}
-  </div>
-
-  <!-- The still. The box is reserved before the bytes land, so nothing shifts:
-       width/height attributes plus an explicit aspect-ratio. The print is
-       shown at integer scale (k=2/3/4), pixelated — non-integer scales make
-       uneven "pixels" (§5.7). -->
-  <main class="relative border-2 border-ink bg-s3 shadow-step"
-        id="frame"
-        style="aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}}">
-    {{if .ShowStill}}
-      {{if .HasFrame}}
-        <img id="still" src="{{.StillFile}}?v={{.StillVer}}"
-             width="{{if .StillW}}{{.StillW}}{{else}}160{{end}}" height="{{if .StillH}}{{.StillH}}{{else}}120{{end}}"
-             decoding="async" fetchpriority="high"
-             alt="{{if .Updated}}{{.AltStill}}{{else}}{{.AltNow}}{{end}}"
-             class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
-        {{/* Late / no-signal overlays are CSS only — the picture itself is
-             never altered (§5.6). */}}
-        {{if eq .StateClass "late"}}<div class="absolute inset-0 tx-hatch-light pointer-events-none" aria-hidden="true"></div>{{end}}
-        {{if eq .StateClass "nosignal"}}<div class="absolute inset-0 tx-hatch" aria-hidden="true"></div>{{end}}
+  <!-- THE PRINT AND ITS LABEL (design-pass2 §1). One object: reserved
+       print box on top, gallery label below — state and time are facts
+       about the same picture, so they share the frame. The label is the
+       page's live region: state + time announce together. -->
+  <figure class="border-2 border-ink bg-paper shadow-step">
+    <div class="relative bg-s3"
+         id="frame"
+         style="aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}}">
+      {{if .ShowStill}}
+        {{if .HasFrame}}
+          <img id="still" src="{{.StillFile}}?v={{.StillVer}}"
+               width="{{if .StillW}}{{.StillW}}{{else}}160{{end}}" height="{{if .StillH}}{{.StillH}}{{else}}120{{end}}"
+               decoding="async" fetchpriority="high"
+               alt="{{if .Updated}}{{.AltStill}}{{else}}{{.AltNow}}{{end}}"
+               class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
+          {{/* Late / no-signal overlays are CSS only — the picture itself is
+               never altered (§5.6). */}}
+          {{if eq .StateClass "late"}}<div class="absolute inset-0 tx-hatch-light pointer-events-none" aria-hidden="true"></div>{{end}}
+          {{if eq .StateClass "nosignal"}}<div class="absolute inset-0 tx-hatch" aria-hidden="true"></div>{{end}}
+        {{else}}
+          <div class="absolute inset-0 tx-dither" aria-hidden="true"></div>
+        {{end}}
       {{else}}
-        <div class="absolute inset-0 tx-dither" aria-hidden="true"></div>
+        <!-- Closed: no still at all. Privacy after hours, honesty, bytes. -->
+        <div class="absolute inset-0 tx-shutter" aria-hidden="true"></div>
       {{end}}
-    {{else}}
-      <!-- Closed: no still at all. Privacy after hours, honesty, bytes. -->
-      <div class="absolute inset-0 tx-shutter" aria-hidden="true"></div>
-    {{end}}
-  </main>
+    </div>
+    <figcaption class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t-2 border-ink bg-paper-2 px-3 py-2"
+               role="status" aria-live="polite">
+      <span class="chip" id="chip-{{.StateClass}}">
+        <span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}
+      </span>
+      <span class="font-mono text-3xl sm:text-4xl leading-none font-bold tnum" id="hl">
+        {{if .ShowStill}}{{if .Updated}}{{.Updated}}{{else}}—{{end}}{{else}}—{{end}}
+      </span>
+    </figcaption>
+  </figure>
 
-  <!-- Headline: the time the picture was taken, venue-local, absolute. Never
-       a relative age (§11 — Croatian plurals make those unreadable). The
-       client rewrites this from Last-Modified on every new frame; the stamp
-       burned into the picture always agrees with it. -->
-  <div role="status" aria-live="polite">
-    <p class="font-mono text-[3.5rem] leading-none font-bold tnum" id="hl">
-      {{if .Updated}}{{.Updated}}{{end}}
-    </p>
-    <p class="text-muted text-sm -mt-2" id="hlday">
-      {{if .UpdatedDay}}{{.UpdatedDay}}{{end}}{{if .TZ}} · {{.TZ}}{{end}}
-    </p>
-  </div>
+  <!-- Caption: when the print was taken (poller-updated) + whether they are
+       open (server-rendered; flips reload the page). #hlday and #opentxt
+       stay separate elements because the poller rewrites #hlday only. -->
+  <p class="text-sm text-muted -mt-1">
+    <span id="hlday">{{if .UpdatedDay}}{{.UpdatedDay}}{{end}}{{if .TZ}} · {{.TZ}}{{end}}</span>{{if .OpenText}}<span id="opentxt"> · {{.OpenText}}</span>{{end}}
+  </p>
+
   <p id="banner" class="hidden text-sm border-2 border-ink bg-paper-2 px-3 py-2" role="alert"></p>
   <p id="idle" class="hidden text-sm border-2 border-ink bg-paper-2 px-3 py-2">
     <span id="idletext"></span>
@@ -121,6 +121,14 @@
   </section>
   {{end}}
 
+  {{if or .Description .Phone}}
+  <section class="border-t-2 border-ink pt-3">
+    <h2 class="text-xs font-semibold uppercase tracking-widest text-muted mb-1">{{.AboutTitle}}</h2>
+    {{if .Description}}<p class="text-sm">{{.Description}}</p>{{end}}
+    {{if .Phone}}<p class="text-base font-semibold mt-1"><a class="underline" href="tel:{{.PhoneHref}}">{{.Phone}}</a></p>{{end}}
+  </section>
+  {{end}}
+
   <footer class="mt-auto pt-4 text-xs text-muted border-t-2 border-ink">
     <p>{{.PrivacyLine}}</p>
   </footer>
@@ -133,9 +141,9 @@
  * Per frame the browser does ONE conditional request for the still:
  * fetch(still, {cache:'no-cache'}) → 304 ≈ 0.3 KB when nothing changed,
  * 200 ≈ 1–3 KB when a new frame arrived. The Last-Modified header (the
- * frame's received_at) drives the headline via Intl in the venue's timezone;
- * the new still is shown from the fetched blob, so one transfer and no
- * second request for the same bytes.
+ * frame's received_at) drives the label clock via Intl in the venue's
+ * timezone; the new still is shown from the fetched blob, so one transfer
+ * and no second request for the same bytes.
  *
  * State flips (late/no-signal/closed/open) arrive differently: one more
  * conditional request for index.html every 60 s, and if its Last-Modified

@@ -332,7 +332,7 @@ func TestSettingsEditFlipsStateKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := f.readIndex(t)
-	if err := f.st.UpdateVenue(ctx, f.vid, "Jadro Novo", "poster", "Europe/Sarajevo"); err != nil {
+	if err := f.st.UpdateVenue(ctx, f.vid, "Jadro Novo", "poster", "Europe/Sarajevo", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.w.Refresh(ctx, f.vid); err != nil {

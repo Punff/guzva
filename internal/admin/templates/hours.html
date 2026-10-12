@@ -1,29 +1,52 @@
-{{/* Hours editor (DESIGN.md §9): seven rows, one thumb each. Two intervals
-     per day (split shifts), native time pickers, "closed" as a checkbox —
-     never an empty field. Validation names the day.
-     Call with a dict: "days" ([7]venue.DayForm, Mo-first), "closed"
-     (closed-checkbox label), "copy" (copy-button label).
-     Field names h<i>_open1/close1/open2/close2/closed, i = 0..6 Mo-first —
-     the exact keys venue.ParseHoursForm reads. */}}
+{{/* Hours editor v2 (design-pass2 §2): seven day-rows, each with three
+      zones — the day + its closed toggle, then two labeled shift fieldsets.
+      Field names are the parser's contract (h<i>_open1/close1/open2/close2/
+      closed, i = 0..6 Mo-first) and are UNCHANGED: venue.ParseHoursForm and
+      every error test keep working. Every input carries a real label —
+      the audit's a11y fix, not a cosmetic. Inputs stay submitted even on a
+      closed day so the server's closed_times validation stays reachable.
+
+      Call with a dict: "days" ([7]venue.DayForm, Mo-first), "closed"
+      (closed-checkbox label), "copy" (copy-button label), "first" /
+      "second" / "optional" (shift legends), "openL" / "closeL" (the two
+      time-input labels). */}}
 {{define "hours-editor.html"}}
 <div class="grid gap-2">
   {{range $i, $d := .days}}
-  <div class="grid gap-1 border-2 border-ink bg-paper p-3 sm:grid-cols-[7rem_1fr_1fr] sm:items-center sm:gap-3">
+  <div class="grid gap-2 border-2 border-ink bg-paper p-3 sm:grid-cols-[8rem_1fr_1fr] sm:items-start">
     <div class="flex items-center justify-between sm:block">
       <span class="font-semibold">{{$d.Name}}</span>
-      <label class="text-sm text-muted flex items-center gap-2 sm:mt-1">
+      <label class="text-sm text-muted flex items-center gap-2 sm:mt-2 min-h-11">
         <input type="checkbox" name="h{{$i}}_closed" value="1"{{if $d.Closed}} checked{{end}} class="w-6 h-6 accent-[var(--accent)]">
         <span class="lbl">{{$.closed}}</span>
       </label>
     </div>
-    <div class="grid grid-cols-2 gap-2">
-      <input class="inp tnum" type="time" name="h{{$i}}_open1" value="{{$d.Open1}}">
-      <input class="inp tnum" type="time" name="h{{$i}}_close1" value="{{$d.Close1}}">
-    </div>
-    <div class="grid grid-cols-2 gap-2">
-      <input class="inp tnum" type="time" name="h{{$i}}_open2" value="{{$d.Open2}}">
-      <input class="inp tnum" type="time" name="h{{$i}}_close2" value="{{$d.Close2}}">
-    </div>
+    <fieldset class="border-2 border-ink bg-paper-2 p-2 m-0">
+      <legend class="lbl px-1">{{$.first}}</legend>
+      <div class="grid grid-cols-2 gap-2">
+        <div class="fieldset">
+          <label class="sr-only" for="h{{$i}}_open1">{{$d.Name}} — {{$.openL}}</label>
+          <input class="inp tnum" type="time" id="h{{$i}}_open1" name="h{{$i}}_open1" value="{{$d.Open1}}">
+        </div>
+        <div class="fieldset">
+          <label class="sr-only" for="h{{$i}}_close1">{{$d.Name}} — {{$.closeL}}</label>
+          <input class="inp tnum" type="time" id="h{{$i}}_close1" name="h{{$i}}_close1" value="{{$d.Close1}}">
+        </div>
+      </div>
+    </fieldset>
+    <fieldset class="border-2 border-ink bg-paper-2 p-2 m-0">
+      <legend class="lbl px-1">{{$.second}} <span class="normal-case tracking-normal text-muted">({{$.optional}})</span></legend>
+      <div class="grid grid-cols-2 gap-2">
+        <div class="fieldset">
+          <label class="sr-only" for="h{{$i}}_open2">{{$d.Name}} — {{$.openL}}, {{$.second}}</label>
+          <input class="inp tnum" type="time" id="h{{$i}}_open2" name="h{{$i}}_open2" value="{{$d.Open2}}">
+        </div>
+        <div class="fieldset">
+          <label class="sr-only" for="h{{$i}}_close2">{{$d.Name}} — {{$.closeL}}, {{$.second}}</label>
+          <input class="inp tnum" type="time" id="h{{$i}}_close2" name="h{{$i}}_close2" value="{{$d.Close2}}">
+        </div>
+      </div>
+    </fieldset>
   </div>
   {{end}}
 </div>

@@ -138,21 +138,14 @@
  * is exactly how a console drifts "all over the place", because changing a
  * control means finding every copy. Six short classes beat twenty-six copies,
  * and these are four lines each, not a component framework.
+ *
+ * design-pass2: this layer lives in web/app.css, NOT in tokens.css — the
+ * public page imports tokens wholesale (D5: one inline sheet) and pays
+ * gzipped bytes for every rule, and it uses none of the form/table
+ * components. Only .btn and .chip below are shared by all surfaces and so
+ * stay in tokens.css.
  */
 @layer components {
-  .card {
-    border: 2px solid var(--ink);
-    background: var(--paper);
-    padding: 1rem;
-  }
-  /* Depth is earned, not sprinkled. Only the ONE thing a page is about
-     carries the offset shadow; everything below it is a flat bordered
-     surface. Three stacked shadows read as noise, not hierarchy (§2.3). */
-  .card--raised { box-shadow: var(--shadow-step); }
-  /* A secondary surface: quieter background, no shadow. Used for anything
-     that is not the page's subject — create-forms, panels, empty states. */
-  .card--inset { background: var(--paper-2); }
-
   .btn {
     display: inline-flex;
     align-items: center;
@@ -181,54 +174,10 @@
   .btn--block { width: 100%; }
   .btn--quiet { box-shadow: none; }
 
-  .inp {
-    width: 100%;
-    min-height: 2.75rem;
-    padding: 0.5rem 0.75rem;
-    border: 2px solid var(--ink);
-    background: var(--paper);
-    color: var(--ink);
-    font: inherit;
-    font-size: 1rem;                  /* 16px: iOS zooms below this */
-  }
-  .inp:focus-visible { border-color: var(--accent); }
-
-  .lbl {
-    display: block;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-
-  .fieldset { display: grid; gap: 0.25rem; }
-
-  .tbl { width: 100%; font-size: var(--text-sm, 0.875rem); border: 2px solid var(--ink); }
-  /* A table inside a card: keep the header and stripes, drop the frame. Two
-     nested borders read as a mistake. */
-  .tbl--bare { border: 0; }
-  .tbl th, .tbl td { text-align: left; padding: 0.375rem 0.5rem; }
-  .tbl thead th {
-    background: var(--paper-2);
-    font-size: 0.6875rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--muted);
-    border-bottom: 2px solid var(--ink);
-  }
-  .tbl tbody tr:nth-child(odd) { background: var(--paper-2); }
-  .tbl tbody td { border-bottom: 1px solid var(--line, var(--paper-2)); }
-  .tbl tbody tr:last-child td { border-bottom: 0; }
-
-  /* Pushes the trailing item in a flex row to the far edge, without an
-   * inline style (which the CSP would reject). */
-  .push { margin-left: auto; }
-
   /* Status chip: shape + colour + sentence (§3.2). The sentence is what a
      screen reader reads; the colour and the shape are redundant reinforcement,
-     so the state never depends on seeing colour. */
+     so the state never depends on seeing colour. Shared with the public
+     page's print label (design-pass2 §1). */
   .chip {
     display: inline-flex;
     align-items: center;

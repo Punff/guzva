@@ -43,8 +43,20 @@
       </div>
     </div>
     <div class="fieldset">
+      <label class="lbl" for="v-desc">{{.Cat.Get "owner.about"}}</label>
+      <input class="inp" id="v-desc" name="description" value="{{.Venue.Description}}" maxlength="200"
+             placeholder="Jedna rečenica za goste koji skeniraju QR kod">
+    </div>
+    <div class="fieldset">
+      <label class="lbl" for="v-phone">{{.Cat.Get "owner.phone"}}</label>
+      <input class="inp tnum" id="v-phone" name="phone" value="{{.Venue.Phone}}" maxlength="20"
+             inputmode="tel" placeholder="+387 61 000 000">
+    </div>
+    <div class="fieldset">
       <span class="lbl mb-2">{{.Cat.Get "hours.title"}}</span>
-      {{template "hours-editor.html" dict "days" .Days "closed" (.Cat.Get "hours.closed") "copy" (.Cat.Get "hours.copy")}}
+      {{template "hours-editor.html" dict "days" .Days "closed" (.Cat.Get "hours.closed") "copy" (.Cat.Get "hours.copy")
+        "first" (.Cat.Get "hours.first") "second" (.Cat.Get "hours.second") "optional" (.Cat.Get "hours.optional")
+        "openL" (.Cat.Get "hours.open") "closeL" (.Cat.Get "hours.close")}}
     </div>
     <button class="btn btn--primary" type="submit">{{.Cat.Get "owner.save"}}</button>
   </form>

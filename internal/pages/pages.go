@@ -120,6 +120,12 @@ type view struct {
 	AltStill   string // full alt with the capture time (localized, W2)
 	AltNow     string // alt before the first JS frame swap (localized)
 	AltPrefix  string // alt.still up to the time; the poller appends to it
+	// Optional public venue info (design-pass2 §5): shown only when set,
+	// so a bare venue renders exactly as before.
+	Description string // public one-liner, plain text
+	Phone       string // public phone, displayed as typed
+	PhoneHref   string // phone normalized for tel: (digits + leading +)
+	AboutTitle  string // localized "about" heading
 
 	// Poller copy, read from data-* attributes so the script carries no
 	// second hand-written dictionary (W2: one catalog, internal/i18n).
@@ -183,8 +189,9 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	if latest != nil && latest.Status == "ok" && latest.Path != "" && !strings.HasSuffix(latest.Path, ".png") {
 		stillFile = "latest.jpg"
 	}
-	stateKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s", fresh, open, v.Name, v.Style,
-		v.TZ, v.Lang, hoursToday(cat0, hours, localNow), stillFile)
+	stateKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", fresh, open, v.Name, v.Style,
+		v.TZ, v.Lang, hoursToday(cat0, hours, localNow), stillFile,
+		v.Description, v.Phone)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -236,6 +243,10 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		StillFile:    stillFile,
 		Tagline:      cat.Get("tagline"),
 		HoursTitle:   cat.Get("hours.title"),
+		AboutTitle:   cat.Get("venue.about"),
+		Description:  v.Description,
+		Phone:        v.Phone,
+		PhoneHref:    telHref(v.Phone),
 		AltNow:       cat.F("alt.nowframe", v.Name),
 		AltPrefix:    cat.F("alt.still", v.Name, ""),
 		StrOffline:   cat.Get("net.offline"),
@@ -305,6 +316,25 @@ func tzLabel(last time.Time, loc *time.Location) string {
 		return ""
 	}
 	return zoneLabel(last.In(loc), loc)
+}
+
+// telHref normalizes a typed phone number for a tel: href: keep digits and
+// a single leading +, drop the spaces/dashes/dots people type for display.
+// The stored form stays human ("+387 61 000 000"); the href is machine.
+func telHref(phone string) string {
+	if phone == "" {
+		return ""
+	}
+	var b strings.Builder
+	for i, r := range phone {
+		switch {
+		case '0' <= r && r <= '9':
+			b.WriteRune(r)
+		case r == '+' && i == 0:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // zoneLabel abbreviates the venue's timezone for display ("CET", "GMT+2").

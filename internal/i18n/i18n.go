@@ -85,8 +85,20 @@ var hr = &Catalog{
 		"hours.title":  "Radno vrijeme",
 		"hours.closed": "Zatvoreno",
 
+		// Hours editor v2 (design-pass2 §2): every input labeled.
+		"hours.first":    "1. smjena",
+		"hours.second":   "2. smjena",
+		"hours.optional": "neobavezno",
+		"hours.open":     "Otvara",
+		"hours.close":    "Zatvara",
+
 		"when.yesterday": "jučer",
 		"live.newpic":    "Nova slika.",
+
+		"venue.about": "O salonu",
+
+		"owner.about": "Opis (javno)",
+		"owner.phone": "Telefon (javno)",
 
 		"owner.save":       "Spremi promjene",
 		"owner.saved":      "Promjene su spremljene",
@@ -167,8 +179,20 @@ var en = &Catalog{
 		"hours.title":  "Opening hours",
 		"hours.closed": "Closed",
 
+		// Hours editor v2 (design-pass2 §2): every input labeled.
+		"hours.first":    "First shift",
+		"hours.second":   "Second shift",
+		"hours.optional": "optional",
+		"hours.open":     "Opens",
+		"hours.close":    "Closes",
+
 		"when.yesterday": "yesterday",
 		"live.newpic":    "New picture.",
+
+		"venue.about": "About",
+
+		"owner.about": "Description (public)",
+		"owner.phone": "Phone (public)",
 
 		"owner.save":       "Save changes",
 		"owner.saved":      "Changes saved",

@@ -124,7 +124,8 @@
     </div>
     <div class="fieldset">
       <span class="lbl mb-2">Hours</span>
-      {{template "hours-editor.html" dict "days" .Days "closed" "closed" "copy" "Copy Monday to weekdays"}}
+      {{template "hours-editor.html" dict "days" .Days "closed" "closed" "copy" "Copy Monday to weekdays"
+        "first" "First shift" "second" "Second shift" "optional" "optional" "openL" "Opens" "closeL" "Closes"}}
     </div>
     <button class="btn btn--primary" type="submit">Create venue</button>
   </form>

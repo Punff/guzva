@@ -4,9 +4,10 @@
 {{template "shell-head.html" .}}
 <title>guzva — venue {{.Venue.Slug}}</title>
 <script src="/admin/static/htmx.min.js" defer></script>
+<script src="/admin/static/calib.js" defer></script>
 </head>
 <body class="bg-paper text-ink font-sans">
-<div class="mx-auto w-full max-w-[44rem] px-4 py-6 sm:px-6">
+<div class="mx-auto w-full max-w-[52rem] px-4 py-6 sm:px-6">
 {{template "page-head.html" dict "title" .Venue.Name "trailHref" "/admin/" "trailText" "fleet" "signOut" "/admin/logout"}}
 
 <div id="flash">
@@ -14,9 +15,10 @@
   {{if .OwnerSet}}<div class="card card--inset text-sm" role="status">Owner password set.</div>{{end}}
 </div>
 
-<section class="border-2 border-ink bg-paper shadow-step p-4 mb-5">
+<section class="card card--raised mb-5">
   <h2 class="text-lg font-bold mb-1">Details</h2>
   <p class="text-sm text-muted mb-3">Slug <code class="font-mono text-ink">/{{.Venue.Slug}}/</code> is identity and never changes. <a class="underline" href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">Open the public page ↗</a></p>
+  {{/* method+action: works without JS (§8); htmx enhances. */}}
   <form class="grid gap-3" method="post" action="/admin/venues/{{.Venue.ID}}"
         hx-post="/admin/venues/{{.Venue.ID}}" hx-target="#flash" hx-swap="innerHTML">
     <div class="fieldset">
@@ -36,15 +38,28 @@
         </select>
       </div>
     </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div class="fieldset">
+        <label class="lbl" for="v-desc">Description (public)</label>
+        <input class="inp" id="v-desc" name="description" value="{{.Venue.Description}}" maxlength="200"
+               placeholder="One sentence for guests scanning the QR code">
+      </div>
+      <div class="fieldset">
+        <label class="lbl" for="v-phone">Phone (public)</label>
+        <input class="inp tnum" id="v-phone" name="phone" value="{{.Venue.Phone}}" maxlength="20"
+               inputmode="tel" placeholder="+387 61 000 000">
+      </div>
+    </div>
     <div class="fieldset">
       <span class="lbl mb-2">Hours</span>
-      {{template "hours-editor.html" dict "days" .Days "closed" "closed" "copy" "Copy Monday to weekdays"}}
+      {{template "hours-editor.html" dict "days" .Days "closed" "closed" "copy" "Copy Monday to weekdays"
+        "first" "First shift" "second" "Second shift" "optional" "optional" "openL" "Opens" "closeL" "Closes"}}
     </div>
     <button class="btn btn--primary" type="submit">Save details</button>
   </form>
 </section>
 
-<section class="card card--raised">
+<section class="card card--raised mb-5">
   <h2 class="text-lg font-bold mb-1">Owner login</h2>
   {{if .HasOwner}}<p class="text-sm text-muted mb-3">Enabled. A new password replaces the old one.</p>{{else}}<p class="text-sm text-muted mb-3">Not set yet — set one to give the venue owner their own panel.</p>{{end}}
   <form class="grid gap-3" method="post" action="/admin/venues/{{.Venue.ID}}/ownerpw">
@@ -57,42 +72,62 @@
   <p class="text-xs text-muted mt-3">Hand the password out-of-band. It is hashed on save and never shown again.</p>
 </section>
 
-<section class="card p-4 mt-5">
-  <h2 class="text-lg font-bold mb-1">Picture calibration</h2>
-  <p class="text-sm text-muted mb-3">Thresholds, bias and inversion tune how the room maps onto the four print tones; masks hide regions where people sit too close (static geometry only — never detection). Empty means defaults. Takes effect on the next frame. <a class="underline" href="/{{.Venue.Slug}}/latest.png" target="_blank" rel="noreferrer">Current print ↗</a> for reference; grid is 160×120.</p>
-  <form class="grid gap-3" method="post" action="/admin/venues/{{.Venue.ID}}/calib">
-    <div class="grid grid-cols-3 gap-3">
-      <div class="fieldset"><label class="lbl" for="c-t0">Dark edge (t0)</label><input class="inp tnum" type="number" id="c-t0" name="t0" min="1" max="254" placeholder="64"{{if index .CalibT 0}} value="{{index .CalibT 0}}"{{end}}></div>
-      <div class="fieldset"><label class="lbl" for="c-t1">Mid edge (t1)</label><input class="inp tnum" type="number" id="c-t1" name="t1" min="1" max="254" placeholder="128"{{if index .CalibT 1}} value="{{index .CalibT 1}}"{{end}}></div>
-      <div class="fieldset"><label class="lbl" for="c-t2">Light edge (t2)</label><input class="inp tnum" type="number" id="c-t2" name="t2" min="1" max="254" placeholder="192"{{if index .CalibT 2}} value="{{index .CalibT 2}}"{{end}}></div>
+{{/* Print & privacy setup (design-pass2 §3): preview left, controls right.
+      The preview is enhancement-only (calib.js); the form is the contract
+      and works without JS, same fields, same server validation as ever. */}}
+<section class="card card--raised">
+  <h2 class="text-lg font-bold mb-1">Print & privacy setup</h2>
+  <p class="text-sm text-muted mb-4">
+    <strong class="text-ink">Tones</strong> — thresholds and bias decide how room light maps onto the print's four tones (invert for dark rooms, bright doors).
+    <strong class="text-ink">Masks</strong> — rectangles that are always rendered black: draw them where people sit too close (static geometry only, never detection).
+    <strong class="text-ink">Grid</strong> — the picture is 160×120 cells; mask coordinates are cell numbers, not pixels.
+    Takes effect on the next frame. <a class="underline" href="/{{.Venue.Slug}}/latest.png" target="_blank" rel="noreferrer">Open the current print ↗</a>
+  </p>
+
+  <div class="grid gap-4 lg:grid-cols-2">
+    <div>
+      <div class="lbl mb-1">Preview — your masks over the current print</div>
+      <div id="calib-preview" class="relative border-2 border-ink bg-s3">
+        <img id="calib-still" src="/{{.Venue.Slug}}/latest.png" alt="" class="block w-full">
+      </div>
+      <div id="calib-ramp" class="hidden flex h-4 border-2 border-ink mt-2" aria-hidden="true"></div>
+      <p class="text-xs text-muted mt-1">The ramp shows how light maps to the four print tones at your thresholds; invert flips it.</p>
     </div>
-    <div class="grid grid-cols-2 gap-3">
-      <div class="fieldset"><label class="lbl" for="c-bias">Brightness bias</label><input class="inp tnum" type="number" id="c-bias" name="bias" min="-255" max="255" placeholder="0"{{if .CalibB}} value="{{.CalibB}}"{{end}}></div>
-      <div class="fieldset"><span class="lbl">Negative</span><label class="text-sm flex items-center gap-2 min-h-11"><input type="checkbox" name="invert" value="1"{{if .Calib.Invert}} checked{{end}} class="w-6 h-6 accent-[var(--accent)]"> Invert (dark rooms, bright doors)</label></div>
-    </div>
-    <h3 class="lbl">Privacy masks (grid cells, x 0–160, y 0–120)</h3>
-    {{range $i, $m := .Calib.Masks}}
-    <div class="grid grid-cols-4 gap-2">
-      <div class="fieldset"><label class="lbl" for="c-m{{$i}}x0">Mask {{$i}} x0</label><input class="inp tnum" type="number" id="c-m{{$i}}x0" name="m{{$i}}x0" min="0" max="160" value="{{$m.X0}}"></div>
-      <div class="fieldset"><label class="lbl" for="c-m{{$i}}y0">y0</label><input class="inp tnum" type="number" id="c-m{{$i}}y0" name="m{{$i}}y0" min="0" max="120" value="{{$m.Y0}}"></div>
-      <div class="fieldset"><label class="lbl" for="c-m{{$i}}x1">x1</label><input class="inp tnum" type="number" id="c-m{{$i}}x1" name="m{{$i}}x1" min="0" max="160" value="{{$m.X1}}"></div>
-      <div class="fieldset"><label class="lbl" for="c-m{{$i}}y1">y1</label><input class="inp tnum" type="number" id="c-m{{$i}}y1" name="m{{$i}}y1" min="0" max="120" value="{{$m.Y1}}"></div>
-    </div>
-    {{end}}
-    {{if lt (len .Calib.Masks) 4}}
-    <div class="grid grid-cols-4 gap-2">
-      <div class="fieldset"><label class="lbl" for="c-mnewx0">New mask x0</label><input class="inp tnum" type="number" id="c-mnewx0" name="m{{len .Calib.Masks}}x0" min="0" max="160" placeholder="—"></div>
-      <div class="fieldset"><label class="lbl">y0</label><input class="inp tnum" type="number" name="m{{len .Calib.Masks}}y0" min="0" max="120" placeholder="—"></div>
-      <div class="fieldset"><label class="lbl">x1</label><input class="inp tnum" type="number" name="m{{len .Calib.Masks}}x1" min="0" max="160" placeholder="—"></div>
-      <div class="fieldset"><label class="lbl">y1</label><input class="inp tnum" type="number" name="m{{len .Calib.Masks}}y1" min="0" max="120" placeholder="—"></div>
-    </div>
-    {{end}}
-    <div class="flex flex-wrap gap-2">
-      <button class="btn btn--primary" type="submit">Save calibration</button>
-      {{if .CalibSet}}<span class="text-sm text-muted self-center" role="status">Saved — applies to the next frame.</span>{{end}}
-    </div>
-  </form>
-  <p class="text-xs text-muted mt-3">Clearing every field restores defaults. A second empty mask row appears after saving, up to four.</p>
+
+    <form id="calib-form" class="grid gap-3" method="post" action="/admin/venues/{{.Venue.ID}}/calib">
+      <div class="grid grid-cols-3 gap-3">
+        <div class="fieldset"><label class="lbl" for="c-t0">Dark edge (t0)</label><input class="inp tnum" type="number" id="c-t0" name="t0" min="1" max="254" placeholder="64"{{if index .CalibT 0}} value="{{index .CalibT 0}}"{{end}}></div>
+        <div class="fieldset"><label class="lbl" for="c-t1">Mid edge (t1)</label><input class="inp tnum" type="number" id="c-t1" name="t1" min="1" max="254" placeholder="128"{{if index .CalibT 1}} value="{{index .CalibT 1}}"{{end}}></div>
+        <div class="fieldset"><label class="lbl" for="c-t2">Light edge (t2)</label><input class="inp tnum" type="number" id="c-t2" name="t2" min="1" max="254" placeholder="192"{{if index .CalibT 2}} value="{{index .CalibT 2}}"{{end}}></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="fieldset"><label class="lbl" for="c-bias">Brightness bias</label><input class="inp tnum" type="number" id="c-bias" name="bias" min="-255" max="255" placeholder="0"{{if .CalibB}} value="{{.CalibB}}"{{end}}></div>
+        <div class="fieldset"><span class="lbl">Negative</span><label class="text-sm flex items-center gap-2 min-h-11"><input type="checkbox" name="invert" value="1"{{if .Calib.Invert}} checked{{end}} class="w-6 h-6 accent-[var(--accent)]"> Invert (dark rooms, bright doors)</label></div>
+      </div>
+      <h3 class="lbl">Privacy masks (grid cells, x 0–160, y 0–120)</h3>
+      {{range $i, $m := .Calib.Masks}}
+      <div class="grid grid-cols-4 gap-2">
+        <div class="fieldset"><label class="lbl" for="c-m{{$i}}x0">Mask {{$i}} x0</label><input class="inp tnum" type="number" id="c-m{{$i}}x0" name="m{{$i}}x0" min="0" max="160" value="{{$m.X0}}"></div>
+        <div class="fieldset"><label class="lbl" for="c-m{{$i}}y0">y0</label><input class="inp tnum" type="number" id="c-m{{$i}}y0" name="m{{$i}}y0" min="0" max="120" value="{{$m.Y0}}"></div>
+        <div class="fieldset"><label class="lbl" for="c-m{{$i}}x1">x1</label><input class="inp tnum" type="number" id="c-m{{$i}}x1" name="m{{$i}}x1" min="0" max="160" value="{{$m.X1}}"></div>
+        <div class="fieldset"><label class="lbl" for="c-m{{$i}}y1">y1</label><input class="inp tnum" type="number" id="c-m{{$i}}y1" name="m{{$i}}y1" min="0" max="120" value="{{$m.Y1}}"></div>
+      </div>
+      {{end}}
+      {{if lt (len .Calib.Masks) 4}}
+      <div class="grid grid-cols-4 gap-2">
+        <div class="fieldset"><label class="lbl" for="c-mnewx0">New mask x0</label><input class="inp tnum" type="number" id="c-mnewx0" name="m{{len .Calib.Masks}}x0" min="0" max="160" placeholder="—"></div>
+        <div class="fieldset"><label class="lbl" for="c-mnewy0">y0</label><input class="inp tnum" type="number" id="c-mnewy0" name="m{{len .Calib.Masks}}y0" min="0" max="120" placeholder="—"></div>
+        <div class="fieldset"><label class="lbl" for="c-mnewx1">x1</label><input class="inp tnum" type="number" id="c-mnewx1" name="m{{len .Calib.Masks}}x1" min="0" max="160" placeholder="—"></div>
+        <div class="fieldset"><label class="lbl" for="c-mnewy1">y1</label><input class="inp tnum" type="number" id="c-mnewy1" name="m{{len .Calib.Masks}}y1" min="0" max="120" placeholder="—"></div>
+      </div>
+      {{end}}
+      <div class="flex flex-wrap gap-2">
+        <button class="btn btn--primary" type="submit">Save calibration</button>
+        {{if .CalibSet}}<span class="text-sm text-muted self-center" role="status">Saved — applies to the next frame.</span>{{end}}
+      </div>
+    </form>
+  </div>
+  <p class="text-xs text-muted mt-3">Clearing every field restores defaults. A second empty mask row appears after saving, up to four. Candidates for a new install: <code class="font-mono text-ink">tools/styleproof</code> renders a contact sheet locally.</p>
 </section>
 
 {{template "shell-foot.html" .}}

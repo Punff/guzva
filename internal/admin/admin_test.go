@@ -652,7 +652,7 @@ func TestSetCalib(t *testing.T) {
 	}
 	// The venue page shows the form with the current values.
 	w = f.do(t, http.MethodGet, "/admin/venues/1", nil, ck, false)
-	if !strings.Contains(w.Body.String(), "Picture calibration") {
+	if !strings.Contains(w.Body.String(), "Print & privacy setup") {
 		t.Fatal("venue page missing calibration section")
 	}
 }

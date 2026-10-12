@@ -188,6 +188,11 @@ func (s *Server) ownerUpdateVenue(w http.ResponseWriter, r *http.Request, v *sto
 		s.flash(w, ferr)
 		return
 	}
+	desc, phone, ierr := parseVenueInfo(r.FormValue("description"), r.FormValue("phone"))
+	if ierr != "" {
+		s.flash(w, ierr)
+		return
+	}
 	cat := i18n.For(i18n.Normalize(v.Lang))
 	h, hferr := parseHours(r, cat)
 	if hferr != "" {
@@ -195,7 +200,7 @@ func (s *Server) ownerUpdateVenue(w http.ResponseWriter, r *http.Request, v *sto
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
-	if err := s.st.UpdateVenue(r.Context(), v.ID, name, r.FormValue("style"), tz); err != nil {
+	if err := s.st.UpdateVenue(r.Context(), v.ID, name, r.FormValue("style"), tz, desc, phone); err != nil {
 		s.internal(w, "owner update venue", err)
 		return
 	}
