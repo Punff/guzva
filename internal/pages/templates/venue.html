@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   guzva public venue page — DESIGN.md §7, composed per design-pass2 §1:
-  the still and every fact about it (state, time, day) read as ONE object —
+  the still and every fact about it (state, time) read as ONE object —
   a mounted print with its gallery label. Two hard constraints shape this
   file:
     D5  the web root holds exactly index.html + latest.png per venue, so the
@@ -35,7 +35,7 @@
 <body class="min-h-dvh bg-paper text-ink font-sans"
       data-tz="{{.TZName}}" data-still="{{.StillFile}}" data-lang="{{.Lang}}" data-poll="30"
       data-offline="{{.StrOffline}}" data-idle="{{.StrIdle}}" data-resume="{{.StrResume}}"
-      data-newpic="{{.StrNewPic}}" data-today="{{.StrToday}}" data-yesterday="{{.StrYesterday}}"
+      data-newpic="{{.StrNewPic}}"
       data-altprefix="{{.AltPrefix}}">
 <div class="mx-auto w-full max-w-[40rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
 
@@ -97,11 +97,9 @@
     </figcaption>
   </figure>
 
-  <!-- Caption: when the print was taken (poller-updated). The open state
-       moved into the info card below — one surface, not two. -->
-  {{if and .ShowStill (or .UpdatedDay .TZ)}}<p class="text-sm text-muted -mt-1">
-    <span id="hlday">{{if .UpdatedDay}}{{.UpdatedDay}}{{end}}{{if .TZ}} · {{.TZ}}{{end}}</span>
-  </p>{{end}}
+  {{/* The stale detail stands alone under the print: it is the honest
+       sentence for old frames, not a second caption. The open state lives
+       in the info card below — one surface, not two. */}}
 
   <p id="banner" class="hidden text-sm border-2 border-ink bg-paper-2 px-3 py-2" role="alert"></p>
   <p id="idle" class="hidden text-sm text-muted">
@@ -124,8 +122,10 @@
     {{if .HoursToday}}<p class="text-sm tnum text-muted -mt-1">{{.HoursToday}}</p>{{end}}
     {{end}}
     {{if .Description}}<p class="text-base">{{.Description}}</p>{{end}}
-    {{if .Phone}}<a class="text-base font-semibold underline self-start px-1 -mx-1 min-h-11 inline-flex items-center" href="tel:{{.PhoneHref}}">{{.Phone}}</a>{{end}}
   </section>
+  {{end}}
+  {{if .Phone}}
+  <a class="border-2 border-ink bg-paper-2 p-4 text-base font-semibold underline min-h-11 flex items-center" href="tel:{{.PhoneHref}}">{{.Phone}}</a>
   {{end}}
 
   <footer class="mt-auto pt-4 text-xs text-muted border-t-2 border-ink">
@@ -161,7 +161,7 @@
   var poll = Math.max(10, parseInt(d.poll || '30', 10)) * 1000;
 
   function $(id) { return document.getElementById(id); }
-  var img = $('still'), hl = $('hl'), day = $('hlday'),
+  var img = $('still'), hl = $('hl'),
       banner = $('banner'), idleBox = $('idle'), resume = $('resume'),
       live = null;
 
@@ -174,15 +174,13 @@
 
   var fmtTime = new Intl.DateTimeFormat(lang,
     { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
-  var fmtDay = new Intl.DateTimeFormat(lang,
-    { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
 
   // Copy comes from the page's data-* attributes, which internal/i18n
   // rendered in the venue's language — one catalog, no second dictionary
   // inside this script (W2). No relative-time sentences, ever (§11).
   var STR = {
     offline: d.offline, idle: d.idle, resume: d.resume,
-    newpic: d.newpic, today: d.today, yesterday: d.yesterday
+    newpic: d.newpic
   };
   var ALT_PREFIX = d.altprefix || '';
   $('idletext').textContent = STR.idle;
@@ -192,23 +190,8 @@
       idleAt = Date.now() + 10 * 60 * 1000, idle = false,
       busy = false, pageLM = Date.parse(document.lastModified) || 0;
 
-  function venueDay(date) { return fmtDay.format(date); }
   function headline(lmDate) {
     hl.textContent = fmtTime.format(lmDate);
-    var tzName = '';
-    try {
-      tzName = new Intl.DateTimeFormat(lang,
-        { timeZone: tz, timeZoneName: 'short' })
-        .formatToParts(lmDate).filter(function (p) { return p.type === 'timeZoneName'; })[0].value;
-    } catch (e) { tzName = ''; }
-    var todayS = venueDay(new Date()), thenS = venueDay(lmDate), word;
-    if (thenS === todayS) {
-      word = STR.today;
-    } else {
-      var y = new Date(Date.now() - 864e5);
-      word = (venueDay(y) === thenS) ? STR.yesterday : thenS;
-    }
-    day.textContent = word + (tzName ? ' · ' + tzName : '');
     if (img) {
       // Rebuild the alt from the catalog prefix + the fresh time, so the
       // venue's language is right even for frames that arrive via JS.
