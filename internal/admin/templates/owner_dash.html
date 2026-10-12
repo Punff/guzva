@@ -45,7 +45,7 @@
     <div class="fieldset">
       <label class="lbl" for="v-desc">{{.Cat.Get "owner.about"}}</label>
       <input class="inp" id="v-desc" name="description" value="{{.Venue.Description}}" maxlength="200"
-             placeholder="Jedna rečenica za goste koji skeniraju QR kod">
+             placeholder="{{.Cat.Get "owner.about.placeholder"}}">
     </div>
     <div class="fieldset">
       <label class="lbl" for="v-phone">{{.Cat.Get "owner.phone"}}</label>
@@ -53,10 +53,14 @@
              inputmode="tel" placeholder="+387 61 000 000">
     </div>
     <div class="fieldset">
+      <label class="lbl" for="v-loc">{{.Cat.Get "owner.location"}}</label>
+      <input class="inp" id="v-loc" name="location" value="{{.Venue.Location}}" maxlength="160">
+    </div>
+    <div class="fieldset">
       <span class="lbl mb-2">{{.Cat.Get "hours.title"}}</span>
       {{template "hours-editor.html" dict "days" .Days "closed" (.Cat.Get "hours.closed") "copy" (.Cat.Get "hours.copy")
         "openL" (.Cat.Get "hours.open") "closeL" (.Cat.Get "hours.close")
-        "split" "Stranica i dalje poštuje drugi interval (%s) — spremanje zadržava samo prvi."}}
+        "split" (.Cat.Get "hours.splitwarn")}}
     </div>
     <button class="btn btn--primary" type="submit">{{.Cat.Get "owner.save"}}</button>
   </form>
