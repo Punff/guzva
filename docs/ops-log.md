@@ -635,3 +635,15 @@ label bar at 360 px is the one thing to squint at.
 - Dispatched: docs-i18n adds the 3 keys (hr+en); backend-go wires
   owner_login `Cat` + `view.Location`/`view.Week` (+ state key). Then
   frontend renders Location row + week cards + owner_login keys.
+
+## 2026-10-12 — orchestrator: docs-i18n `66833de` merged (gate un-red)
+
+- 3 keys landed hr+en (`hours.splitwarn`, `owner.location`,
+  `owner.about.placeholder`); `TestFetchedKeysExist` + identical-sets
+  PASS at `-count=1`; `make test` green. `864b0a7`'s red-by-design
+  cleared. Spare-model handover (ling→nemotron) recovered a mangled
+  en-catalog edit correctly via git restore.
+- Backend plumbing in flight (`pages.go` dirty): `Cat` for
+  owner_login + `view.Location` (+ state key) + `view.Week`. Then
+  frontend renders: Location row, week cards, owner-login catalog
+  copy, `owner.login.*` keys (docs-i18n standing by).
