@@ -22,11 +22,14 @@
   var NS = 'http://www.w3.org/2000/svg';
   var GW = 160, GH = 120, MASKS = 4;
 
-  // The overlay must sit exactly on the picture, in grid cells.
+  // The overlay must sit exactly on the picture, in grid cells. Its
+  // positioning ships as explicit CSS (#calib-preview svg in web/app.css),
+  // NOT as utility classes: this script runs after the Tailwind scan, so a
+  // runtime class string would silently match nothing (W2/B1 shape) and the
+  // SVG would render as a static block below the picture.
   var svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '0 0 ' + GW + ' ' + GH);
   svg.setAttribute('preserveAspectRatio', 'none');
-  svg.setAttribute('class', 'absolute inset-0 h-full w-full pointer-events-none');
   svg.setAttribute('aria-hidden', 'true');
   wrap.appendChild(svg);
 
