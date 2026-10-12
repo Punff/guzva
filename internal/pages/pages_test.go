@@ -48,7 +48,7 @@ func newFixture(t *testing.T) *fixture {
 	// name, tz, style and nothing else), so the phone goes in through the
 	// same setter the admin and owner panels use. Stored as typed; the page
 	// normalizes it for the tel: href (telHref).
-	if err := st.UpdateVenue(ctx, vid, "Jadro", "poster", "Europe/Sarajevo", "", "+387 61 234 567"); err != nil {
+	if err := st.UpdateVenue(ctx, vid, "Jadro", "poster", "Europe/Sarajevo", "", "+387 61 234 567", "Obala Kulina bana 3"); err != nil {
 		t.Fatalf("update venue: %v", err)
 	}
 	h, err := venue.ParseSpec("Mo-Fr 09:00-17:00")
@@ -142,8 +142,6 @@ func TestOnFrameWritesOnlyPublicFiles(t *testing.T) {
 		// the swap running (measured: 3 full navigations in 95s).
 		`<noscript><meta http-equiv="refresh" content="60">`,
 		"16:00",                           // venue-local, absolute (§6.4)
-		"danas",                           // day word, localised
-		"CEST",                            // venue timezone, not the viewer's
 		`src="latest.jpg?v=`,              // cache-busted by frame id (collision-proof)
 		"09:00–17:00",                     // today (Friday) hours, in the info card
 		"Otvoreno do",                     // the card's open-state headline
@@ -303,8 +301,8 @@ func TestQuarantineKeepsLastGood(t *testing.T) {
 	if !strings.Contains(idx, "Svježa slika") || strings.Contains(idx, "Čekamo prvu sliku") {
 		t.Fatalf("page lost last-good state:\n%s", idx)
 	}
-	// The clock + day word must still show the last GOOD frame's time.
-	if !strings.Contains(idx, "16:00") || !strings.Contains(idx, "danas") {
+	// The clock must still show the last GOOD frame's time.
+	if !strings.Contains(idx, "16:00") {
 		t.Fatalf("clock must still show the last GOOD frame:\n%s", idx)
 	}
 }

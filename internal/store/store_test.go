@@ -200,8 +200,8 @@ func TestMigrationV1ToV2(t *testing.T) {
 	defer s.Close()
 
 	var ver int
-	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 6 {
-		t.Fatalf("user_version = %d err=%v, want 6", ver, err)
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 7 {
+		t.Fatalf("user_version = %d err=%v, want 7", ver, err)
 	}
 	d, err := s.DeviceBySerial(context.Background(), "esp32-old")
 	if err != nil {
@@ -404,8 +404,8 @@ func TestMigrationToV3(t *testing.T) {
 	}
 	defer s.Close()
 	var ver int
-	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 6 {
-		t.Fatalf("user_version = %d err=%v, want 6", ver, err)
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 7 {
+		t.Fatalf("user_version = %d err=%v, want 7", ver, err)
 	}
 	v, err := s.VenueBySlug(context.Background(), "old")
 	if err != nil {
@@ -422,6 +422,14 @@ func TestMigrationToV3(t *testing.T) {
 	if v.Name != "Old" || v.OwnerHash != "" {
 		t.Fatalf("v1 venue not intact: %+v", v)
 	}
+	// v7's location is additive: an old row gains the column empty, so no
+	// pre-existing venue changes shape on the contact section.
+	if v.Location != "" {
+		t.Fatalf("venue location = %q after migrating from v1, want empty", v.Location)
+	}
+	if v.Description != "" || v.Phone != "" {
+		t.Fatalf("v6 public info not empty on a v1 row: %+v", v)
+	}
 }
 
 // UpdateVenue + SetOwnerHash + DevicesByVenue: the owner panel's data plane.
@@ -430,7 +438,7 @@ func TestVenueDetailsAndOwner(t *testing.T) {
 	ctx := context.Background()
 	vid := mustVenue(t, s, "jadro")
 
-	if err := s.UpdateVenue(ctx, vid, "Jadro Grad", "mono", "Europe/Zagreb", "", ""); err != nil {
+	if err := s.UpdateVenue(ctx, vid, "Jadro Grad", "mono", "Europe/Zagreb", "", "", "Obala Kulina bana 3"); err != nil {
 		t.Fatalf("update venue: %v", err)
 	}
 	v, err := s.VenueByID(ctx, vid)
@@ -439,6 +447,9 @@ func TestVenueDetailsAndOwner(t *testing.T) {
 	}
 	if v.Name != "Jadro Grad" || v.Style != "mono" || v.TZ != "Europe/Zagreb" || v.Slug != "jadro" {
 		t.Fatalf("venue = %+v (slug must be immutable)", v)
+	}
+	if v.Location != "Obala Kulina bana 3" {
+		t.Fatalf("venue location = %q, want it stored and read back", v.Location)
 	}
 
 	if err := s.SetOwnerHash(ctx, vid, "bcrypt-hash-here"); err != nil {
@@ -478,7 +489,7 @@ func TestReopenCurrentDatabase(t *testing.T) {
 	// A fresh database migrates 0→6 in one open; reopens stay at 6.
 	// Every step of the chain must be terminal — a missing case is what
 	// turned a deploy into an outage once.
-	for i, want := range []int{6, 6, 6} {
+	for i, want := range []int{7, 7, 7} {
 		s, err := Open(path)
 		if err != nil {
 			t.Fatalf("open #%d: %v", i+1, err)

@@ -434,31 +434,44 @@ func parseHours(r *http.Request, cat *i18n.Catalog) (venue.Hours, string) {
 const (
 	maxVenueDescription = 200
 	maxVenuePhone       = 20
+	maxVenueLocation    = 160
 )
 
 // parseVenueInfo validates the optional public info fields. Description is
 // free plain text with a hard length bound; the phone allows the characters
 // people actually type and is stored as typed (the page normalizes it for
-// the tel: href — display keeps the human form).
-func parseVenueInfo(descRaw, phoneRaw string) (string, string, string) {
+// the tel: href — display keeps the human form). Location is one more plain
+// line under the same discipline: no coordinates, no map embed, no links —
+// text a guest can read and copy.
+func parseVenueInfo(descRaw, phoneRaw, locRaw string) (string, string, string, string) {
 	desc := strings.TrimSpace(descRaw)
 	if len(desc) > maxVenueDescription {
-		return "", "", fmt.Sprintf("Description must be at most %d characters.", maxVenueDescription)
+		return "", "", "", fmt.Sprintf("Description must be at most %d characters.", maxVenueDescription)
 	}
 	phone := strings.TrimSpace(phoneRaw)
 	if phone != "" {
 		if len(phone) > maxVenuePhone {
-			return "", "", fmt.Sprintf("Phone number must be at most %d characters.", maxVenuePhone)
+			return "", "", "", fmt.Sprintf("Phone number must be at most %d characters.", maxVenuePhone)
 		}
 		for _, r := range phone {
 			switch {
 			case '0' <= r && r <= '9', r == '+', r == ' ', r == '-', r == '.', r == '(', r == ')':
 			default:
-				return "", "", "Phone number: only digits, spaces and + - . ( ) please."
+				return "", "", "", "Phone number: only digits, spaces and + - . ( ) please."
 			}
 		}
 	}
-	return desc, phone, ""
+	loc := strings.TrimSpace(locRaw)
+	if len(loc) > maxVenueLocation {
+		return "", "", "", fmt.Sprintf("Location must be at most %d characters.", maxVenueLocation)
+	}
+	// A newline would break the one-line layout and let an owner inject a
+	// second paragraph into the contact block; collapse it rather than refuse
+	// a paste that a phone keyboard produced.
+	if strings.ContainsAny(loc, "\r\n") {
+		loc = strings.Join(strings.Fields(loc), " ")
+	}
+	return desc, phone, loc, ""
 }
 
 func (s *Server) createVenue(w http.ResponseWriter, r *http.Request) {
@@ -634,7 +647,8 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 		s.flash(w, ferr)
 		return
 	}
-	desc, phone, ierr := parseVenueInfo(r.FormValue("description"), r.FormValue("phone"))
+	desc, phone, loc, ierr := parseVenueInfo(
+		r.FormValue("description"), r.FormValue("phone"), r.FormValue("location"))
 	if ierr != "" {
 		s.flash(w, ierr)
 		return
@@ -645,7 +659,7 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
-	if err := s.st.UpdateVenue(r.Context(), v.ID, name, r.FormValue("style"), tz, desc, phone); err != nil {
+	if err := s.st.UpdateVenue(r.Context(), v.ID, name, r.FormValue("style"), tz, desc, phone, loc); err != nil {
 		s.internal(w, "update venue", err)
 		return
 	}

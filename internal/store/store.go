@@ -184,6 +184,16 @@ ALTER TABLE venues ADD COLUMN description TEXT NOT NULL DEFAULT '';
 ALTER TABLE venues ADD COLUMN phone TEXT NOT NULL DEFAULT '';
 `
 
+// schemaV7 adds the public location line (design-pass2 §5 contact block):
+// where the venue physically is, for the guest walking up to it. One free-text
+// line, deliberately NOT lat/lon: a coordinate pair on a public page invites
+// map-embed third parties and turns a contact field into a precise location
+// beacon, which §1's privacy discipline and the no-third-party rule argue
+// against. Empty default = nothing renders, so no existing venue changes shape.
+const schemaV7 = `
+ALTER TABLE venues ADD COLUMN location TEXT NOT NULL DEFAULT '';
+`
+
 func (s *Store) migrate(ctx context.Context) error {
 	var ver int
 	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&ver); err != nil {
@@ -243,7 +253,16 @@ func (s *Store) migrate(ctx context.Context) error {
 			return fmt.Errorf("store: set user_version: %w", err)
 		}
 		ver = 6
+		fallthrough
 	case 6:
+		if _, err := s.db.ExecContext(ctx, schemaV7); err != nil {
+			return fmt.Errorf("store: migration v7: %w", err)
+		}
+		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 7"); err != nil {
+			return fmt.Errorf("store: set user_version: %w", err)
+		}
+		ver = 7
+	case 7:
 		// current — nothing to do.
 	default:
 		return fmt.Errorf("store: unknown schema version %d (binary older than db?)", ver)
@@ -310,13 +329,13 @@ func (s *Store) CreateVenue(ctx context.Context, v Venue) (int64, error) {
 	return res.LastInsertId()
 }
 
-const venueCols = `id, slug, name, tz, style, description, phone, owner_hash, lang, calib_json, last_frame_at, created_at`
+const venueCols = `id, slug, name, tz, style, description, phone, location, owner_hash, lang, calib_json, last_frame_at, created_at`
 
 func scanVenue(row interface{ Scan(...any) error }) (*Venue, error) {
 	var v Venue
 	var last, created int64
 	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &v.Description, &v.Phone,
-		&v.OwnerHash, &v.Lang, &v.CalibJSON, &last, &created)
+		&v.Location, &v.OwnerHash, &v.Lang, &v.CalibJSON, &last, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -420,6 +439,7 @@ type Venue struct {
 	Style       string // preset name applied to new frames (site-plane)
 	Description string // optional public one-liner (design-pass2 §5)
 	Phone       string // optional public contact, digits/+/spaces
+	Location    string // optional public "where we are" line, free text
 	OwnerHash   string
 	Lang        string // page language, "hr" (default) or "en" (⚑9)
 	CalibJSON   string // render calib document, "" = defaults (⚑5)
@@ -430,10 +450,10 @@ type Venue struct {
 // UpdateVenue replaces the editable site-plane details (owner panel +
 // super-admin). Slug is identity and never changes; hours go through
 // SetHours so the two writers cannot disagree on the format.
-func (s *Store) UpdateVenue(ctx context.Context, id int64, name, style, tz, description, phone string) error {
+func (s *Store) UpdateVenue(ctx context.Context, id int64, name, style, tz, description, phone, location string) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE venues SET name = ?, style = ?, tz = ?, description = ?, phone = ? WHERE id = ?`,
-		name, style, tz, description, phone, id)
+		`UPDATE venues SET name = ?, style = ?, tz = ?, description = ?, phone = ?, location = ? WHERE id = ?`,
+		name, style, tz, description, phone, location, id)
 	return err
 }
 

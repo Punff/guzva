@@ -26,8 +26,8 @@ func itoa(n int) string { return string(rune('0' + n)) }
 func hoursWeek(over map[string]string) url.Values {
 	v := url.Values{}
 	for d := 0; d < 5; d++ {
-		v.Set("h"+itoa(d)+"_open1", "09:00")
-		v.Set("h"+itoa(d)+"_close1", "17:00")
+		v.Set("h"+itoa(d)+"_open", "09:00")
+		v.Set("h"+itoa(d)+"_close", "17:00")
 	}
 	v.Set("h5_closed", "1")
 	v.Set("h6_closed", "1")
@@ -333,11 +333,11 @@ func TestOwnerPanel(t *testing.T) {
 	for d := 0; d < 5; d++ {
 		weekend["h"+itoa(d)+"_closed"] = "1"
 	}
-	weekend["h5_open1"], weekend["h5_close1"] = "10:00", "14:00"
-	weekend["h6_open1"], weekend["h6_close1"] = "10:00", "14:00"
+	weekend["h5_open"], weekend["h5_close"] = "10:00", "14:00"
+	weekend["h6_open"], weekend["h6_close"] = "10:00", "14:00"
 	weekendDrop := []string{"h5_closed", "h6_closed"}
 	for d := 0; d < 5; d++ {
-		weekendDrop = append(weekendDrop, "h"+itoa(d)+"_open1", "h"+itoa(d)+"_close1")
+		weekendDrop = append(weekendDrop, "h"+itoa(d)+"_open", "h"+itoa(d)+"_close")
 	}
 	w = f.do(t, http.MethodPost, "/owner/venue", withHours(url.Values{
 		"name": {"Jadro Grad"}, "style": {"mono"}, "tz": {"Europe/Zagreb"},
@@ -362,7 +362,7 @@ func TestOwnerPanel(t *testing.T) {
 	}
 	w = f.do(t, http.MethodPost, "/owner/venue", withHours(url.Values{
 		"name": {"Jadro"}, "style": {"poster"},
-	}, map[string]string{"h0_open1": "17:00", "h0_close1": "09:00"}), ock, true)
+	}, map[string]string{"h0_open": "17:00", "h0_close": "09:00"}), ock, true)
 	if !strings.Contains(w.Body.String(), "Ponedjeljak") {
 		t.Fatalf("bad hours = %q", w.Body.String())
 	}
@@ -403,7 +403,7 @@ func TestSuperAdminEdits(t *testing.T) {
 		closed["h"+itoa(d)+"_closed"] = "1"
 	}
 	for d := 0; d < 5; d++ {
-		closedDrop = append(closedDrop, "h"+itoa(d)+"_open1", "h"+itoa(d)+"_close1")
+		closedDrop = append(closedDrop, "h"+itoa(d)+"_open", "h"+itoa(d)+"_close")
 	}
 	w := f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{
 		"slug": {"jadro"}, "name": {"Jadro"}, "tz": {"Europe/Sarajevo"},
