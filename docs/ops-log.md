@@ -587,3 +587,23 @@ label bar at 360 px is the one thing to squint at.
 - Order: backend-go Phase A contracts → frontend-tisak Phase B UI →
   docs-i18n copy/review → tag/deploy. Firmware stands down (nothing
   device-side). Devops-qa keeps the demo warm.
+
+## 2026-10-12 — orchestrator: backend Phase A landed (3 commits, tree clean)
+
+- `371a29c` hours: single-interval contract WITHOUT migration — stored
+  rows keep parsing/classifying, `MultiDay` flags legacy lunch-break days,
+  dual-generation field names accepted, `DayForm.Open/Close/Split` added
+  with `Open1..Close2` as populated deprecated aliases (first attempt
+  500'd the console via `hours.html`; fixed additive, console green
+  throughout). Week cards pure+tested (`WeekCards`, `DayText`;
+  `hoursToday` shares the formatter).
+- `77e60a6` venue v7 `location` (free text ≤160ch, newline-collapsed;
+  lat/lon refused on §1 privacy). Dogfooded v6→v7 on live-DB copy.
+- `812a9dc` render evidence only: thresholds `{64,128,192}` already
+  quarter luma; raising them *increases* ink (5.9%→29% in probe). No
+  safer default exists without real frames — **filter fix needs W8.1
+  bench frames, not this pass** (user-visible caveat, recorded).
+- 24h: Go side already 24h everywhere (pinned `TestDayTextIs24Hour`);
+  remaining `hour12`/time-input rendering is JS-side (frontend's).
+- Frontend unblocked on: one-shift editor, week cards, location fields,
+  JS 24h. `hours.err.second` stays live (legacy path, docs-i18n's key).
