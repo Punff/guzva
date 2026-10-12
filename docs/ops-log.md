@@ -647,3 +647,26 @@ label bar at 360 px is the one thing to squint at.
   owner_login + `view.Location` (+ state key) + `view.Week`. Then
   frontend renders: Location row, week cards, owner-login catalog
   copy, `owner.login.*` keys (docs-i18n standing by).
+
+## 2026-10-12 — orchestrator: backend plumbing landed + reworded (`98dbcbf`/`b3a20ee`)
+
+- `98dbcbf` owner login model `{Err, Cat}` (i18n.HR deliberate — no
+  venue identified pre-auth, D7 default); `b3a20ee`
+  `view.Location` (IN the state key, mtime-asserted) +
+  `view.Week = WeekCards(cat.DayNames())` (no key component — derives
+  from Hours + language, both keyed). Full-path dogfood on a faithful
+  v6 copy: migration clean, page 200s, key flips + settles.
+- **Hash churn:** an authorized reword removed a false mid-session
+  claim from `98dbcbf`'s message (it had recorded "merge tree-sync
+  reverted my work" — disproven by reflog; no HEAD movement, no
+  resets; reconciled facts: no actor attribution possible, claim
+  dropped). Old hashes `f674f76`/`d32b966` dangle, nothing pushed,
+  `b3a20ee` byte-identical content. Nobody may cite the old pair.
+- **WAL lesson (devops: fold into restore-drill notes):** a raw `cp`
+  of a SQLite file in WAL mode silently drops recent writes — the
+  first dogfood copy lost the venue row. Use the backup API
+  (`src.backup(dst)`) or checkpoint first. Same trap bites a
+  live-server backup.
+- Dispatched: frontend final render (Location row, 7 day-cards grayed
+  closed, owner-login via Cat) + docs-i18n `owner.login.err.throttle`/
+  `badcreds` keys; backend swaps the two literal call sites after.
