@@ -66,10 +66,20 @@ func (s *Server) ownerLoginPage(w http.ResponseWriter, r *http.Request) {
 	s.renderOwnerLogin(w, http.StatusOK, "")
 }
 
+// ownerLoginModel is the login page's template model. Cat is the Croatian
+// catalog: the page is lang="hr" and the owner has not yet identified the
+// venue, so no per-venue language applies (D7: Croatian is the product
+// default). The template renders the owner.login.* keys through it.
+type ownerLoginModel struct {
+	Err string // one sentence, already Croatian
+	Cat *i18n.Catalog
+}
+
 func (s *Server) renderOwnerLogin(w http.ResponseWriter, status int, errMsg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := s.tmpl.ExecuteTemplate(w, "owner_login.html", map[string]string{"Err": errMsg}); err != nil {
+	m := ownerLoginModel{Err: errMsg, Cat: i18n.For(i18n.HR)}
+	if err := s.tmpl.ExecuteTemplate(w, "owner_login.html", m); err != nil {
 		s.log.Error("admin: render owner login", "err", err.Error())
 	}
 }
