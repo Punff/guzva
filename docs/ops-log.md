@@ -556,3 +556,19 @@ label bar at 360 px is the one thing to squint at.
 - **docs-i18n:** ack + survey running, baseline test in background.
 - Backend's commit is green (13 pkgs ok per handoff); full-tree gate waits
   on frontend round 2 commit. Tag proposal `v0.4.0` held.
+
+## 2026-10-12 — `v0.4.0` deployed (stamp-free render + label-bar passes)
+
+- Fire sequence per devops-qa checklist: `make test` green (13 pkgs ok,
+  css budgets hold, gofmt/vet clean) → `d2f68a6` ops-log commit (tag
+  refuses dirty) → `make tag V=v0.4.0` → `make backup`
+  (`guzva-20261012-1331.db.gz`) → `make deploy`.
+- Healthcheck OK: `version v0.4.0`, page + admin answer. Rollback anchor:
+  `releases/v0.3.1` kept (last 3). Expect an honest STALE blip on the
+  fleet board over the restart (marginal bench link).
+- Contains: `25bce48` stamp removal (poster@3/mono@3), `764986b` round 1
+  (chip-led label bar, info card), `2dcb78f` overlay fix, `c877c65`
+  fixture + comment truth. Known limit shipped: no-JS clock can freeze
+  between state flips (ACTION open, §6.4 question).
+- NOT done: push (no remote; scrub still mandatory first), docs-i18n
+  truth sweep (rides the next release).
