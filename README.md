@@ -3,7 +3,8 @@
 A camera answers one question: *ima li gužve?* — is it busy? An ESP32-CAM
 at a venue captures a still every minute, pushes it over TLS to one Go
 binary, and the server destroys the photograph and publishes a **stylised
-160×120 print** with the time burned into it. Guests scan a QR code and see
+160×120 print** — its gallery label carries the time, never the image.
+Guests scan a QR code and see
 whether the terrace is full — a four-tone silhouette, never a photo, never a
 face, never stored raw.
 
@@ -57,10 +58,10 @@ make rollback TAG=…   # flip the symlink back
 
 | Path | What lives there |
 |------|------------------|
-| `cmd/guzva/` | the binary: `serve`, `provision`, `cfg`, `hashpw` ([docs/cli.md](docs/cli.md)) |
+| `cmd/guzva/` | the binary: `serve`, `provision`, `cfg`, `hashpw`, `version` ([docs/cli.md](docs/cli.md)) |
 | `internal/proto/` | wire types — mirrors [docs/proto-v1.md](docs/proto-v1.md) |
 | `internal/store/` | SQLite + embedded migrations — the only SQL in the tree |
-| `internal/render/` | Tisak pipeline: decode → grid → masks → quantise → stamp → PNG |
+| `internal/render/` | Tisak pipeline: decode → grid → masks → blur → quantise → mode filter → masks → PNG |
 | `internal/frames/` | ingest: auth, idempotency, quarantine, ring files |
 | `internal/pages/` | pre-rendered public pages, atomic publish, staleness states |
 | `internal/admin/` | super-admin + owner consoles (htmx, signed-cookie sessions) |

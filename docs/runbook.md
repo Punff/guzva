@@ -24,7 +24,8 @@ are shown **once** at provision time and never stored recoverably.
    `journalctl -u guzva -n 20 --no-pager | grep ingest`
    - `status=201` arriving → frames flow. The still file is replaced on
      every frame; index.html is rewritten only on a state flip (⚑2 — the
-     time is burned into the picture, so the page itself need not change).
+     label clock is driven by the still's Last-Modified, so the page
+     itself need not change).
    - only `409` same `capture_id` → device retrying; usually clears next tick.
    - nothing at all → device offline or link down (see below).
    - `post_fail` climbing in successive 201 lines → transport trouble on the

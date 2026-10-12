@@ -3,9 +3,10 @@
 Single source of truth for the device↔server wire protocol (PLAN §4).
 Read alongside `PLAN.md`. One endpoint carries everything.
 
-**Proven end-to-end (09 Oct 2026):** firmware ↔ `deploy/testrig/server.py`
-(23/23 e2e tests, live `desired_cfg` apply with read-back). The Go server
-must implement exactly this; the rig is the executable reference.
+**Proven end-to-end (09 Oct 2026):** firmware ↔ the reference test rig
+(23/23 e2e tests, live `desired_cfg` apply with read-back; the rig was
+retired in the W0 hygiene pass — git history keeps it). The Go server
+implements exactly this.
 
 Versioning: path prefix `/v1`; within a major only additive optional fields
 may appear; both sides send/receive `X-Proto: v1` (on responses too). When
@@ -81,7 +82,7 @@ Status is the contract; the body is always the JSON object below (plus
 | `401` | unknown or revoked token — device keeps identity, drops to slow health-only backoff (60→600 s), amber LED until re-provisioned |
 | `413` | body over limit (`meta` > 16 KiB or `frame` > 4 MiB) |
 | `429` | rate-limited — `Retry-After: <seconds>` header |
-| `507` | disk degraded (<15 % free) — device retries on next tick, no special handling |
+| `507` | disk degraded (<15 % free) — device retries on next tick, honoring `Retry-After` when sent (as on 429) |
 
 `bad_meta`, `bad_capture_id`, `bad_magic`, `truncated` are pinned by the
 ingest tests today; `dims`, `dark`, `dead`, `busy` come from the Go render
@@ -158,10 +159,11 @@ itself — only the server bumps `ver`. Persisted to NVS on change.
 | `colorbar` | uint | 0/1 | test pattern |
 | `led_pwm` | uint | 0–255 | flash LED (device-side, not the sensor) |
 
-Out-of-band, not part of the wire protocol: the rig's `GET /status.json`,
-`/latest.jpg`, `/ring/*.jpg`, `POST /upload` (bench-curl helpers), and the
-device's own LAN cage on port 80 (`/api/status`, `/jpg`, `/ping`,
-`/api/factory-reset`) — PLAN §5, installer-facing.
+Out-of-band, not part of the wire protocol: the device's own LAN cage
+on port 80 (`/api/status`, `/jpg`, `/ping`, `/api/factory-reset`) —
+PLAN §5, installer-facing. (The bench rig's `GET /status.json`,
+`/latest.jpg`, `/ring/*.jpg`, `POST /upload` helpers retired with it
+in W0.)
 
 ### `GET /healthz`
 
