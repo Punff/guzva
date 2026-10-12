@@ -621,3 +621,17 @@ label bar at 360 px is the one thing to squint at.
   docs-i18n adds on frontend landing.
 - Still open: user's answers to frontend's three decisions (requested,
   not yet received) → backend briefing pending.
+
+## 2026-10-12 — orchestrator: frontend Phase B lane-1 (4 commits, clean)
+
+- `b2e24eb` caption drop + phone section; `73a9887` admin copy trim +
+  glosses + stamp-comment fix; `e25ebc1` one-shift editor + admin
+  location field; `864b0a7` owner copy via catalog (red-flagged by
+  design — 3 keys missing, gate red exactly there, verified).
+- Frontend verdicts: light-default already light-first (b ✓); JS clocks
+  clean, 15:04 + hour12:false only (e ✓); caption removal vacates
+  docs-i18n item 4. One `TestFormsWorkWithoutJS` flake mid-lane, green
+  on repeats — watch item.
+- Dispatched: docs-i18n adds the 3 keys (hr+en); backend-go wires
+  owner_login `Cat` + `view.Location`/`view.Week` (+ state key). Then
+  frontend renders Location row + week cards + owner_login keys.
