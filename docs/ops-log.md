@@ -831,3 +831,15 @@ label bar at 360 px is the one thing to squint at.
   AND in CI: run #2 go + firmware both ✅.
 - Open: WiFi password rotation (router); docs-i18n wording review
   when it returns; v0.6.1 tag + deploy follows this entry.
+
+## 2026-10-13 — `v0.6.1` deployed (single clock + CI green on GitHub)
+
+- Fire sequence: CI run #2 green (go + firmware) → `21ab3be` (this
+  log) → `make tag V=v0.6.1` → tag pushed → `make backup` → `make
+  deploy`. Healthcheck OK: `version v0.6.1`, page + admin answer,
+  disk 39 %. Rollback anchor `releases/v0.4.0` kept.
+- Contains: the single-clock page (`a3505c4`), truthful design.md
+  (`a1ca8eb`), pixel-basis goldens (`349f8b4`), PLAN/maintenance
+  single-clock sync (`5462fcf`), CI first-run fixes (`44a1945`),
+  pre-push SSID hygiene (`11fc19d`). Prod and GitHub now match:
+  `https://github.com/Punff/guzva` (SSH remote; scrubbed history).
