@@ -74,9 +74,21 @@ jobs:
           path: ~/.platformio
           key: pio-esp32cam-espressif32-7.0.1-cam2.0.4
 
+      # settings.h is gitignored (W0 — real one holds the WiFi password +
+      # device token). A fresh checkout has only settings.example.h, and
+      # main.cpp includes settings.h unconditionally, so without this copy
+      # every CI build fails at the include. The example is a full valid
+      # template with CHANGE-ME placeholders — it compiles.
+      - name: settings.h from example (gitignored real one absent in CI)
+        run: cp firmware/include/settings.example.h firmware/include/settings.h
+
+      # pipx, not pip: ubuntu-24.04's system Python is PEP 668
+      # "externally managed", so `pip install platformio` dies with an
+      # externally-managed-environment error. pipx is preinstalled on the
+      # runners and isolates the tool properly.
       - name: pio run
         run: |
-          pip install platformio
+          pipx install platformio
           cd firmware && pio run
 
       # The prod TLS gate (grep, not policy): setInsecure must exist only
@@ -89,5 +101,12 @@ jobs:
       # The privacy contract, mechanically: no raw-persist path in the
       # server, proven by the package's own tests (already run in `go`,
       # re-stated here because it is the one gate that must never flake).
+      # Go must be installed explicitly: go.mod pins 1.26.0 and the
+      # runner's preinstalled toolchain is not guaranteed to satisfy it.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: privacy tests
         run: go test ./internal/privacy/ ./internal/render/ ./internal/frames/ -run 'Privacy|EXIF|Zeroed|RawNever' -v
