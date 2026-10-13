@@ -1,4 +1,4 @@
-# guzva.ba — Dev / Production Plan v3.2 (product + platform)
+# guzva.ba — Dev / Production Plan v3.4 (product + platform)
 
 Supersedes v3.1. Same architecture (one static Go binary on one VM, ESP32-CAMs
 push outbound, no inbound ports at venues). v3.2 is the shift from **protocol
@@ -14,33 +14,41 @@ missing product plan on top. The current state is *messy but sound*: the hard
 part (device → TLS → ingest → render → static page, idempotent, private) works
 end to end; what is missing is polish, management and automation.
 
-Status (09 Oct 2026 — bench cutover done, product plan added):
-- **Go server live on the VPS, serving the real board.** `guzva.service` on
-  `:443` with the bench cert `/etc/guzva/tls.*` (copied from the rig so the
-  firmware's embedded CA validates — no re-flash). Python rig `camtest` stopped
-  + disabled, kept as reference. `make deploy` is the only deploy path.
-- **Device plane complete:** all 22 `desired_cfg` keys (ranges pinned to
-  `docs/proto-v1.md` by a test), `cfg_json` for the 19 sensor keys (migration
-  v2), `guzva cfg`, `guzva provision -token`. Board applies server-driven config
-  end-to-end (verified `led_pwm=0` pushed live from the VPS with no reflash).
-- **Surfaces built, not yet polished:** static public page (D5), super-admin
-  console, per-venue owner panel (D3, scoped cookie, IDOR-tested). All use
-  hand-written CSS today; v3.2 replaces that with Tailwind (§9).
-- **Ops workflow shipped:** `Makefile` (`test`/`build`/`deploy`/`rollback`/
-  `check`/`logs`/`backup`), releases layout `/srv/guzva/bin/releases/<tag>` +
-  `current`, `deploy/provision.sh` (idempotent, proven on the live box),
-  `guzva-backup.{service,timer}` (nightly snapshot, keep 14), `docs/runbook.md`
-  + `docs/ops-log.md`.
-- **Two hard bugs found and fixed** (both pinned by regression tests):
-  a firmware HTTP-parser bug that discarded valid `201`s (needle tested only at
-  the buffer tail; bytes past the needle dropped), and a store migration whose
-  missing `case 3:` would have failed **every restart after the v3 upgrade**.
-  Lesson recorded in §1: dogfood every change against real migrated state.
-- **Known gaps → §14:** 48 h soak numbers; render-ms log line; autocert +
-  domain; ingest host in NVS; reference-frame hash; the 2×422 reasons.
-- **Bench link is marginal** (RSSI −70…−76): 12–20 s connects, ~30 min stale
-  gaps, brownout counter at 4. Root cause is RF + supply, not software; the
-  install gate (RSSI ≥ −65) is non-negotiable at a real venue (§13).
+Status (13 Oct 2026 — v0.6.0 deployed; product rounds 1–4 shipped):
+- **Go server live on the VPS** (`guzva.service`, `make deploy` the only
+  deploy path), serving the real board; rollback anchors kept (last 3),
+  nightly backup + on-deploy snapshot.
+- **Device plane complete** (unchanged since 09 Oct): all 22
+  `desired_cfg` keys pinned to `docs/proto-v1.md` by a test, `cfg_json`
+  for the sensor keys, `guzva cfg`, `guzva provision -token`.
+- **Product rounds shipped (v0.4.0 → v0.6.0):** Tailwind design system
+  (D6) live on all surfaces; Croatian-first catalog (D7) across the
+  public page + owner console (admin stays English); one-shift hours
+  editor (parse-don't-migrate — stored `[7][]Range` kept, write
+  narrowed); venue `location` free text (schema v7); public page
+  rebuilt to the user's mockup composition (status-chip row, mounted
+  print with in-frame clock badge, RADNO VRIJEME card with a
+  state-keyed today row, venue info card, hatched footer); light-only
+  theme (dark removed — user decision); the tally-label logomark;
+  owner login fully through the catalog.
+- **Ops workflow shipped:** `Makefile` (`test`/`tag`/`backup`/`deploy`/
+  `rollback`/`drill`), releases layout + `current` symlink, scripted
+  restore drill; the WAL-copy trap (a raw `cp` of a live SQLite file
+  silently drops recent writes — use the backup API) is recorded in
+  the runbook and bit us once in a dogfood.
+- **The 09 Oct hard bugs still set the rule** (§1): dogfood every
+  change against migrated state — two worst bugs were invisible to
+  fresh-state tests.
+- **Known gaps → §14:** 48 h soak numbers; render-ms; autocert +
+  domain; ingest host in NVS; reference-frame hash; the 2×422 reasons;
+  **push is blocked** — git history holds burned secrets (`settings.h`,
+  a styleproof blob); scrub + a remote must land before any CI/PR gate
+  (W5); poster thresholds await real bright-room frames (W8.1 bench
+  session — all 138 stored frames are fakecam synthetic).
+- **Bench link still marginal** (RSSI −70…−76): 12–20 s connects,
+  ~30 min stale gaps, brownout counter at 4. Root cause is RF +
+  supply, not software; the install gate (RSSI ≥ −65) is
+  non-negotiable at a real venue (§13).
 
 ---
 
@@ -124,8 +132,10 @@ internal/pages/       pre-render public index.html + latest.jpg (atomic)
 internal/admin/       admin + owner handlers, templates, embedded static
 internal/auth/        device tokens, admin/owner sessions, rate limits
 internal/i18n/        message catalogs (hr default, en) + locale formats  [new]
+internal/privacy/     privacy gate tests (disk scan, web-root allow-list)
 internal/sched/       30 s tick, pruner, missed-poll, alerts
-web/                  tailwind input.css + generated app.css (embedded)     [new]
+internal/webui/       generated app.css + public.css (embedded)            [new]
+web/                  tailwind input.css + tokens.css (source of truth)    [new]
 firmware/             PlatformIO project
 tools/fakecam/        one small Go client: fast / slow / flappy / dup
 deploy/               Makefile, units, backup + provision.sh
@@ -350,9 +360,10 @@ Three surfaces, one design system. Full spec in `docs/ux.md`.
   build over the Go templates → `web/app.css` (purged). Admin/owner serve it at
   `/admin/static/app.css`; the public page **inlines** it (D5: two-file root).
   No CDN, no runtime compiler.
-- Tokens: colour (incl. dark), spacing, radius, type scale, elevation, motion —
-  as CSS variables the Tailwind theme maps onto, so both consoles and the public
-  page share one look.
+- Tokens: colour (light-only — dark was removed at v0.6.0 by user
+  decision; `color-scheme: light`, no toggle), spacing, radius, type
+  scale, elevation, motion — as CSS variables the Tailwind theme maps
+  onto, so both consoles and the public page share one look.
 - Components we actually reuse: badge, card/frame, button, form row, table,
   toggle, empty state, toast/flash, skeleton. Built as Go template partials, not
   a JS component library.
@@ -361,20 +372,34 @@ Three surfaces, one design system. Full spec in `docs/ux.md`.
   plain form POST.
 
 ### 9.2 Public page (the product's face)
-Current state works and is honest; v3.2 raises it to "polished":
-- in-place still swap (no full-document refresh flash), reserved frame box (no
-  layout shift), skeleton while the JPEG loads;
-- freshness as the headline (`21:48 · danas · CET`), STALE only when true and
-  visibly so (it is the honesty contract made visible);
-- open/closed, today's hours, venue name, and — new — an optional venue
-  **description/contact** (site-plane, owner-editable) for QR-from-table use;
-- empty state ("waiting for the first frame"), offline state (JS retry), and a
-  one-line privacy footer in Croatian;
-- **QR poster** (A5/A4) generated per venue for the wall/table, so a guest can
-  reach the still — printable, with the venue name and page URL;
-- a11y: WCAG AA, keyboard reachable, `aria-live` for new frames,
-  `prefers-reduced-motion`, alt text that names the venue;
-- metadata: description, Open Graph, theme-color, inline SVG favicon.
+Shipped through v0.6.0 — the user's mockup composition, honest states:
+- header: tally logomark + wordmark left, venue tagline right (muted);
+  display-size venue title;
+- status row above the print: bordered state chip (colored square +
+  named state) with the open-until line as plain text beside it;
+- the still as a **mounted print** — hard border, paper mat, step
+  shadow — with the frame clock as a dark tabular-mono badge inside
+  the frame (JS poller keeps it in sync; `aria-hidden`, the figcaption
+  is the one live region); the live time row stands below the border;
+  in-place still swap, reserved frame box (no layout shift);
+- **RADNO VRIJEME card**: 7 Mo-first rows, mono tabular times, closed
+  days dashed, today's row bold + "· danas" + `aria-current="date"` —
+  state-keyed via `view.TodayIdx`, so the midnight flip forces the
+  re-render (the Location-style ruling);
+- **venue info card**: phone as a `tel:` link, location, description
+  (site-plane, owner-editable) — no call button (user decision);
+- hatched footer divider + the Croatian privacy caption; "danas · CET"
+  headline removed by user decision; no privacy route exists yet, so
+  the caption carries no link (flagged: inventing the route is
+  backend's call, §14);
+- empty/offline states, WCAG AA, `aria-live`, prefers-reduced-motion,
+  inline SVG favicon (identical data-URI in both heads); zero new
+  i18n keys were needed — every string resolved from existing
+  catalog keys already in the view.
+- **Remaining:** the QR poster (A5/A4, §10 onboarding — the biggest
+  single item); the **no-JS frozen-clock gap** left by the burned-in
+  stamp removal (v0.4.0: meta-refresh keeps state honest, but the
+  displayed clock ages between reloads without JS — open ACTION).
 
 ### 9.3 Super-admin console (`/admin`)
 - **Fleet overview** (§11): every venue's freshness, last frame, device health,
@@ -553,6 +578,11 @@ that dominate the risk list.
 | libvips | p95 render >200 ms sustained |
 | Three-tier paging / on-call | Second person on support |
 | Paid VPS | (subsumed by the EU-VPS trigger above) |
+| Git remote + history scrub (secrets burned in `settings.h` + a styleproof blob) | Before ANY push — the CI/PR gate, collaboration and offsite backup all wait on it; scrub is orchestrator-owned and mandatory, not optional |
+| Poster/threshold tuning from real frames | W8.1 bench session: bright-room captures from the real sensor (all 138 stored frames are fakecam synthetic — no safer default can be evidenced today) |
+| Privacy route + "O privatnosti" link on the public page | First guest asks about privacy, or before the pilot — the caption is deliberately link-less until a real route exists |
+| no-JS page clock refresh (the meta-refresh gap) | First no-JS guest matters, or before the pilot — the burned-in stamp was removed at v0.4.0; meta-refresh re-renders state, but the displayed clock ages between reloads without JS |
+| Admin-console localisation (catalog) | A non-Croatian admin actually needs it — calibration labels and console copy are English by decision today |
 
 **Open questions to close (§14 → decisions):** is `guzva.ba` registered, and was
 `imaliguzve.ba`? Is the pilot venue's link ≥ −65 dBm at the mounting point?
@@ -575,22 +605,32 @@ brownouts, post_fail rate, render ms on the e2-micro, still size); privacy tests
 green; first deploy + first restore drill via scripts; a week with no GCP charge.
 *Remaining: the soak numbers + render-ms logging (§14).*
 
-**Phase 2 — Product polish & pilot (1–3 friendly venues).** *(v3.2 focus)*
-- **Design system**: Tailwind pipeline (D6), shared components, light-only
-  theme (v0.6.0: dark mode removed — user decision), WCAG
-  AA pass across all three surfaces.
-- **Localisation**: Croatian catalog (D7) across public + vendor surfaces;
-  formats; the privacy notice and camera-sign spec.
-- **Public page**: in-place updates, states, QR poster, description/contact.
-- **Admin**: fleet overview, grouped device form, venue timeline, activity view.
-- **Vendor lifecycle** (§10): install gate checklist, onboarding, invite-link,
-  pause/offboard, audit.
-- **Overviews & logs** (§11): fleet attention sort, alert channel + dead-man,
+**Phase 2 — Product polish & pilot (1–3 friendly venues).** *(v3.2
+focus;13 Oct status: the polish core shipped as v0.4.0–v0.6.0 —
+below is the honest split)*
+- **Design system** ✓ Tailwind pipeline (D6), shared components
+  (kit page pins them), light-only theme (v0.6.0), WCAG AA pass on
+  public + owner surfaces (admin console stays English).
+- **Localisation** ✓ Croatian catalog (D7) across public + vendor
+  surfaces; formats; privacy notice. Remaining: the camera-sign
+  spec for installs.
+- **Public page** ✓ states, in-place updates, description/contact,
+  the mockup composition (v0.6.0). Remaining: **QR poster**, the
+  no-JS frozen-clock gap.
+- **Admin** ✓ fleet attention sort + auto-refresh, grouped device
+  form, calibration live preview, alignment pass (v0.6.0). Remaining:
+  venue timeline, activity/audit view.
+- **Vendor lifecycle** (§10): ✓ hours/location editing, owner
+  console through the catalog. Remaining: install-gate checklist
+  in-console, invite-link, pause state, offboarding.
+- **Overviews & logs** (§11): Remaining: alert channel + dead-man,
   rendered logs, render-ms field.
-- **Automation** (§12): CI PR gate, scheduled jobs, provisioning recipe.
-- Firmware steps 5–7 hardening + reference-frame hash.
-- Exit: 2 weeks with each pilot venue, <5 % missed minutes, zero raw leaks,
-  runbook used once, a vendor uses their panel unaided.
+- **Automation** (§12): Remaining: CI PR gate — blocked on the git
+  history scrub + a remote (§14); provisioning recipe.
+- Firmware: remaining: reference-frame hash; the W8.1 bench-frame
+  session (poster-threshold evidence — zero real frames exist today).
+- Exit: 2 weeks with each pilot venue, <5 % missed minutes, zero raw
+  leaks, runbook used once, a vendor uses their panel unaided.
 
 **Phase 3 — Operate (≤10 venues).**
 - Firmware: pull OTA + rollback (check the core's bootloader rollback first),
@@ -637,6 +677,27 @@ green; first deploy + first restore drill via scripts; a week with no GCP charge
 ---
 
 ## 17. Change log
+
+**v3.3 → v3.4 (13 Oct 2026 — truth sweep after v0.4.0–v0.6.0; no decisions changed)**
+- **Status block rewritten** to the shipped reality: product rounds 1–4
+  (design system, localisation, one-shift hours, schema-v7 location,
+  the mockup public page, light-only theme, tally logomark, owner
+  console through the catalog), the WAL-copy trap, and the push block
+  (burned secrets in history) as a named gap.
+- **§9.1/§9.2 now describe the page that exists**, not the page
+  planned: mounted print + in-frame badge, status-chip row, RADNO
+  VRIJEME card with the state-keyed today row, info card, hatched
+  footer; "danas · CET" recorded as removed by user decision; QR
+  poster + no-JS frozen-clock gap as the explicit remainders.
+- **§15 Phase 2 split into shipped (✓) vs remaining**, making the
+  pilot-readiness queue honest: QR poster, venue lifecycle
+  (invite/pause/offboard), alert channel, CI (blocked on the history
+  scrub), firmware reference-frame hash + bench-frame session.
+- **§14 gains five rows:** git remote + history scrub (blocks all
+  collaboration), real-frame threshold tuning, privacy route, no-JS
+  clock refresh, admin localisation.
+- §3 repo layout synced (`internal/webui`, `internal/privacy`;
+  `web/` = input + tokens source of truth).
 
 **v3.2 → v3.3 (11 Oct 2026 — maintenance plan; no product change)**
 - **No decisions changed.** v3.3 exists to record that the project entered a

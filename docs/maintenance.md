@@ -322,6 +322,7 @@ biometrics ever (D9). Research items, sequenced:
 | 2026-10-11 | docs | README.md (front door), dev-setup.md, firmware/README.md (runbook referenced one that didn't exist). `e5f5783` |
 | 2026-10-12 | W3 | Parse-stage 422 parity (beat + quarantined row + 409 on retry), dead code out, render speaks proto reason constants, sched pure advance() + tests, comment/design-doc truth sweep. `0dfad83` |
 | 2026-10-12 | W5 | CI workflow landed ready (no remote yet), restore drill scripted and proven both ways, `make tag`/`make drill`, runbook truth fixes. `907a6b2` |
+| 2026-10-13 | plan | PLAN.md truth sweep → **v3.4**: Status block rewritten to shipped reality (rounds 1–4), §9.1/§9.2 describe the v0.6.0 page, §15 Phase 2 split shipped/remaining, §14 +5 rows (scrub, real frames, privacy route, no-JS clock, admin i18n). |
 
 **Open after this pass** (ACTIONs, also in ops-log): run the first real
 `make drill` on the VPS and log it; bench session to verify W4 on hardware
@@ -343,6 +344,21 @@ hardware (boot banner `v0.3.0`, `wdt=150s`, steady 201s); **first restore
 drill PASS** — which also fixed the drill itself (count parity with a live
 DB is a warning; only impossible states fail). Still open: the WiFi
 password rotation (needs the router) and the pre-push history scrub.
+
+**Closed 2026-10-13 (user rounds 1–4, shipped v0.5.0 + v0.6.0):**
+one-shift hours (parse-don't-migrate), schema-v7 `location`, owner
+console fully catalog'd (orchestrator override for `owner.login.*`
+while docs-i18n was unresponsive — wording review owed), week cards →
+7-row table with state-keyed today row, admin alignment pass, the
+tally-label logomark, light-only theme (dark removed — user decision;
+W7 "dark toggle" item void), and the public page rebuilt to the user's
+mockup (mounted print + in-frame badge, status row, RADNO VRIJEME +
+info cards, hatch footer — zero new i18n keys). PLAN.md evolved to
+v3.4 for it. Still open from this list: **push is blocked** (burned
+secrets in history, no remote), fakecam startup-race guard in the
+runner, the `r7-today-row` proof filename was clobbered (feature
+proven inside `r9-pub-m360.png`), and no privacy route for the
+footer caption link.
 
 ---
 
