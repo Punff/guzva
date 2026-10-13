@@ -453,7 +453,8 @@ live DB must be a warning (backup lag is RPO working as documented), not a
 failure. Impossible states (restored > live, restored empty) still fail.
 Script fixed, re-run: PASS with the lag warning.
 
-`ACTION:` the WiFi password (***REMOVED***) remains in git history and live —
+`ACTION:` the WiFi password (network name redacted — it was quoted here
+pre-scrub) remains in git history and live —
 rotation needs the router, which this session cannot reach. The scrub of
 settings.h + the styleproof blob from history is still mandatory before
 the first push to any remote (no remote exists yet).

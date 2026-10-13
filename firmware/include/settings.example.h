@@ -13,7 +13,7 @@
 // …or mint a fresh one and re-flash.
 
 // ---------------------------------------------------------------- WiFi -----
-static const char *WIFI_SSID     = "***REMOVED***";
+static const char *WIFI_SSID     = "YOUR-SSID";
 static const char *WIFI_PASSWORD = "CHANGE-ME";
 
 // mDNS name is "<MDNS_HOST_PREFIX>-<serial from efuse MAC>":
