@@ -731,3 +731,24 @@ label bar at 360 px is the one thing to squint at.
   `/tmp/opencode/mockup-round4-spec.md`; mockup image is source.
   "danas · CET" stays removed (user's earlier explicit call).
 - After round 4: orchestrator PLAN.md evolution pass (user directive).
+
+## 2026-10-13 — orchestrator: round 4 merged (public page per user mockup)
+
+- Frontend 5 commits, gate 13/13 green at `4639d18`, tree clean:
+  `f504afe` header tagline (`tagline` key already existed) +
+  display-size title; `60b9f39` status row above the print (state
+  chip + open-until plain), paper mat, in-frame time badge (JS
+  poller keeps it in sync); `704f06a` hours + info as two bordered
+  cards (`HoursTitle`/`AboutTitle` keys, no new strings — rulings
+  6+7 merged into one commit so every commit is a complete page);
+  `38a32e8` hatched footer divider + privacy caption (no
+  "O privatnosti" link — no privacy route exists; flagged);
+  `4639d18` kit section + design.md §7 truth sweep (also fixed two
+  §7.3 stale clock claims predating this round).
+- Mockup rulings held: no Nazovi button (info card instead), "danas ·
+  CET" stays removed. Two tooling catches by frontend itself: a
+  cached Chrome profile served stale HTML (fresh profile re-shoot),
+  and a fakecam startup race (frames not landing → chip showed
+  "Nema nove slike"; restarted after server health).
+- Orchestrator spot-check green (i18n/pages/admin/webui at
+  -count=1). Releasing v0.6.0, then the PLAN.md evolution pass.
