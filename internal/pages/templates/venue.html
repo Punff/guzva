@@ -159,7 +159,12 @@
   </section>
   {{end}}
 
-  <footer class="mt-auto pt-4 text-xs text-muted border-t-2 border-ink">
+  {{/* Footer (mockup ruling 8): a hatched divider, not a rule — the
+       print DNA again — then the privacy caption. No "learn more" link:
+       there is no privacy target to link to, and inventing one would be
+       a backend route, not a template. */}}
+  <footer class="mt-auto pt-4 text-xs text-muted">
+    <div class="h-2 tx-hatch mb-3" aria-hidden="true"></div>
     <p>{{.PrivacyLine}}</p>
   </footer>
 </div>
