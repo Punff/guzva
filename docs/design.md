@@ -476,10 +476,10 @@ first thing to build (§15 step 1).
 │ ┌────────────────────────────────────┐ │
 │ │  ┌──────────────────────────────┐  │ │
 │ │  │   160×120 still @ k=2        │  │ │  mounted print: hard border,
-│ │  │   [21:48 ← in-frame badge]   │  │ │  paper mat, step shadow;
-│ │  └──────────────────────────────┘  │ │  badge = DOM overlay, JS-synced
+│ │  │   (no clock in the picture)  │  │ │  paper mat, step shadow;
+│ │  └──────────────────────────────┘  │ │  the picture never holds a time
 │ └────────────────────────────────────┘ │
-│  21:48                                 │  live time below (role=status)
+│  21:48                                 │  the ONE clock (role=status)
 │  Zadnja slika je iz 21:48.             │  state detail, only when honest
 │ ┌────────────────────────────────────┐ │
 │ │ RADNO VRIJEME                      │ │  hours card, letterspaced heading
@@ -529,8 +529,8 @@ Goal: the cheapest possible honest page in a 1 GB/month world.
 - Per frame, the browser does one *conditional* request for `latest.png`:
   `fetch('latest.png', {cache:'no-cache'})` → **304 ≈ 0.3 KB** when nothing changed,
   **200 ≈ 1–3 KB** when a new frame arrived. The `Last-Modified` header (= the
-  frame's `received_at`) drives the live time — below the print and the in-frame
-  badge together — via `Intl` in the venue's timezone (`data-tz`).
+  frame's `received_at`) drives the live time below the print — the page's one
+  and only clock — via `Intl` in the venue's timezone (`data-tz`).
 - One more conditional request for `index.html` every 60 s. If its `Last-Modified`
   changed, **reload the page** — state flips are rare, so a full reload is simpler
   and cheaper than DOM diffing. (Tier changes therefore reach a visitor within

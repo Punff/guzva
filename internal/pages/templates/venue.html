@@ -75,8 +75,8 @@
   </div>
 
   <!-- THE PRINT (design-pass2 §1, mockup ruling 4): a mounted print —
-       hard border, paper mat, step shadow. The label clock rides IN the
-       frame (bottom-left badge) and repeats below as the live time. -->
+       hard border, paper mat, step shadow. The picture carries no clock
+       of its own: the label below is the page's one and only time. -->
   <figure class="flex flex-col gap-2">
     <div class="border-2 border-ink bg-paper-2 p-3 shadow-step">
       <div class="relative bg-s3"
@@ -93,7 +93,6 @@
                  never altered (§5.6). */}}
             {{if eq .StateClass "late"}}<div class="absolute inset-0 tx-hatch-light pointer-events-none" aria-hidden="true"></div>{{end}}
             {{if eq .StateClass "nosignal"}}<div class="absolute inset-0 tx-hatch" aria-hidden="true"></div>{{end}}
-            {{if .Updated}}<span id="stamp" class="absolute bottom-0 left-0 bg-ink text-paper font-mono text-xs font-medium tnum px-2 py-1" aria-hidden="true">{{.Updated}}</span>{{end}}
           {{else}}
             <div class="absolute inset-0 tx-dither" aria-hidden="true"></div>
           {{end}}
@@ -103,8 +102,9 @@
         {{end}}
       </div>
     </div>
-    {{/* The live time below the print: the poller's clock, and the page's
-         live region — a new time is announced with the state above. */}}
+    {{/* The page's ONE clock: the poller's live time below the print, and
+         the page's live region — a new time is announced with the state
+         above. (A second, in-frame clock was removed: one time, one place.) */}}
     <figcaption class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1"
                 role="status" aria-live="polite">
       <span class="font-mono text-lg leading-none font-medium tnum" id="hl">
@@ -197,7 +197,7 @@
   var poll = Math.max(10, parseInt(d.poll || '30', 10)) * 1000;
 
   function $(id) { return document.getElementById(id); }
-  var img = $('still'), hl = $('hl'), stamp = $('stamp'),
+  var img = $('still'), hl = $('hl'),
       banner = $('banner'), idleBox = $('idle'), resume = $('resume'),
       live = null;
 
@@ -227,10 +227,7 @@
       busy = false, pageLM = Date.parse(document.lastModified) || 0;
 
   function headline(lmDate) {
-    var t = fmtTime.format(lmDate);
-    hl.textContent = t;
-    // The in-frame badge shows the same clock; keep the two in step.
-    if (stamp) stamp.textContent = t;
+    hl.textContent = fmtTime.format(lmDate);
     if (img) {
       // Rebuild the alt from the catalog prefix + the fresh time, so the
       // venue's language is right even for frames that arrive via JS.
