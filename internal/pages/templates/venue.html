@@ -127,12 +127,13 @@
     {{/* The week, Mo-first, directly under the current day: closed days
          gray out with a dash, open days print their DayText hours. Text
          comes ready-print from WeekCards, so the cards and the headline
-         above can never drift apart. */}}
+         above can never drift apart. Today's row (venue-local weekday,
+         TodayIdx) goes bold with "· danas" and aria-current="date". */}}
     {{if .HoursToday}}
     <ul class="grid gap-1 border-t-2 border-ink mt-1 pt-2">
-      {{range $c := .Week}}
-      <li class="flex items-baseline justify-between gap-2 text-sm{{if $c.Closed}} text-muted{{end}}">
-        <span>{{$c.Name}}</span>
+      {{range $i, $c := .Week}}
+      <li class="flex items-baseline justify-between gap-2 text-sm{{if $c.Closed}} text-muted{{end}}{{if eq $.TodayIdx $i}} font-bold{{end}}"{{if eq $.TodayIdx $i}} aria-current="date"{{end}}>
+        <span>{{$c.Name}}{{if eq $.TodayIdx $i}} · {{$.StrToday}}{{end}}</span>
         {{if $c.Closed}}<span aria-hidden="true">—</span>{{else}}<span class="tnum">{{$c.Text}}</span>{{end}}
       </li>
       {{end}}
