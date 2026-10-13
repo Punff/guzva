@@ -19,8 +19,10 @@
     <a class="text-lg font-bold tracking-tight hover:underline" href="/{{.Slug}}/" target="_blank" rel="noreferrer">{{.Name}}</a>
     <code class="text-sm text-muted font-mono">/{{.Slug}}/</code>
     {{template "chip.html" .Fresh}}
-    <span class="push text-sm text-muted">{{.LastAge}}</span>
-    <a class="btn btn--quiet" href="/admin/venues/{{.ID}}">Edit</a>
+    <span class="push flex items-center gap-x-3">
+      <span class="text-sm text-muted">{{.LastAge}}</span>
+      <a class="btn btn--quiet" href="/admin/venues/{{.ID}}">Edit</a>
+    </span>
   </div>
   {{if .Devices}}
   <div class="hidden md:block">
