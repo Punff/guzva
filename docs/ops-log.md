@@ -705,3 +705,29 @@ label bar at 360 px is the one thing to squint at.
 - Open: docs-i18n unresponsive (override on record; wording review when
   it returns); backend `owner.login.err.*` call-site swap (next
   release); push still gated on history scrub + no remote.
+
+## 2026-10-13 — orchestrator: round 3 merged (theme/alignment/logo/highlight)
+
+- Frontend 5 commits, gate 13/13 green, budgets hold (public 3697/4096
+  gz, app 4481/12288 gz): `b117f9b` light-only theme (user decision;
+  dark blocks + meta removed, contrast re-computed ≥4.5:1, dark-
+  emulating shots now render light = proof of removal);
+  `769cfb8` admin alignment (fleet age+Edit grouped, calib grid
+  2-col mobile + shortened labels; other pages clean);
+  `32f9e2e`+`4ec705d` new logomark "the tally label" (16×16 grid,
+  1 device px/cell favicon, identical data-URI both heads, kit sizes
+  16–128); `ca50c2e` today-row bold + "· danas" +
+  `aria-current="date"` via `view.TodayIdx` + `StrToday` (no new
+  strings). `proto.ReasonDark` untouched by design.
+- Backend `d1f26f4` `view.TodayIdx` state-keyed (midnight flip forces
+  re-render — the Location-style ruling, documented in its commit).
+- Orchestrator `55b5c20` synced PLAN.md + maintenance W7 item (dark
+  toggle void). Two model handovers crossed the round cleanly
+  (muse-spark → mimo-flash mid-Task-3).
+- **Round 4 dispatched** (user mockup): header tagline, state chip,
+  frame time-badge, hours card treatment (highlight already in),
+  INFO card (user: no Nazovi button — phone/address/description
+  section instead), hatched footer divider. Rulings pinned in
+  `/tmp/opencode/mockup-round4-spec.md`; mockup image is source.
+  "danas · CET" stays removed (user's earlier explicit call).
+- After round 4: orchestrator PLAN.md evolution pass (user directive).
