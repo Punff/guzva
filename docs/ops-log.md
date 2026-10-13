@@ -752,3 +752,25 @@ label bar at 360 px is the one thing to squint at.
   "Nema nove slike"; restarted after server health).
 - Orchestrator spot-check green (i18n/pages/admin/webui at
   -count=1). Releasing v0.6.0, then the PLAN.md evolution pass.
+
+## 2026-10-13 — `v0.6.0` deployed (rounds 3+4: light-only, tally logo, mockup page)
+
+- Fire sequence: gate green → `3589464` (ops log) → `make tag
+  V=v0.6.0` → `make backup` → `make deploy`. Healthcheck OK:
+  `version v0.6.0`, page + admin answer, disk 39 %. Rollback anchor
+  `releases/v0.4.0` kept (last 3).
+- Contains: light-only theme (`b117f9b`), admin alignment
+  (`769cfb8`), tally-label logomark (`32f9e2e`+`4ec705d`), today row
+  (`ca50c2e` + backend `d1f26f4`), mockup public page
+  (`f504afe`/`60b9f39`/`704f06a`/`38a32e8`/`4639d18`), backend
+  login-err keys (`178e853`).
+- Handoff review: **INFO card heading = `venue.about` key ("O
+  salonu"/"About") instead of literal "INFO" — APPROVED** (zero new
+  strings, semantically the venue's own card; revisit only if the
+  user asks). Zero i18n keys needed this round — every mockup string
+  resolved from existing catalog keys.
+- Housekeeping: round-3's `r7-today-row-m360.png` proof was
+  overwritten by a stale-profile shot mid-round; the today row is
+  still proven inside `r9-pub-m360.png`. fakecam startup race noted
+  (connection-refused death; restart after server health — devops:
+  worth a guard in the fakecam runner).
