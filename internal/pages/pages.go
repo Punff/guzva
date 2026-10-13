@@ -133,6 +133,13 @@ type view struct {
 	// its own: an hours edit or a language edit already forces the rewrite
 	// that re-renders it.
 	Week [7]venue.DayCard
+	// TodayIdx is the venue-LOCAL weekday as a Mo-first index (0=Monday …
+	// 6=Sunday), matching Week's row order, so the template can bold today's
+	// row and suffix it "· danas". Venue-local, not server-local: a Sarajevo
+	// venue's today rolls over at Sarajevo midnight, not the VM's UTC. Unlike
+	// Week it IS a state-key component — the row it marks moves at midnight
+	// with no data change (see write's key comment).
+	TodayIdx int
 
 	// Poller copy, read from data-* attributes so the script carries no
 	// second hand-written dictionary (W2: one catalog, internal/i18n).
@@ -182,6 +189,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	fresh := venue.Classify(last, now)
 	localNow := now.In(loc)
 	open := hours.ClassifyOpen(localNow)
+	todayIdx := venue.DayIdx(localNow)
 
 	// The state key is everything the page shows. The per-frame clock is NOT
 	// part of it: the poller re-derives the label clock per frame from the
@@ -192,6 +200,12 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	// though no frame arrived. The still FILENAME is part of it too (W2/B8):
 	// on a jpg→png row-kind flip the page must be rewritten once, or the
 	// poller keeps fetching a just-deleted latest.jpg until the next flip.
+	// TodayIdx is part of it as well, and for the same reason hoursToday is:
+	// both are time-derived content the page renders. At midnight the week
+	// table's "today" row moves while every data field is unchanged — and
+	// hoursToday does NOT flip the key when adjacent days share hours — so
+	// without TodayIdx a cached page would keep pointing "· danas" at
+	// yesterday's row (see the midnight test).
 	//
 	// Known limit (12 Oct 2026, stamp removal 25bce48, ⚑2): the burned-in
 	// HH:MM stamp used to be the per-frame time carrier for the no-JS
@@ -204,9 +218,9 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	if latest != nil && latest.Status == "ok" && latest.Path != "" && !strings.HasSuffix(latest.Path, ".png") {
 		stillFile = "latest.jpg"
 	}
-	stateKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s", fresh, open, v.Name, v.Style,
+	stateKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d", fresh, open, v.Name, v.Style,
 		v.TZ, v.Lang, hoursToday(cat0, hours, localNow), stillFile,
-		v.Description, v.Phone, v.Location)
+		v.Description, v.Phone, v.Location, todayIdx)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -264,6 +278,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		PhoneHref:    telHref(v.Phone),
 		Location:     v.Location,
 		Week:         hours.WeekCards(cat.DayNames()),
+		TodayIdx:     todayIdx,
 		AltNow:       cat.F("alt.nowframe", v.Name),
 		AltPrefix:    cat.F("alt.still", v.Name, ""),
 		StrOffline:   cat.Get("net.offline"),

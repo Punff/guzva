@@ -459,6 +459,16 @@ func closeClock(m int) string {
 	return mins(m)
 }
 
+// DayIdx is t's weekday as a Mo-first index (0=Monday … 6=Sunday) — the
+// convention every hours surface already speaks: spec strings group Mo-first,
+// WeekCards and EditModel return Mo-first rows, and i18n.DayNames is Mo-first.
+// It exists so a caller that wants to say "today" about the schedule does not
+// re-derive the Su-first/Mo-first mapping (Go's Weekday is Sunday=0) and get
+// it wrong by one.
+func DayIdx(t time.Time) int {
+	return (int(t.Weekday()) + 6) % 7
+}
+
 // DayForm is one row of the hours editor (DESIGN.md §9). Open/Close are the
 // single-shift contract the NEW editor renders (⚑ 12 Oct 2026): one interval,
 // one closed checkbox, and the weekday index in Go convention (Sunday-first)

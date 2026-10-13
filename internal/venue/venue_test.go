@@ -339,6 +339,34 @@ func TestLegacySplitShiftSurvivesRead(t *testing.T) {
 	}
 }
 
+// DayIdx is the Mo-first convention in one place, so "today" about the
+// schedule never drifts by one (Go's Weekday is Sunday=0, every hours surface
+// here is Monday-first).
+func TestDayIdx(t *testing.T) {
+	// One week, Sarajevo: Monday 5 Oct 2026 … Sunday 11 Oct 2026.
+	loc, err := time.LoadLocation("Europe/Sarajevo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 7; i++ {
+		day := time.Date(2026, 10, 5+i, 12, 0, 0, 0, loc) // Mon..Sun, midday
+		if got := DayIdx(day); got != i {
+			t.Errorf("%s: DayIdx = %d, want %d", day.Weekday(), got, i)
+		}
+	}
+	// The mapping must not care about the hour: 23:59 and 00:01 of the same
+	// local day are the same index — the day, not the clock, is the input.
+	mon := time.Date(2026, 10, 5, 0, 0, 0, 0, loc)
+	if DayIdx(mon.Add(23*time.Hour+59*time.Minute)) != DayIdx(mon) {
+		t.Error("23:59 and 00:00 of one local day must share a DayIdx")
+	}
+	// And it must follow the VENUE's local day, not UTC's: 01:00 Sarajevo on
+	// Tuesday is still Monday 23:00 UTC.
+	if got := DayIdx(time.Date(2026, 10, 6, 1, 0, 0, 0, loc)); got != 1 {
+		t.Errorf("Tue 01:00 Sarajevo: DayIdx = %d, want 1 (Tuesday, Mo-first)", got)
+	}
+}
+
 // WeekCards is what the public page renders (7 small day cards, Mo-first).
 func TestWeekCards(t *testing.T) {
 	names := [7]string{"Pon", "Uto", "Sri", "Čet", "Pet", "Sub", "Ned"}

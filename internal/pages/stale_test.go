@@ -390,3 +390,79 @@ func TestLocationEditFlipsStateKey(t *testing.T) {
 		t.Fatal("state key is not stable: the page would be rewritten every tick")
 	}
 }
+
+// TodayIdx moves the week table's "today" row at midnight while EVERY data
+// field is unchanged — and hoursToday does not flip the key when adjacent
+// days share the same hours, nor does open when the venue is closed on both
+// sides of midnight. Without TodayIdx in the key, a cached page would keep
+// pointing "· danas" at yesterday's row for as long as nothing else changed.
+//
+// This test isolates exactly that: one frame, one venue, Monday 23:59 →
+// Tuesday 00:01 venue-local. Freshness (2 min old, still fresh), open/closed
+// (closed both sides), hoursToday (identical ranges) and the still are all
+// constant, so TodayIdx (Mo 0 → Tu 1) is the only component that can differ.
+// The rewrite must happen, then settle.
+func TestTodayIdxFlipsStateKeyAtMidnight(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	loc, err := time.LoadLocation("Europe/Sarajevo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mon := time.Date(2026, 10, 5, 23, 59, 0, 0, loc)
+	tue := time.Date(2026, 10, 6, 0, 1, 0, 0, loc)
+	if mon.Weekday() != time.Monday || tue.Weekday() != time.Tuesday {
+		t.Fatalf("test dates are wrong: %s, %s", mon.Weekday(), tue.Weekday())
+	}
+	// A frame for Monday, so the page is fresh at 23:59 and 2 minutes later.
+	rel := filepath.Join("venues", "1", "stills", "C1-2-mon.jpg")
+	if err := os.MkdirAll(filepath.Join(f.w.Root(), filepath.Dir(rel)), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.w.Root(), rel), []byte("FAKE-STYLISED-RENDER"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.InsertFrame(ctx, store.Frame{
+		VenueID: f.vid, CaptureID: "C1-2-mon", SHA256: "def456", ReceivedAt: mon,
+		Bytes: 20, Width: 640, Height: 480, Preset: "poster", PresetVer: 3,
+		Path: rel, Status: "ok",
+	}); err != nil {
+		t.Fatalf("insert frame: %v", err)
+	}
+
+	idxPath := filepath.Join(f.w.Root(), "jadro", "index.html")
+	mtime := func() time.Time {
+		t.Helper()
+		fi, err := os.Stat(idxPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fi.ModTime()
+	}
+
+	f.now = mon
+	if err := f.w.OnFrame(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	before := mtime()
+
+	// Two minutes later, across local midnight: only the weekday moved.
+	f.now = tue
+	if err := f.w.OnFrame(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	after := mtime()
+	if after.Equal(before) {
+		t.Fatal("midnight did not flip the state key — the week table would keep " +
+			"pointing \"· danas\" at yesterday's row")
+	}
+
+	// And it settles: no further rewrite until something really changes.
+	if err := f.w.OnFrame(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	if settled := mtime(); !settled.Equal(after) {
+		t.Fatal("state key not stable after the midnight flip: the page would be " +
+			"rewritten on every tick")
+	}
+}
