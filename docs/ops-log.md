@@ -881,3 +881,44 @@ label bar at 360 px is the one thing to squint at.
   that doesn't exist) — open tabs never see fresh→stale flips.
 - Bench hygiene: the reflash reset boot/brownout counters (now
   boot=8, brownout=0); WiFi password rotation still owed (router).
+
+### 16:00–16:40 — the dark loop, and the third value from one bad save
+
+- After the user's restart the board posted cleanly once
+  (`boot=9`, 201, `render_ms` 7.2), then every subsequent frame came
+  back `422 reject:"dark"` — ~25 min, three rejects per tick, through
+  two restarts. `camera=ok`, real ~2.1 KB JPEGs, WiFi up, config
+  applying: electronics healthy, image underexposed.
+- Self-inflicted detour worth remembering: **opening `/dev/ttyUSB0`
+  with `stty`/`cat` resets the ESP32 into download mode** (DTR/RTS
+  toggling on the CH340). Raw serial "monitoring" was knocking the
+  board off the air; the boot counter climbed 9→15 largely because of
+  my own probes. Only `esp32-bootlog.py`'s deliberate RTS pulse is
+  safe; for pass-by checks use the server journal.
+- Root cause, in the end, was **config, not hardware**: the same 11:44
+  calibration save had also pinned `agc_gain: 0`. The firmware applies
+  the AGC gain register unconditionally, so `aec=1, agc=1` with
+  `agc_gain=0` means auto-gain pinned to minimum — the OV2640 could not
+  reach the light and every frame stayed under `DarkMeanLuma = 6`
+  (render.go:34). Restoring `aec=1, agc=1` alone was not enough;
+  `agc_gain=15` fixed it within one tick. Clean 201s at `ver 6`
+  (`framesize=5, aec=1, agc=1, agc_gain=15`), `latest.png` live.
+- **The real lesson: per-key validation is not enough.** One save
+  smuggled three contract-breaking values past a form that range-checks
+  each field in isolation. Dispatched:
+  - backend — (A) 4:3 framesize at write time; (C) log the computed
+    mean luma on `dark` rejects (today `dark` carried no magnitude, so
+    "covered lens" and "gain clamp" were indistinguishable from the
+    logs — two hours lost to that blind spot); (D) exposure-group
+    **coherence** validation: reject `agc=1 && agc_gain=0`, warn on
+    fixed-exposure saves; (E) surface reject reason + mean + since on
+    the admin device board, so a dark device is legible, not silent.
+  - firmware — warm-up captures discarded after camera init and after
+    exposure-affecting config applies; escalate to health-only beats
+    after 4 consecutive `dark` rejects (today's twenty silent posts are
+    what this prevents); TLS-failure backoff (`tls_fail=12` at full
+    cadence today); and a named `[SENS]` warning when a config applies
+    gain-control-on with `agc_gain=0`.
+- The page never lied once through any of it: "Nema nove slike" plus
+  the last good still, which is the whole point of
+  never-publish-a-failure.
