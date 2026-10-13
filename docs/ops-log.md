@@ -843,3 +843,41 @@ label bar at 360 px is the one thing to squint at.
   single-clock sync (`5462fcf`), CI first-run fixes (`44a1945`),
   pre-push SSID hygiene (`11fc19d`). Prod and GitHub now match:
   `https://github.com/Punff/guzva` (SSH remote; scrubbed history).
+
+## 2026-10-13 — round 6 (display clock) + the "stuck at 11:44" incident
+
+- **Round 6** (user: "the clock is small and disproportioned"): the
+  below-print clock is now display-scale — `#hl` at 2.25rem/3rem bold
+  tabular, the SAME steps as the venue title, measured off the 2×
+  mockup (~38pt), flush-left under the print. Poller/aria/no-JS
+  contracts untouched; budgets hold (3695/4096 gz). `eaa055d`, CI
+  run #3 ✅ (1m43s — warm caches).
+- **The incident (user report: "camera stuck at 11:44; restarts and
+  deploys don't fix it"). Root cause: a single admin calibration
+  edit at 11:44 local** (`admin: device cfg updated ver:2` journal
+  line, 09:44Z) set `framesize=0`. On the pinned esp32-camera build
+  that is 96×96 — 1:1 — which can never pass the render contract
+  (tisak.go: `sw*3 != sh*4` → Reject("dims")). The field unit then
+  spent ~5 h degraded/422-rejecting while the page honestly showed
+  "Nema nove slike" + the 11:44 still (never-publish-a-failure
+  working exactly as designed — the server never lied once).
+- **Recovery sequence (bench):** full erase + reflash
+  (v0.6.1-1-g76f97c2-dirty; wiped the wedged sensor state —
+  `camera=ok` at boot), then the board's WiFi went deaf (`scan: 0
+  networks` while wlan-Ant was provably up) — user reseated the
+  antenna → `got IP, rssi=-81`, and RSSI has since improved to −68
+  (the −80s were the antenna all along). One transitional
+  camera-degraded post on the ver=4 apply, then clean 201s with
+  render_ms ~6.
+- **Feed restored** via the proper app path: `guzva cfg -set
+  framesize=5` on the VPS (ver 3→4; 5 proven 4:3-accepted), device
+  applied on next POST, `latest.png` live again 15:34:25Z.
+- **Dispatched to backend (fixes, in flight):** (A) the cfg key
+  table must reject non-4:3 framesizes at WRITE time (both the admin
+  form and `guzva cfg`) — this class of value can never reach a
+  field unit again; (B) round-6 finding: `pageCache.serve` sends no
+  Last-Modified/ETag and never 304s, so the poller's state-flip
+  reload detector is INERT (static.go:89's comment describes a path
+  that doesn't exist) — open tabs never see fresh→stale flips.
+- Bench hygiene: the reflash reset boot/brownout counters (now
+  boot=8, brownout=0); WiFi password rotation still owed (router).
