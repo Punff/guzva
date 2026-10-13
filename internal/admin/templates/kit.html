@@ -62,15 +62,15 @@
 <div class="grid gap-6 lg:grid-cols-2">
   {{/* The mounted print: hard border, paper mat, step shadow — and the
        picture carries NO clock of its own. The page shows the time once,
-       in the label below the print (the poller's live region). The
+       below the print, at display size (the poller's live region). The
        example time here is static; on the page it ticks per frame. */}}
   <div>
-    <p class="text-xs text-muted mb-2">Mounted print — mat; one clock, below the picture</p>
+    <p class="text-xs text-muted mb-2">Mounted print — mat; one display-size clock, below the picture</p>
     <div class="border-2 border-ink bg-paper-2 p-3 shadow-step max-w-80">
       <div class="relative bg-s3 h-24"></div>
     </div>
-    <div class="flex items-baseline justify-between gap-x-4 gap-y-1 px-1 mt-2">
-      <span class="font-mono text-lg leading-none font-medium tnum">11:30</span>
+    <div class="flex items-baseline justify-between gap-x-4 gap-y-1 mt-2">
+      <span class="font-mono text-[2.25rem] leading-none font-bold tnum sm:text-[3rem]">11:30</span>
     </div>
   </div>
   {{/* The hours card: letterspaced heading, day left / mono times right,

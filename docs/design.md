@@ -484,7 +484,7 @@ first thing to build (§15 step 1).
 │ │  │   (no clock in the picture)  │  │ │  paper mat, step shadow;
 │ │  └──────────────────────────────┘  │ │  the picture never holds a time
 │ └────────────────────────────────────┘ │
-│  21:48                                 │  the ONE clock (role=status)
+│  21:48                                 │  the ONE clock, display-size (role=status)
 │  Zadnja slika je iz 21:48.             │  state detail, only when honest
 │ ┌────────────────────────────────────┐ │
 │ │ RADNO VRIJEME                      │ │  hours card, letterspaced heading
