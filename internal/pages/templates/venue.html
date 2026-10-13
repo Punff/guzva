@@ -127,37 +127,36 @@
   <p class="text-sm text-muted border-l-2 border-ink pl-3">{{.StateDetail}}</p>
   {{end}}
 
-  {{/* The info card: open state + hours + the week's seven day-cards +
-       about + location in ONE contained block. Rows render only when
-       they have content. Contact (phone) stands alone below: a phone
-       number is an action, not a footnote of the about text. */}}
-  {{if or .OpenText .Description .Location}}
-  <section class="border-2 border-ink bg-paper-2 p-4 flex flex-col gap-2">
-    {{if .OpenText}}
-    <p class="text-lg font-bold tracking-tight leading-snug">{{.OpenText}}</p>
-    {{if .HoursToday}}<p class="text-sm tnum text-muted -mt-1">{{.HoursToday}}</p>{{end}}
-    {{end}}
-    {{/* The week, Mo-first, directly under the current day: closed days
-         gray out with a dash, open days print their DayText hours. Text
-         comes ready-print from WeekCards, so the cards and the headline
-         above can never drift apart. Today's row (venue-local weekday,
-         TodayIdx) goes bold with "· danas" and aria-current="date". */}}
-    {{if .HoursToday}}
-    <ul class="grid gap-1 border-t-2 border-ink mt-1 pt-2">
+  {{/* The hours card (mockup ruling 6): its own bordered card, a
+       letterspaced heading, and the week in rows — day left, mono times
+       right. Closed days gray out with a dash; today's row (venue-local
+       weekday, TodayIdx) goes bold with "· danas" and aria-current. */}}
+  {{if .HoursToday}}
+  <section class="border-2 border-ink bg-paper-2 p-4">
+    <h2 class="text-sm font-semibold uppercase tracking-[0.15em] text-muted mb-3">{{.HoursTitle}}</h2>
+    <ul class="grid gap-2">
       {{range $i, $c := .Week}}
-      <li class="flex items-baseline justify-between gap-2 text-sm{{if $c.Closed}} text-muted{{end}}{{if eq $.TodayIdx $i}} font-bold{{end}}"{{if eq $.TodayIdx $i}} aria-current="date"{{end}}>
+      <li class="flex items-baseline justify-between gap-3 text-base{{if $c.Closed}} text-muted{{end}}{{if eq $.TodayIdx $i}} font-bold{{end}}"{{if eq $.TodayIdx $i}} aria-current="date"{{end}}>
         <span>{{$c.Name}}{{if eq $.TodayIdx $i}} · {{$.StrToday}}{{end}}</span>
-        {{if $c.Closed}}<span aria-hidden="true">—</span>{{else}}<span class="tnum">{{$c.Text}}</span>{{end}}
+        {{if $c.Closed}}<span aria-hidden="true">—</span>{{else}}<span class="font-mono tnum">{{$c.Text}}</span>{{end}}
       </li>
       {{end}}
     </ul>
-    {{end}}
-    {{if .Description}}<p class="text-base">{{.Description}}</p>{{end}}
-    {{if .Location}}<p class="text-base">{{.Location}}</p>{{end}}
   </section>
   {{end}}
-  {{if .Phone}}
-  <a class="border-2 border-ink bg-paper-2 p-4 text-base font-semibold underline min-h-11 flex items-center" href="tel:{{.PhoneHref}}">{{.Phone}}</a>
+  {{/* The INFO card (mockup ruling 7): no call button — the number is a
+       tel: link inside the same card treatment as the hours: contact,
+       where we are, one sentence about the place. Heading rides the
+       existing "about" key. Rows render only when they have content. */}}
+  {{if or .Phone .Location .Description}}
+  <section class="border-2 border-ink bg-paper-2 p-4 flex flex-col gap-2">
+    <h2 class="text-sm font-semibold uppercase tracking-[0.15em] text-muted">{{.AboutTitle}}</h2>
+    {{if .Phone}}
+    <a class="text-base font-semibold underline min-h-11 flex items-center" href="tel:{{.PhoneHref}}">{{.Phone}}</a>
+    {{end}}
+    {{if .Location}}<p class="text-base">{{.Location}}</p>{{end}}
+    {{if .Description}}<p class="text-base">{{.Description}}</p>{{end}}
+  </section>
   {{end}}
 
   <footer class="mt-auto pt-4 text-xs text-muted border-t-2 border-ink">
