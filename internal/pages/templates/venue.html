@@ -30,7 +30,7 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="{{.Name}}">
 <meta property="og:description" content="{{.StateText}} — {{.Name}}.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 18' shape-rendering='crispEdges'%3E%3Crect width='18' height='18' fill='%2312202D'/%3E%3Crect x='1' y='3' width='16' height='10' fill='%23F2EDE2'/%3E%3Crect x='3' y='13' width='2' height='1' fill='%23F2EDE2'/%3E%3Crect x='3' y='5' width='2' height='2' fill='%2333607F'/%3E%3Crect x='2' y='7' width='4' height='4' fill='%2333607F'/%3E%3Crect x='8' y='5' width='2' height='2' fill='%23AE2B16'/%3E%3Crect x='7' y='7' width='4' height='4' fill='%23AE2B16'/%3E%3Crect x='13' y='5' width='2' height='2' fill='%2333607F'/%3E%3Crect x='12' y='7' width='4' height='4' fill='%2333607F'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%2312202D'/%3E%3Crect x='2' y='2' width='12' height='11' fill='%23F2EDE2'/%3E%3Crect x='2' y='13' width='1' height='1' fill='%23F2EDE2'/%3E%3Crect x='4' y='13' width='1' height='1' fill='%23F2EDE2'/%3E%3Crect x='6' y='13' width='1' height='1' fill='%23F2EDE2'/%3E%3Crect x='8' y='13' width='1' height='1' fill='%23F2EDE2'/%3E%3Crect x='10' y='13' width='1' height='1' fill='%23F2EDE2'/%3E%3Crect x='12' y='13' width='1' height='1' fill='%23F2EDE2'/%3E%3Crect x='3' y='9' width='2' height='3' fill='%2333607F'/%3E%3Crect x='7' y='7' width='2' height='5' fill='%2333607F'/%3E%3Crect x='11' y='5' width='2' height='7' fill='%23AE2B16'/%3E%3C/svg%3E">
 <style>{{.CSS}}</style>
 </head>
 <body class="min-h-dvh bg-paper text-ink font-sans"
@@ -41,19 +41,21 @@
 <div class="mx-auto w-full max-w-[40rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
 
   <header class="flex items-center gap-2">
-    <!-- Logomark: three pixel figures in a speech bubble, one in signal red
-         (Appendix C). 24px = 12 cells, so the cells stay crisp. -->
-    <svg viewBox="0 0 18 18" width="24" height="24" shape-rendering="crispEdges" aria-hidden="true" class="shrink-0">
-      <rect width="18" height="18" fill="var(--ink)"/>
-      <rect x="1" y="3" width="16" height="10" fill="var(--paper)"/>
-      <rect x="3" y="13" width="2" height="1" fill="var(--paper)"/>
-      <rect x="3" y="14" width="1" height="1" fill="var(--paper)"/>
-      <rect x="3" y="5" width="2" height="2" fill="var(--s1)"/>
-      <rect x="2" y="7" width="4" height="4" fill="var(--s1)"/>
-      <rect x="8" y="5" width="2" height="2" fill="var(--accent)"/>
-      <rect x="7" y="7" width="4" height="4" fill="var(--accent)"/>
-      <rect x="13" y="5" width="2" height="2" fill="var(--s1)"/>
-      <rect x="12" y="7" width="4" height="4" fill="var(--s1)"/>
+    <!-- Logomark: "the tally label" — a thermal label (perforated tear
+         edge) printing three rising crowd bars, the peak in signal red
+         (Appendix C). 16-cell grid at 32 px = 2 px per cell, crisp. -->
+    <svg viewBox="0 0 16 16" width="32" height="32" shape-rendering="crispEdges" aria-hidden="true" class="shrink-0">
+      <rect width="16" height="16" fill="var(--ink)"/>
+      <rect x="2" y="2" width="12" height="11" fill="var(--paper)"/>
+      <rect x="2" y="13" width="1" height="1" fill="var(--paper)"/>
+      <rect x="4" y="13" width="1" height="1" fill="var(--paper)"/>
+      <rect x="6" y="13" width="1" height="1" fill="var(--paper)"/>
+      <rect x="8" y="13" width="1" height="1" fill="var(--paper)"/>
+      <rect x="10" y="13" width="1" height="1" fill="var(--paper)"/>
+      <rect x="12" y="13" width="1" height="1" fill="var(--paper)"/>
+      <rect x="3" y="9" width="2" height="3" fill="var(--s1)"/>
+      <rect x="7" y="7" width="2" height="5" fill="var(--s1)"/>
+      <rect x="11" y="5" width="2" height="7" fill="var(--accent)"/>
     </svg>
     <span class="font-bold text-lg tracking-tight">guzva</span>
   </header>

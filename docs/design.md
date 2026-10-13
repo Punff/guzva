@@ -137,10 +137,12 @@ later upgrade (§14, not proposed now).
 
 ### 3.5 Logomark and wordmark
 
-Three pixel figures in a speech bubble — "is there a crowd?" — one of them in signal
-red. 18×18 grid, 653 bytes, `shape-rendering: crispEdges`. Source in Appendix C. Used
-as inline SVG favicon (`data:` URI) and in the page header at 24 px (cell = 1⅓ px →
-use 24 / 36 / 48 px, i.e. multiples of 12 for crisp cells).
+"The tally label" — a thermal label printing three rising crowd bars, the peak in
+signal red: *is there a crowd?* Ink tile, paper label, perforated tear edge along the
+bottom. 16×16 grid (1 cell = 1 px at the 16 px favicon), `shape-rendering: crispEdges`.
+Source in Appendix C. Used as inline SVG favicon (`data:` URI, both consoles) and in
+the public page header at 32 px (2 px per cell). Render at multiples of 16 px so
+every cell stays exactly one pixel.
 
 Wordmark: the text **guzva** (lowercase, spelled like the domain) in the system sans
 at 700, beside the mark. Prose and tagline keep the proper spelling: **gužva**,
@@ -467,7 +469,7 @@ first thing to build (§15 step 1).
 
 ```
 ┌────────────────────────────────────────┐
-│ ▣ guzva                                │  header: logomark 24 px + wordmark
+│ ▣ guzva                                │  header: logomark 32 px + wordmark
 ├────────────────────────────────────────┤
 │ Salon Kadrić                           │  H1, venue name
 │ ■ Svježa slika     Otvoreno do 20:00   │  status chip + open/closed line
@@ -927,20 +929,24 @@ design: the first `accent/fresh/late` candidates dipped to 4.1–4.4 : 1 on `pap
 and were darkened; the first still ramp had uneven lightness steps (27 / 32 / 24 L*)
 and `s2` was darkened to even them out.
 
-## Appendix C — logomark (clean source, 653 bytes)
+## Appendix C — logomark (clean source)
+
+"The tally label": 16×16 grid, ink tile, paper label with a perforated tear edge,
+three rising crowd bars (two `s1`, the peak in accent).
 
 ```svg
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" shape-rendering="crispEdges">
-<rect x="0" y="0" width="18" height="18" fill="#12202D"/>
-<rect x="1" y="3" width="16" height="10" fill="#F2EDE2"/>
-<rect x="3" y="13" width="2" height="1" fill="#F2EDE2"/>
-<rect x="3" y="14" width="1" height="1" fill="#F2EDE2"/>
-<rect x="3" y="5" width="2" height="2" fill="#33607F"/>
-<rect x="2" y="7" width="4" height="4" fill="#33607F"/>
-<rect x="8" y="5" width="2" height="2" fill="#AE2B16"/>
-<rect x="7" y="7" width="4" height="4" fill="#AE2B16"/>
-<rect x="13" y="5" width="2" height="2" fill="#33607F"/>
-<rect x="12" y="7" width="4" height="4" fill="#33607F"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
+<rect x="0" y="0" width="16" height="16" fill="#12202D"/>
+<rect x="2" y="2" width="12" height="11" fill="#F2EDE2"/>
+<rect x="2" y="13" width="1" height="1" fill="#F2EDE2"/>
+<rect x="4" y="13" width="1" height="1" fill="#F2EDE2"/>
+<rect x="6" y="13" width="1" height="1" fill="#F2EDE2"/>
+<rect x="8" y="13" width="1" height="1" fill="#F2EDE2"/>
+<rect x="10" y="13" width="1" height="1" fill="#F2EDE2"/>
+<rect x="12" y="13" width="1" height="1" fill="#F2EDE2"/>
+<rect x="3" y="9" width="2" height="3" fill="#33607F"/>
+<rect x="7" y="7" width="2" height="5" fill="#33607F"/>
+<rect x="11" y="5" width="2" height="7" fill="#AE2B16"/>
 </svg>
 ```
 
