@@ -287,7 +287,8 @@ read "how busy" at a glance) at maximum *privacy* (nothing recoverable).
 The shipped answer is defensible — luminance-only, 160×120 area average,
 [1 2 1]² blur, fixed per-venue thresholds (explicitly no auto-levels, so an
 empty and a full room cannot be made to look the same), 3×3 mode filter,
-burned-in HH:MM stamp, ≤4 static masks applied twice, paletted PNG; no
+burned-in HH:MM stamp (removed at v0.4.0 — the page carries the time
+instead), ≤4 static masks applied twice, paletted PNG; no
 biometrics ever (D9). Research items, sequenced:
 
 1. **Threshold selection from real frames** — styleproof contact sheets
@@ -352,8 +353,10 @@ while docs-i18n was unresponsive — wording review owed), week cards →
 7-row table with state-keyed today row, admin alignment pass, the
 tally-label logomark, light-only theme (dark removed — user decision;
 W7 "dark toggle" item void), and the public page rebuilt to the user's
-mockup (mounted print + in-frame badge, status row, RADNO VRIJEME +
-info cards, hatch footer — zero new i18n keys). PLAN.md evolved to
+mockup (mounted print, status row, RADNO VRIJEME + info
+cards, hatch footer — zero new i18n keys; the in-frame time badge
+v0.6.0 briefly shipped was removed at v0.6.1 as a double clock).
+PLAN.md evolved to
 v3.4 for it. Still open from this list: **push is blocked** (burned
 secrets in history, no remote), fakecam startup-race guard in the
 runner, the `r7-today-row` proof filename was clobbered (feature

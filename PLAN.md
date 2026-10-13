@@ -27,8 +27,10 @@ Status (13 Oct 2026 — v0.6.0 deployed; product rounds 1–4 shipped):
   editor (parse-don't-migrate — stored `[7][]Range` kept, write
   narrowed); venue `location` free text (schema v7); public page
   rebuilt to the user's mockup composition (status-chip row, mounted
-  print with in-frame clock badge, RADNO VRIJEME card with a
-  state-keyed today row, venue info card, hatched footer); light-only
+  print, one live clock below the print, RADNO VRIJEME card with a
+  state-keyed today row, venue info card, hatched footer; the brief
+  in-frame time badge was removed at v0.6.1 — double-clock fix);
+  light-only
   theme (dark removed — user decision); the tally-label logomark;
   owner login fully through the catalog.
 - **Ops workflow shipped:** `Makefile` (`test`/`tag`/`backup`/`deploy`/
@@ -378,9 +380,10 @@ Shipped through v0.6.0 — the user's mockup composition, honest states:
 - status row above the print: bordered state chip (colored square +
   named state) with the open-until line as plain text beside it;
 - the still as a **mounted print** — hard border, paper mat, step
-  shadow — with the frame clock as a dark tabular-mono badge inside
-  the frame (JS poller keeps it in sync; `aria-hidden`, the figcaption
-  is the one live region); the live time row stands below the border;
+  shadow; the picture carries no clock of its own (v0.6.0's in-frame
+  time badge was removed at v0.6.1 as a double clock — user ruling);
+  the live time row below the border is the page's one and only time
+  (`#hl`, `role="status"`, the aria-live region, poller-synced);
   in-place still swap, reserved frame box (no layout shift);
 - **RADNO VRIJEME card**: 7 Mo-first rows, mono tabular times, closed
   days dashed, today's row bold + "· danas" + `aria-current="date"` —
@@ -685,7 +688,8 @@ below is the honest split)*
   console through the catalog), the WAL-copy trap, and the push block
   (burned secrets in history) as a named gap.
 - **§9.1/§9.2 now describe the page that exists**, not the page
-  planned: mounted print + in-frame badge, status-chip row, RADNO
+  planned: mounted print (single clock below the picture after the
+  v0.6.1 double-clock fix), status-chip row, RADNO
   VRIJEME card with the state-keyed today row, info card, hatched
   footer; "danas · CET" recorded as removed by user decision; QR
   poster + no-JS frozen-clock gap as the explicit remainders.
