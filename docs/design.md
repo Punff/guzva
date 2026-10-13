@@ -227,7 +227,7 @@ their display names are **Tisak** (print, 4 tones) and **Šablon** (stencil, 2 t
 **Non-goals.** Recognising anything: no face/people/plate detection or counting
 (D9). Nothing here "finds" a person; the style just *coarsens everything equally*.
 
-### 5.2 Pipeline (`poster@2`)
+### 5.2 Pipeline (`poster@3`)
 
 All stages are pure, integer-friendly, stdlib-only. Input: decoded JPEG; output:
 `160×120` paletted PNG.
@@ -240,20 +240,22 @@ All stages are pure, integer-friendly, stdlib-only. Input: decoded JPEG; output:
 | 4 | **Blur** 3×3 binomial `[1 2 1]²/16` | σ ≈ 0.85 cells | Kills sub-cell detail and sensor noise before thresholding. |
 | 5 | **Quantise** to 4 tones with thresholds `t = (64, 128, 192)` by default; per-venue `calib` overrides (`t`, `bias`, `invert`) ⚑ | 2 bits/cell | Flat bands, ~2 bits of tone. Fixed thresholds: **no per-frame auto-levels** (§5.10). |
 | 6 | **Mode filter** 3×3 (majority; ties keep the centre) | — | Removes isolated speckle where a smooth area sits on a threshold. |
-| 7 | **Timestamp stamp** — burn `HH:MM` (venue-local) into the bottom-left | 5×7 digit font, `S3` digits on `S0` plate, 29×11 cells ≈ 1.7 % of the area ⚑ | A screenshot shared in a chat dates itself; also removes any per-frame HTML rewrite (§7.3). |
-| 8 | **Encode** paletted PNG, 4 fixed palette entries, best compression | Go's encoder picks 2-bit depth for ≤4 colours; no ancillary chunks | Tiny, lossless, no JPEG ringing on flat art. |
+| 7 | **Encode** paletted PNG, 4 fixed palette entries, best compression | Go's encoder picks 2-bit depth for ≤4 colours; no ancillary chunks | Tiny, lossless, no JPEG ringing on flat art. |
 
-`mono@2` (Šablon): same stages with 2 tones (`S0`/`S3`), one threshold, 1-bit PNG.
+(Seven stages: the burned-in timestamp that used to be stage 7 was removed at
+`v3` — §5.6, ⚑2.)
 
-A note on versions: the shipped presets are `@2`. Version 1 was the 640-px
-JPEG era; versions were bumped when the Tisak pipeline landed, so old
-sidecar rows keep meaning what they recorded (PLAN D2 outranks this doc
-where the two disagree).
+`mono` (Šablon): same stages with 2 tones (`S0`/`S3`), one threshold, 1-bit PNG.
+
+A note on versions: the shipped presets are `@3`. Version 1 was the 640-px
+JPEG era; v2 the stamped Tisak pipeline; v3 (12 Oct 2026) drops the
+burned-in stamp (§5.6). Old sidecar rows keep meaning what they recorded
+(PLAN D2 outranks this doc where the two disagree).
 
 Sketch of the package surface (not final code):
 
 ```go
-// internal/render/tisak.go — poster@2
+// internal/render/tisak.go — poster@3
 const GW, GH = 160, 120
 
 func lumaGrid(img image.Image) (g []uint8, err error)  // stages 1–2
@@ -261,12 +263,12 @@ func applyMasks(g []uint8, m []Rect)                   // 3
 func blur121(g []uint8) []uint8                        // 4
 func quant(g []uint8, t [3]uint8, invert bool) []uint8 // 5
 func mode3(q []uint8, levels int) []uint8              // 6
-func stamp(q []uint8, hhmm string)                     // 7
-func encode(q []uint8) []byte                          // 8  (palette = fixed S0..S3)
+func encode(q []uint8) []byte                          // 7  (palette = fixed S0..S3)
 ```
 
-`Preset.Render` stays pure: inputs are the luma grid, the venue's `calib`, and the
-venue-local `HH:MM` string — all passed in, so determinism ×100 and goldens still hold.
+`Preset.Render` stays pure: inputs are the decoded frame, the tone count and the
+venue's `calib` — all passed in, so determinism ×100 and goldens still hold. (The
+venue-local `HH:MM` input went with the stamp: nothing render-side knows the time.)
 
 ### 5.3 What it removes — and the install geometry gate
 
@@ -307,15 +309,15 @@ re-check with a local adviser before the first paying venue).
 
 | Level | Name | Hex | L* | Role |
 |---|---|---|---|---|
-| 0 | `s0` ink | `#12202D` | 11.6 | darkest: people, hair, furniture shadows, stamp plate |
+| 0 | `s0` ink | `#12202D` | 11.6 | darkest: people, hair, furniture shadows, masked-out rectangles |
 | 1 | `s1` | `#33607F` | 38.9 | dark mid |
 | 2 | `s2` | `#7EA5C0` | 65.9 | light mid |
-| 3 | `s3` paper | `#F2EDE2` | 93.9 | lightest: walls, windows, stamp digits |
+| 3 | `s3` paper | `#F2EDE2` | 93.9 | lightest: walls, windows |
 
 Steps are even in lightness (27.3 / 27.0 / 28.0 L*), so each tone is an equally
 distinguishable band; adjacent-tone contrast is 2.5 / 2.6 / 2.2 : 1, intentionally
 "image-like", not text-like. Palette order is part of the preset version: changing a
-colour ships as `poster@2`.
+colour ships as the next version (`poster@4` next).
 
 ### 5.5 Output and bytes (⚑ replaces the 640×q68 JPEG)
 
@@ -350,18 +352,22 @@ your esp32-camera version. Low priority.)
 ### 5.6 Stale, closed and "waiting" treatments
 
 - **Late** (3–15 min): the PNG is unchanged; the page overlays a light hatch
-  (`--s1` lines, 1 px every 4) and swaps the badge.
+  (`--s1` lines, 1 px every 4) and swaps the state chip (shape + label).
 - **No signal** (>15 min): strong overlay — paper at ~55 % + the hatch — so the old
-  still reads as *old*. The stamp stays legible because it is part of the image and
-  sits on a 14 : 1 plate.
+  still reads as *old*. The picture carries no time, so the overlay can dim it as
+  hard as it likes without dimming the clock: the label below the print keeps the
+  frame's time (§7.3).
 - **Closed / paused**: **no still is shown at all** and polling stops. Privacy (no
   after-hours interior), honesty (nothing to claim), and bytes. A CSS shutter
   (horizontal ink bars on `paper-2`) fills the frame box. ⚑ (§14)
 - **Waiting for first frame**: dither skeleton in the same 4:3 box.
 
-The **stamp** (stage 7) is the keystone of honesty: every picture carries its own
-time, wherever it is shared. Venue-local time, 24 h, no date (the stale tiers and
-the headline handle "when").
+The **label, not the picture, carries the time** — the keystone of honesty since
+v0.4.0. The burned-in stamp read as a second clock next to the label's and was
+removed (v0.4.0); a DOM badge repeated it and was removed again (v0.6.1, user
+ruling: one clock). What remains: the page below the print, server-rendered from
+the frame's `received_at` and re-derived per frame (§7.3). Venue-local time, 24 h,
+no date (the stale tiers and the label handle "when").
 
 ### 5.7 Display rules
 
@@ -380,7 +386,7 @@ the headline handle "when").
 
 ### 5.8 Presets registry and versioning
 
-`poster@2` (Tisak), `mono@2` (Šablon). Sidecars record `preset@version`, as in
+`poster@3` (Tisak), `mono@3` (Šablon). Sidecars record `preset@version`, as in
 PLAN §7. Style *and* version changes apply to new frames only. New style = one file +
 one registry line + one golden test (unchanged contract).
 
@@ -408,7 +414,7 @@ Migration: one nullable column (the plan's migration rule: exercised across a re
 |---|---|
 | Highlight people by diffing against a reference frame ("silhouettes in red") | It is people detection in all but name → D9. |
 | Per-frame auto-levels / histogram equalisation | Brightness pumps between frames and destroys information (an empty room and a full one would get the same tone mix). |
-| Dithering by default | Noisier, 40–60 % bigger, harder to read at tiny sizes. Kept as a possible `poster@2` variant only if real frames look muddy. |
+| Dithering by default | Noisier, 40–60 % bigger, harder to read at tiny sizes. Kept as a possible future preset variant only if real frames look muddy. |
 | JPEG for the stylised output | Ringing on flat art, 5–10× the bytes. |
 | Blur-only anonymisation | Blur is reversible-ish and keeps colour/gradients. We quantise too. |
 | Face blurring | Needs a detector → D9. |
@@ -421,8 +427,7 @@ Automated (additions to PLAN §7's list):
 - **Golden PNGs** byte-for-byte, from **procedurally generated** fixtures. Never commit
   real venue frames.
 - **Invariants:** exactly 160×120; ≤ 4 palette entries in fixed order; no ancillary
-  chunks (`tEXt/eXIf/iCCP`); stamp cells only in the stamp rectangle; mask cells are
-  level 0 whatever the input.
+  chunks (`tEXt/eXIf/iCCP`); mask cells are level 0 whatever the input.
 - **Size bound:** a render > 6 KB fails the test (guards accidental dither/noise).
 - **Determinism ×100**, race hammer, corrupt-corpus — as planned.
 
@@ -568,7 +573,9 @@ Poller sketch (≈1 KB minified; not final):
 ```
 
 **No-JS fallback:** `<noscript><meta http-equiv="refresh" content="60"></noscript>`.
-The page stays honest because the stamp is inside the image.
+The page stays honest because the label below the print is server-rendered with
+the frame's time and this refresh re-renders it every 60 s; with JS the poller
+re-derives it per frame from `Last-Modified` (§7.3).
 
 ### 7.4 Head, metadata, security headers
 
@@ -865,7 +872,7 @@ Nothing here is written into `PLAN.md` until you say so.
 | # | Change | Touches | Benefit | Cost / risk |
 |---|---|---|---|---|
 | ⚑1 | Public still = **160×120 paletted PNG** (`latest.png`); web-root allow-list + disk-scan tests updated; thumb stays deferred | §6.4, §7 | ~5–10× fewer bytes (egress, ring, weak links); privacy by resolution | Lower resolution is a deliberate look; real-frame check needed |
-| ⚑2 | **Burned-in `HH:MM` stamp**; `index.html` no longer rewritten per frame (only on state flips) | §6.4, §7 | Screenshots self-date; less disk/CPU churn; no-JS stays honest | ~1.7 % of the picture is covered |
+| ⚑2 | **Burned-in `HH:MM` stamp** — ✅ **resolved.** History: image stamp removed v0.4.0 → DOM badge added v0.6.0 → DOM badge removed v0.6.1 (user: double clock) → no clock in the picture, ever; the page below the print is the only time. `index.html` is still rewritten only on state flips. | §6.4, §7 | While it lived: screenshots self-dated. Today: one clock, zero pixels drawn on the picture | ~~1.7 % of the picture is covered~~ none |
 | ⚑3 | Two stale tiers (3–15 min "late", >15 min "no signal") | §6.6 | Page and alert agree; gentler wording first | One more state in tests |
 | ⚑4 | **Closed / paused ⇒ no still, no polling** | §6.4 | Privacy after hours; bytes; honesty | Visitors can't peek at a closed venue |
 | ⚑5 | `venues.calib_json` (thresholds, bias, invert, masks, preset) + calibration candidates under `data/ref/` | §6.2, §7, §10 | Legible pictures on awkward rooms without storing raw frames | One migration (guard: reopen test) |
@@ -887,7 +894,7 @@ Each step has an acceptance check before the next begins (PLAN §16.13).
 1. **Tokens, Tailwind pipeline, kit page.** `web/tokens.css`, two builds, size gates,
    `/admin/_kit` with all components. *Accept:* CSS budgets pass;
    contrast table reproduced; kit looks right on a real phone.
-2. **Render presets.** `poster@2`, `mono@2` + stamp in `internal/render`, goldens,
+2. **Render presets.** `poster@3`, `mono@3` (no stamp) in `internal/render`, goldens,
    invariants, size bound; render-ms on the e2-micro. *Accept:* privacy tests green;
    p95 render and real-frame sizes recorded (replaces §5.5's synthetic numbers).
 3. **Public page.** Template, states, poller, CSP hashes, `fakecam` driving every
