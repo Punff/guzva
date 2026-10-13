@@ -271,7 +271,8 @@ pass, in priority order, each with its design-doc anchor:
 3. Paused state (design §3.2): venue flag + chip + alert suppression — the
    vendor-lifecycle "pause" (PLAN §10) made visible.
 4. Hours editor a11y: labels for the ten time inputs (W2 if cheap, else here).
-5. Dark-mode manual toggle (§3.1) — data-theme attr + one button.
+5. ~~Dark-mode manual toggle (§3.1)~~ — void as of v0.6.0: the dark theme
+   was removed entirely (user decision, light-only); nothing to toggle.
 6. Token page Copy button (§8.3); throttle message with seconds (§8.6).
 7. QR poster generation (§10) — the biggest single item; needs a QR encoder
    (stdlib-only constraint says: a tiny vendored encoder or an offline

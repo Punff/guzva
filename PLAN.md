@@ -576,7 +576,8 @@ green; first deploy + first restore drill via scripts; a week with no GCP charge
 *Remaining: the soak numbers + render-ms logging (§14).*
 
 **Phase 2 — Product polish & pilot (1–3 friendly venues).** *(v3.2 focus)*
-- **Design system**: Tailwind pipeline (D6), shared components, dark mode, WCAG
+- **Design system**: Tailwind pipeline (D6), shared components, light-only
+  theme (v0.6.0: dark mode removed — user decision), WCAG
   AA pass across all three surfaces.
 - **Localisation**: Croatian catalog (D7) across public + vendor surfaces;
   formats; the privacy notice and camera-sign spec.
