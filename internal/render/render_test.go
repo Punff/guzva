@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -228,10 +229,56 @@ func TestGoldenMono(t *testing.T) {
 	goldenCheck(t, "mono", out.PNG)
 }
 
+// pixelSum fingerprints the DECODED render, not the PNG bytes.
+//
+// The goldens used to hash the encoded PNG. That made the gate depend on the
+// stdlib's deflate stream: Go 1.27 changed it, CI (pinned to go.mod's
+// go1.26.0 by setup-go) hashed different bytes than the committed goldens,
+// and run #1 went red on a byte-identical picture. The deflate stream is
+// transport, not style; the style is the decoded image. So the fingerprint
+// is the dimensions, the palette, and every decoded pixel colour — stable
+// across any toolchain that renders the same picture, still failing on any
+// real style change.
+//
+// The palette is in the fingerprint deliberately: Pix holds palette INDICES,
+// so index bytes alone cannot see a ramp colour change, and the ramp IS the
+// style (changing a colour ships a new preset version, D2). Stride is left
+// out on purpose — row packing is transport too, the same lesson as deflate.
+func pixelSum(t *testing.T, pngBytes []byte) string {
+	t.Helper()
+	img, err := png.Decode(bytes.NewReader(pngBytes))
+	if err != nil {
+		t.Fatalf("decode golden render: %v", err)
+	}
+	// The pipeline emits a paletted PNG (PLAN §7): 160×120, four ramp colours,
+	// a few hundred bytes on disk. Pinning the type keeps the protection the
+	// byte hash happened to give — a silent encoder switch to RGBA would leave
+	// every pixel equal while quadrupling the still's size.
+	p, ok := img.(*image.Paletted)
+	if !ok {
+		t.Fatalf("golden render decoded as %T, want *image.Paletted (PLAN §7)", img)
+	}
+	b := img.Bounds()
+	h := sha256.New()
+	fmt.Fprintf(h, "%dx%d", b.Dx(), b.Dy())
+	for _, c := range p.Palette {
+		r, g, bl, a := c.RGBA()
+		fmt.Fprintf(h, " %d,%d,%d,%d", r, g, bl, a)
+	}
+	h.Write([]byte("|"))
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, g, bl, a := img.At(x, y).RGBA()
+			fmt.Fprintf(h, " %d,%d,%d,%d", r, g, bl, a)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 func goldenCheck(t *testing.T, name string, got []byte) {
 	t.Helper()
 	path := filepath.Join("testdata", name+".sha256")
-	sum := sha256Hex(got)
+	sum := pixelSum(t, got)
 	if os.Getenv("UPDATE_GOLDEN") == "1" {
 		if err := os.MkdirAll("testdata", 0o755); err != nil {
 			t.Fatal(err)
