@@ -64,38 +64,49 @@
 
   <h1 class="text-[2.25rem] leading-10 font-bold tracking-tight sm:text-[3rem] sm:leading-12 break-words">{{.Name}}</h1>
 
-  <!-- THE PRINT AND ITS LABEL (design-pass2 §1). One object: reserved
-       print box on top, gallery label below — state and time are facts
-       about the same picture, so they share the frame. The label is the
-       page's live region: state + time announce together. -->
-  <figure class="border-2 border-ink bg-paper shadow-step">
-    <div class="relative bg-s3"
-         id="frame"
-         style="aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}}">
-      {{if .ShowStill}}
-        {{if .HasFrame}}
-          <img id="still" src="{{.StillFile}}?v={{.StillVer}}"
-               width="{{if .StillW}}{{.StillW}}{{else}}160{{end}}" height="{{if .StillH}}{{.StillH}}{{else}}120{{end}}"
-               decoding="async" fetchpriority="high"
-               alt="{{if .Updated}}{{.AltStill}}{{else}}{{.AltNow}}{{end}}"
-               class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
-          {{/* Late / no-signal overlays are CSS only — the picture itself is
-               never altered (§5.6). */}}
-          {{if eq .StateClass "late"}}<div class="absolute inset-0 tx-hatch-light pointer-events-none" aria-hidden="true"></div>{{end}}
-          {{if eq .StateClass "nosignal"}}<div class="absolute inset-0 tx-hatch" aria-hidden="true"></div>{{end}}
+  {{/* The status row (mockup ruling 3): the state chip and the open state
+       as plain text beside it — the state is a fact, the open state its
+       consequence; they read together, above the print they describe. */}}
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+    <span class="chip chip--lg" id="chip-{{.StateClass}}">
+      <span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}
+    </span>
+    {{if .OpenText}}<p class="text-base">{{.OpenText}}</p>{{end}}
+  </div>
+
+  <!-- THE PRINT (design-pass2 §1, mockup ruling 4): a mounted print —
+       hard border, paper mat, step shadow. The label clock rides IN the
+       frame (bottom-left badge) and repeats below as the live time. -->
+  <figure class="flex flex-col gap-2">
+    <div class="border-2 border-ink bg-paper-2 p-3 shadow-step">
+      <div class="relative bg-s3"
+           id="frame"
+           style="aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}}">
+        {{if .ShowStill}}
+          {{if .HasFrame}}
+            <img id="still" src="{{.StillFile}}?v={{.StillVer}}"
+                 width="{{if .StillW}}{{.StillW}}{{else}}160{{end}}" height="{{if .StillH}}{{.StillH}}{{else}}120{{end}}"
+                 decoding="async" fetchpriority="high"
+                 alt="{{if .Updated}}{{.AltStill}}{{else}}{{.AltNow}}{{end}}"
+                 class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
+            {{/* Late / no-signal overlays are CSS only — the picture itself is
+                 never altered (§5.6). */}}
+            {{if eq .StateClass "late"}}<div class="absolute inset-0 tx-hatch-light pointer-events-none" aria-hidden="true"></div>{{end}}
+            {{if eq .StateClass "nosignal"}}<div class="absolute inset-0 tx-hatch" aria-hidden="true"></div>{{end}}
+            {{if .Updated}}<span id="stamp" class="absolute bottom-0 left-0 bg-ink text-paper font-mono text-xs font-medium tnum px-2 py-1" aria-hidden="true">{{.Updated}}</span>{{end}}
+          {{else}}
+            <div class="absolute inset-0 tx-dither" aria-hidden="true"></div>
+          {{end}}
         {{else}}
-          <div class="absolute inset-0 tx-dither" aria-hidden="true"></div>
+          <!-- Closed: no still at all. Privacy after hours, honesty, bytes. -->
+          <div class="absolute inset-0 tx-shutter" aria-hidden="true"></div>
         {{end}}
-      {{else}}
-        <!-- Closed: no still at all. Privacy after hours, honesty, bytes. -->
-        <div class="absolute inset-0 tx-shutter" aria-hidden="true"></div>
-      {{end}}
+      </div>
     </div>
-    <figcaption class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t-2 border-ink bg-paper-2 px-3 py-2"
-               role="status" aria-live="polite">
-      <span class="chip chip--lg" id="chip-{{.StateClass}}">
-        <span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}
-      </span>
+    {{/* The live time below the print: the poller's clock, and the page's
+         live region — a new time is announced with the state above. */}}
+    <figcaption class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1"
+                role="status" aria-live="polite">
       <span class="font-mono text-lg leading-none font-medium tnum" id="hl">
         {{if .ShowStill}}{{if .Updated}}{{.Updated}}{{else}}—{{end}}{{else}}—{{end}}
       </span>
@@ -182,7 +193,7 @@
   var poll = Math.max(10, parseInt(d.poll || '30', 10)) * 1000;
 
   function $(id) { return document.getElementById(id); }
-  var img = $('still'), hl = $('hl'),
+  var img = $('still'), hl = $('hl'), stamp = $('stamp'),
       banner = $('banner'), idleBox = $('idle'), resume = $('resume'),
       live = null;
 
@@ -212,7 +223,10 @@
       busy = false, pageLM = Date.parse(document.lastModified) || 0;
 
   function headline(lmDate) {
-    hl.textContent = fmtTime.format(lmDate);
+    var t = fmtTime.format(lmDate);
+    hl.textContent = t;
+    // The in-frame badge shows the same clock; keep the two in step.
+    if (stamp) stamp.textContent = t;
     if (img) {
       // Rebuild the alt from the catalog prefix + the fresh time, so the
       // venue's language is right even for frames that arrive via JS.
