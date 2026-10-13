@@ -58,6 +58,53 @@
 </section>
 
 <section class="mb-8">
+{{template "section-head.html" "Public page composition (mockup round 4)"}}
+<div class="grid gap-6 lg:grid-cols-2">
+  {{/* The mounted print: hard border, paper mat, step shadow, and the
+       label clock as an in-frame badge (dark, tabular mono). The badge
+       text is static here; on the page the poller keeps it in step with
+       the live time below the print. */}}
+  <div>
+    <p class="text-xs text-muted mb-2">Mounted print — mat + in-frame time badge</p>
+    <div class="border-2 border-ink bg-paper-2 p-3 shadow-step max-w-80">
+      <div class="relative bg-s3 h-24">
+        <span class="absolute bottom-0 left-0 bg-ink text-paper font-mono text-xs font-medium tnum px-2 py-1">11:30</span>
+      </div>
+    </div>
+  </div>
+  {{/* The hours card: letterspaced heading, day left / mono times right,
+       today bold with the "· danas" suffix, closed days grayed + dash. */}}
+  <div>
+    <p class="text-xs text-muted mb-2">Hours card — heading + rows, today bold</p>
+    <div class="border-2 border-ink bg-paper-2 p-4">
+      <h2 class="text-sm font-semibold uppercase tracking-[0.15em] text-muted mb-3">Radno vrijeme</h2>
+      <ul class="grid gap-2">
+        <li class="flex items-baseline justify-between gap-3 text-base"><span>Ponedjeljak</span><span class="font-mono tnum">08:00–20:00</span></li>
+        <li class="flex items-baseline justify-between gap-3 text-base font-bold" aria-current="date"><span>Utorak · danas</span><span class="font-mono tnum">08:00–20:00</span></li>
+        <li class="flex items-baseline justify-between gap-3 text-base text-muted"><span>Subota</span><span aria-hidden="true">—</span></li>
+      </ul>
+    </div>
+  </div>
+  {{/* The status row: chip + open state as plain text beside it. */}}
+  <div>
+    <p class="text-xs text-muted mb-2">Status row — chip + plain open line beside</p>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      {{template "chip.html" dict "Cls" "fresh" "Text" "Svježa slika"}}
+      <p class="text-base">Otvoreno do 20:00</p>
+    </div>
+  </div>
+  {{/* The footer: hatched divider, then the privacy caption. No link —
+       there is no privacy target to link to. */}}
+  <div>
+    <p class="text-xs text-muted mb-2">Footer — hatch divider + privacy caption</p>
+    <div class="h-2 tx-hatch mb-3" aria-hidden="true"></div>
+    <p class="text-xs text-muted">Slika je namjerno grubo stilizirana radi privatnosti. Izvorne fotografije se ne pohranjuju.</p>
+  </div>
+</div>
+<p class="text-xs text-muted mt-2">The public page's four compositions, mirrored here so a console change that breaks one of them shows up in the kit, not in a guest's browser. The page inlines public.css; these use app.css — same tokens, same classes.</p>
+</section>
+
+<section class="mb-8">
 {{template "section-head.html" "Buttons"}}
 <div class="flex flex-wrap gap-2 items-center">
   <button class="btn btn--primary" type="button">Primary</button>

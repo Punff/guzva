@@ -469,27 +469,34 @@ first thing to build (§15 step 1).
 
 ```
 ┌────────────────────────────────────────┐
-│ ▣ guzva                                │  header: logomark 32 px + wordmark
+│ ▣ guzva               Ima li gužve?    │  header: mark + wordmark, tagline right
 ├────────────────────────────────────────┤
-│ Salon Kadrić                           │  H1, venue name
-│ ■ Svježa slika     Otvoreno do 20:00   │  status chip + open/closed line
-│                                        │
+│ Muški Frizerski Salon Jadro            │  H1, venue name, display size
+│ ■ Svježa slika      Otvoreno do 20:00  │  status row: chip + open line, plain
 │ ┌────────────────────────────────────┐ │
-│ │                                    │ │
-│ │   160×120 still @ k=2 (320 px)     │ │  4:3, reserved, pixelated
-│ │                                    │ │
-│ │ [21:48]                            │ │  ← stamp, burned into the image
+│ │  ┌──────────────────────────────┐  │ │
+│ │  │   160×120 still @ k=2        │  │ │  mounted print: hard border,
+│ │  │   [21:48 ← in-frame badge]   │  │ │  paper mat, step shadow;
+│ │  └──────────────────────────────┘  │ │  badge = DOM overlay, JS-synced
 │ └────────────────────────────────────┘ │
-│  21:48 · danas · CET                   │  headline (JS from Last-Modified)
-│                                        │
-│  Radno vrijeme                         │
-│  pon–pet 09:00–20:00 · sub 09:00–14:00 │  today emphasised
-│  Frizerski salon, Ul. Mira 5           │  optional description/contact (≤140 ch)
-│  ☎ 061 000 000                         │
-├────────────────────────────────────────┤
-│ Slika je namjerno grubo stilizirana    │  privacy line (PLAN §13)
-│ radi privatnosti. Izvorne fotografije  │
-│ se ne pohranjuju. · O privatnosti      │
+│  21:48                                 │  live time below (role=status)
+│  Zadnja slika je iz 21:48.             │  state detail, only when honest
+│ ┌────────────────────────────────────┐ │
+│ │ RADNO VRIJEME                      │ │  hours card, letterspaced heading
+│ │ Ponedjeljak          08:00–20:00   │ │  day left, mono times right
+│ │ Utorak · danas       08:00–20:00   │ │  today bold + aria-current
+│ │ Subota                      —      │ │  closed: gray + dash
+│ └────────────────────────────────────┘ │
+│ ┌────────────────────────────────────┐ │
+│ │ O SALONU                           │ │  info card, same treatment
+│ │ +387 61 234 567                    │ │  tel: link (no call button)
+│ │ Ul. Mira 5, 71000 Sarajevo         │ │  location
+│ │ Frizerski salon — ≤140 ch          │ │  description
+│ └────────────────────────────────────┘ │
+│ ▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨▨ │  hatched divider
+│ Slika je namjerno grubo stilizirana    │  privacy line (PLAN §13),
+│ radi privatnosti. Izvorne fotografije  │  no link — no target exists
+│ se ne pohranjuju.                      │
 └────────────────────────────────────────┘
 ```
 
@@ -500,7 +507,7 @@ Reserved slot under the still for the Phase-3 "Dolazim" action (hidden until bui
 
 | State | Status chip | Frame area | Extra line | Polling |
 |---|---|---|---|---|
-| Fresh + open | ■ Svježa slika | still | Otvoreno do {time} | yes |
+| Fresh + open | ■ Svježa slika | still | (open line beside the chip) | yes |
 | Late | ◧ Slika kasni | still + light hatch | Zadnja slika je iz {time}. | yes |
 | No signal | ▨ Nema nove slike | still + strong hatch | Zadnja slika je iz {time}. Ne mora prikazivati trenutno stanje. | yes (slower) |
 | Closed | ▬ Zatvoreno | CSS shutter, **no still** | Otvara se {sutra} u {time} | no (long `meta refresh`) |
@@ -517,12 +524,13 @@ Goal: the cheapest possible honest page in a 1 GB/month world.
 - `index.html` contains **everything static for the current state** (state chip,
   hours, description, inline CSS + JS, inline favicon). It is rewritten **only on a
   state flip** (late / no signal / closed / open / paused / waiting) or a settings
-  edit — **not per frame**, because the time lives in the picture (§5.6).
+  edit — **not per frame**, because the label clock is re-derived per frame from
+  the still's `Last-Modified` (the still carries no burned-in time, ⚑2).
 - Per frame, the browser does one *conditional* request for `latest.png`:
   `fetch('latest.png', {cache:'no-cache'})` → **304 ≈ 0.3 KB** when nothing changed,
   **200 ≈ 1–3 KB** when a new frame arrived. The `Last-Modified` header (= the
-  frame's `received_at`) drives the headline `21:48 · danas · CET` via `Intl` in the
-  venue's timezone (`data-tz`); `danas`/`jučer`/`dd.mm.` by comparing venue-local dates.
+  frame's `received_at`) drives the live time — below the print and the in-frame
+  badge together — via `Intl` in the venue's timezone (`data-tz`).
 - One more conditional request for `index.html` every 60 s. If its `Last-Modified`
   changed, **reload the page** — state flips are rare, so a full reload is simpler
   and cheaper than DOM diffing. (Tier changes therefore reach a visitor within
