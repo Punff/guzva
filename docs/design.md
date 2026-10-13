@@ -63,7 +63,8 @@ in CSS/SVG, zero image bytes).
 
 ### 3.1 Colour tokens
 
-Light theme (default):
+Light theme — the ONLY theme (user decision, Oct 2026: the dark theme and
+the `data-theme` toggle plan were dropped; `color-scheme: light`):
 
 | Token | Hex | Role | Contrast (on `paper` / `paper-2`) |
 |---|---|---|---|
@@ -78,22 +79,9 @@ Light theme (default):
 
 Button label on `accent`: `paper` 5.7 : 1. Text on `ink` buttons: `paper` 14.2 : 1.
 
-Dark theme (follows `prefers-color-scheme`; consoles also get a manual toggle):
-
-| Token | Hex | Contrast on `bg` / `surf` |
-|---|---|---|
-| `bg` | `#0D151C` | — |
-| `surf` | `#17222C` | — |
-| `text` | `#EEE9DD` | 15.2 / 13.3 |
-| `muted` | `#A9B5BF` | 8.8 / 7.7 |
-| `accent` | `#FF7A5C` | 7.2 / 6.3 |
-| `fresh` | `#5ED394` | 9.8 / 8.6 |
-| `late` | `#F2B84B` | 10.3 / 9.0 |
-| `stale` | `#98A5B0` | 7.3 / 6.4 |
-
-The still ramp is **fixed in both themes** (§5.4) and always sits on its own paper
-card, so the picture looks identical in light and dark and shared screenshots stay
-consistent.
+The still ramp is **fixed** (§5.4) and always sits on its own paper
+card, so the picture looks identical wherever it is opened and shared
+screenshots stay consistent.
 
 ### 3.2 Status semantics (colour + shape + label)
 
@@ -202,17 +190,12 @@ Tailwind v4 CSS-first syntax (if you are on v3, the same tokens go into
 }
 
 :root { --paper:#F2EDE2; --paper-2:#E8E1D2; --ink:#12202D; --muted:#46535F;
-        --accent:#AE2B16; --fresh:#15694A; --late:#7F5000; --stale:#4F5B66; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --paper:#0D151C; --paper-2:#17222C; --ink:#EEE9DD;
-        --muted:#A9B5BF; --accent:#FF7A5C; --fresh:#5ED394; --late:#F2B84B; --stale:#98A5B0; }
-}
-:root[data-theme="dark"] { /* same dark values, for the consoles' manual toggle */ }
+        --accent:#AE2B16; --fresh:#15694A; --late:#7F5000; --stale:#4F5B66;
+        color-scheme: light; }
 ```
 
-Note the semantic names (`paper`, `ink`) are *roles*, not colours: in dark mode
-`paper` is the dark background and `ink` the light text. `s0–s3` are literal and never
-change.
+The semantic names (`paper`, `ink`) are *roles*, not colours. `s0–s3` are
+literal and never change.
 
 **Rules that keep CSS small and predictable**
 - Never build class names by string concatenation in Go; write full class names so
@@ -318,7 +301,7 @@ checks this by eye; where the nearest seat violates it, they draw a mask rectang
 over that seat. This is a design target, not a legal guarantee (PLAN §13 stands:
 re-check with a local adviser before the first paying venue).
 
-### 5.4 Palette (fixed, both themes)
+### 5.4 Palette (fixed)
 
 | Level | Name | Hex | L* | Role |
 |---|---|---|---|---|
@@ -472,8 +455,8 @@ recipes below use v4 names; `ink`/`paper` are the *role* tokens of §4.)
 | **Empty state** | dither block + one sentence + one action | Never a bare "No data". |
 | **Skeleton** | dither checkerboard, static | Matches the final box exactly. |
 
-A **kit page** (`/admin/_kit`, dev builds only) renders every component in light,
-dark, and each state; it is the visual regression check for a solo builder and the
+A **kit page** (`/admin/_kit`, dev builds only) renders every component in
+each state; it is the visual regression check for a solo builder and the
 first thing to build (§15 step 1).
 
 ---
@@ -582,7 +565,7 @@ The page stays honest because the stamp is inside the image.
 - `lang="hr"`; `<meta name="viewport" content="width=device-width,initial-scale=1">`.
 - `<title>{Venue} — Ima li gužve? · guzva.ba`; description from the venue
   description or a default sentence.
-- `theme-color` for light and dark; inline SVG favicon (§3.5) as a `data:` URI.
+- `theme-color` `#F2EDE2`; inline SVG favicon (§3.5) as a `data:` URI.
 - **Indexing: default `noindex, nofollow`** (meta + `X-Robots-Tag`) ⚑ — a venue's
   interior page shouldn't surface in search by default; an owner opt-in can come later.
 - Open Graph: **text-only** card (title, description) with the shared static brand
@@ -693,7 +676,6 @@ bounded tail of the audit stream ("who changed what, when").
 ### 8.6 Login
 
 One field pair, one generic failure message, throttle notice with seconds remaining.
-Dark theme by system preference; manual toggle in the footer (`data-theme`).
 
 ---
 
@@ -811,7 +793,7 @@ Notes:
 
 ## 12. Accessibility checklist (WCAG AA target)
 
-- Contrast: all text pairs in §3.1 ≥ 4.5 : 1 in both themes (computed, not eyeballed);
+- Contrast: all text pairs in §3.1 ≥ 4.5 : 1 (computed, not eyeballed);
   non-text boundaries (borders, focus ring) ≥ 3 : 1.
 - Targets ≥ 44×44 CSS px; spacing ≥ 8 px between adjacent targets.
 - Focus always visible (§3.3); logical tab order; no keyboard traps; no
@@ -893,7 +875,7 @@ QR poster and URLs assume `guzva.ba`.
 Each step has an acceptance check before the next begins (PLAN §16.13).
 
 1. **Tokens, Tailwind pipeline, kit page.** `web/tokens.css`, two builds, size gates,
-   `/admin/_kit` with all components in light/dark. *Accept:* CSS budgets pass;
+   `/admin/_kit` with all components. *Accept:* CSS budgets pass;
    contrast table reproduced; kit looks right on a real phone.
 2. **Render presets.** `poster@2`, `mono@2` + stamp in `internal/render`, goldens,
    invariants, size bound; render-ms on the e2-micro. *Accept:* privacy tests green;
