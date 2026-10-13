@@ -775,3 +775,59 @@ label bar at 360 px is the one thing to squint at.
   still proven inside `r9-pub-m360.png`. fakecam startup race noted
   (connection-refused death; restart after server health — devops:
   worth a guard in the fakecam runner).
+
+## 2026-10-13 — round 5 (single clock) + scrub + FIRST PUSH to GitHub
+
+- **Round 5** (user: "double clock — remove the picture time
+  stamp"): frontend 1 commit — `#stamp` in-frame badge deleted, `#hl`
+  below the print is the page's one clock (poller contract kept; live-
+  verified 15:29→15:30 tick, zero console errors). Post-rewrite hash:
+  `a3505c4` (was `ee15f26`). Kit + design.md §7 followed; budgets
+  hold (public 3720/4096 gz, app 4620/12288 gz).
+- Orchestrator synced the three PLAN refs + maintenance refs that
+  described the removed badge (`5462fcf`, was `1acf2cd`). ops-log's
+  round-4 entry stays as written (append-only: it was true at
+  v0.6.0).
+- **design.md drift sweep** (frontend, its offer, orchestrator-
+  dispatched): 17 verified edits — §5.2 seven-stage pipeline (stamp
+  stage gone, v1/v2/v3 versioning note), §5.4 palette (no "stamp
+  plate/digits"), §5.6 "the label, not the picture, carries the
+  time" + full v0.4.0→v0.6.1 history, §5.11 invariant list, §7.3
+  no-JS honesty, §14 ⚑2 ✅ resolved, §5.8/§15 registry versions
+  fixed to @3. `a1ca8eb`.
+- **Pre-push security** (`11fc19d`, was `a2b3133`): SSID literal out
+  of `settings.example.h` + this log (the pre-scrub ACTION line
+  quoted it).
+- **History scrub executed** (user authorized via the remote URL +
+  "set it up properly"): `git filter-repo` purged
+  `firmware/include/settings.h`, `firmware/include/wifiSettings.h`,
+  `include/wifiSettings.h`, root `styleproof` ELF (4.2 MB) from all
+  125 commits; replace-text wiped the WiFi password, SSID and the
+  revoked `213cc440…` token everywhere they ever appeared. Verified:
+  0 secret values, 0 secret paths across full history; all 5 tags
+  preserved; `.git` 6.2→2.5 MB. Backup tar:
+  `/tmp/opencode/guzva-pre-scrub-final.tar.gz`. Pre-scrub hashes die
+  (notable: `ee15f26→a3505c4`, `1acf2cd→5462fcf`, `a2b3133→11fc19d`,
+  `d08706c→44a1945`).
+- **CI first-run fixes** (devops, `44a1945`, was `d08706c`): settings
+  .h copied from example before `pio run` (gitignored in fresh
+  checkout); `pipx` for platformio (PEP 668 on ubuntu-24.04); setup
+  -go added to the firmware job (its privacy step ran `go test` with
+  no Go installed — found by devops' own re-scan).
+- **FIRST PUSH** (user gave https://github.com/Punff/guzva.git;
+  public repo): OAuth token lacked `workflow` scope for ci.yml →
+  remote is SSH (`git@github.com:Punff/guzva.git`). master + all 5
+  tags pushed. Repo metadata via gh: description + 9 topics
+  (esp32/crowd-monitoring/go/tailwindcss/…); README renders clean.
+- **CI run #1 RED, run #2 GREEN.** #1: `TestGoldenPoster` +
+  `TestGoldenMono` failed on the runner only. Root cause (backend,
+  proven by pinned-toolchain reproduction, not assumed):
+  `goldenCheck` hashed raw PNG BYTES and the stdlib deflate stream
+  differs between Go 1.27.1 (local) and 1.26.0 (go.mod, CI) —
+  pixels identical, bytes not. Fix `349f8b4`: goldens compare
+  decoded pixels + PALETTE (backend caught that hashing `Pix` alone
+  stores palette *indices*, so a colour change would slip; Stride
+  dropped as transport). Verified green under both toolchains locally
+  AND in CI: run #2 go + firmware both ✅.
+- Open: WiFi password rotation (router); docs-i18n wording review
+  when it returns; v0.6.1 tag + deploy follows this entry.
