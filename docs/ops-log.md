@@ -922,3 +922,41 @@ label bar at 360 px is the one thing to squint at.
 - The page never lied once through any of it: "Nema nove slike" plus
   the last good still, which is the whole point of
   never-publish-a-failure.
+
+### 2026-10-13 — architectural decision: remove owner camera config
+
+User directive: **take camera config away from the owner**. One fixed,
+privacy-first sensor profile baked into the firmware (framesize=5
+QVGA 320×240, aec=1, agc=1, agc_gain=15, wb_mode=auto, lenc=1,
+denoise=0, etc. — the exact working baseline we just proved at ver 6),
+with at most **minor, safe tweaks** (e.g. a single "brightness offset"
+±2 if the room is consistently dim/bright). The 22-key desired_cfg
+surface and the admin calibration form are removed/replaced.
+
+Scope per role (owner of each area does the work, orchestrator sequences):
+
+- **firmware-esp32**: bake the fixed profile into `SensorCfg` defaults,
+  remove the apply-path for the now-fixed keys, keep only the allowed
+  tweak key(s) in the device-plane proto. Boot log must show the
+  frozen values (one line, no per-key noise). Size/IRAM delta noted in
+  handoff.
+- **backend-go**: shrink `desired_cfg` in `proto/proto.go` to the
+  tweak key(s) only; drop the 22-key validation table; the admin
+  `cfg` endpoint and `guzva cfg` CLI become no-ops or return the fixed
+  profile; device still echoes `cfg_ver_applied` for the keys it still
+  accepts (if any) so the amber read-back on the fleet board stays
+  honest.
+- **frontend-tisak**: remove the calibration section from the admin
+  venue page; replace with a read-only "Sensor profile: fixed
+  privacy-first (320×240, auto-exposure, auto-gain ceiling 15, lens
+  correction on, denoise off)" card plus the one tweak control if
+  approved. WCAG AA, Croatian copy, kit page proof.
+- **devops-qa**: CI must gate that the firmware still compiles with
+  the reduced config surface and that the proto shrink doesn't break
+  the device handshake (the device still sends the same telemetry, the
+  server still answers with the shrunken cfg — no wire-format break).
+
+This is a Phase 2 item (after W0–W6 close). I'll tag it in PLAN.md §14
+when the current pass ships. No code changes today — this note is the
+decision record so the workstreams don't drift back toward
+re-adding the form.
