@@ -882,6 +882,31 @@ label bar at 360 px is the one thing to squint at.
 - Bench hygiene: the reflash reset boot/brownout counters (now
   boot=8, brownout=0); WiFi password rotation still owed (router).
 
+## 2026-10-14 — autonomous pass: reclaims, guzva-qa, v0.6.3
+
+- Overnight bench: boot 16 posting clean 201s at 45 s cadence,
+  rssi −68…−74, render 6–9 ms — the ver-6 config (`framesize=5,
+  aec=1, agc=1, agc_gain=15`) held all night. CI green on all three
+  yesterday pushes (runs 38422612750 / 38424147331 / 38433145854).
+- Reclaims dispatched to the two workers after yesterday's false/incomplete
+  handoffs: firmware owed the actual warm-up gate (the `[WARM]` lines it
+  claimed were never in the tree — grep-proven) + the `[SENS]` warning;
+  backend's run had failed mid-item-C (callers all passed 0, `mean_lua`
+  typo) — recovered with strict C → B → A/D → E order, B (pageCache
+  conditional GET — **the user's hours-edit report**) first among
+  user-visible items.
+- **guzva-qa created** (7th session, `nvidia/deepseek-ai/deepseek-v4.1-flash`,
+  cost 0): owns `qa/`, orchestrator-authorized direct fixes in `web/` +
+  `internal/webui/` while frontend is idle; report-only elsewhere (backend
+  and firmware are mid-flight in their lanes). Mandate: test harness,
+  ingest-reject matrix, the pageCache-304 expectation (skip until B lands,
+  then enforce), incident-regression tests for the three values that broke
+  yesterday.
+- Plan for the autonomous window: land the reclaims → gate → push → CI →
+  v0.6.3 deploy → flash + bench-verify firmware's three checklists →
+  then W6 docs truth with a revived docs-i18n (fallback model — the
+  original session is dead).
+
 ### 16:00–16:40 — the dark loop, and the third value from one bad save
 
 - After the user's restart the board posted cleanly once

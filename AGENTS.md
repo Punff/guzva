@@ -14,6 +14,7 @@ hold for every change. Green gate: `make test` before any handoff.
 | 3 | frontend-tisak — design system + consoles | `opencode/muse-spark-1.3-contributor-free` | `web/`, `internal/webui/`, `internal/admin/` templates, `docs/design.md`, `docs/ux.md` | W2 B1/B3/B4/H8 (state chips, favicon, no-JS forms, CSP), W7 polish (attention sort, hours labels, dark toggle, QR poster decision), WCAG AA, kit page |
 | 4 | devops-qa — CI/gate/deploys/backups | `opencode/mimo-v2.6-flash-free` | `Makefile`, `Makefile.web.mk`, `.github/workflows/`, `deploy/`, `tools/{fakecam,bench-cert.sh,restore-drill.sh}` | W5: CI PR gate, `make tag/drill`, restore drill log, fakecam load gate (1 slow + 19 fast), TLS/disk guards |
 | 5 | docs-i18n — truth + Croatian catalog | `opencode/ling-3.1-flash-free` (fallback `opencode/exo-free`) | `README.md`, `docs/{dev-setup,cli,runbook,proto-v1}.md`, `internal/i18n/`, public/owner copy | W2 B2 (owner.fresh/late/stale + key-exists test), W6 truth sweep, `hr` default + `en` fallback, `dd.mm.yyyy.` + 24 h + Europe/Sarajevo |
+| 6 | guzva-qa — test harness + bug hunt | `nvidia/deepseek-ai/deepseek-v4.1-flash` | `qa/` (new); direct fixes ONLY in `web/` + `internal/webui/` (orchestrator-authorized while frontend idle); everything else report-only | ingest-reject matrix, pageCache 304 test, single-clock/state contracts, a11y + i18n coverage, incident-regression tests (4:3, agc_gain, dark loop) |
 
 Spares (free, on call): `opencode/space-bunny-free`, `opencode/exo-free`,
 `opencode/longcat-2.5-preview-free`, `nvidia/z-ai/glm-5.3-flash` (fast GLM for
