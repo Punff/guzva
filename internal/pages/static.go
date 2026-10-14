@@ -20,10 +20,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"guzva/internal/auth"
+	"guzva/internal/stats"
 )
 
-// Static serves the public web root rooted at dir.
-func Static(dir string) http.Handler {
+// Static serves the public web root rooted at dir. rec (may be nil)
+// counts visits in memory for the owner panel — see internal/stats; the
+// request path still never touches SQLite (D5).
+func Static(dir string, rec *stats.Recorder) http.Handler {
 	root := filepath.Clean(dir)
 	cache := &pageCache{}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +97,13 @@ func Static(dir string) http.Handler {
 		// ⚑7: a venue's interior should not surface in a search index.
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 
+		if rec != nil && r.Method == http.MethodGet {
+			if k, ok := classify(r, filepath.Base(full)); ok {
+				slug, _, _ := strings.Cut(strings.TrimPrefix(clean, "/"), "/")
+				rec.Record(slug, k, auth.ClientIP(r), r.UserAgent(), r.URL.Query().Get("src") == "qr")
+			}
+		}
+
 		if filepath.Base(full) == "index.html" {
 			body, err := io.ReadAll(f)
 			if err != nil {
@@ -118,6 +130,41 @@ func Static(dir string) http.Handler {
 		http.ServeContent(w, r, filepath.Base(full), fi.ModTime(), f)
 	})
 }
+
+// classify decides whether a public request is a person opening the page
+// (View), the open tab refreshing the still (Poll), or neither.
+//
+//   - A View is a navigation: Sec-Fetch-Dest "document". Browsers without
+//     Fetch Metadata count only when the request is unconditional — the
+//     page's own 60 s state check is a conditional fetch and must not
+//     inflate views.
+//   - A Poll is the script's fetch of the still (Sec-Fetch-Dest "empty");
+//     the <img> load itself (dest "image") is part of the view.
+//   - Prefetches and anything that looks like a bot or a link preview are
+//     not people and count as nothing.
+func classify(r *http.Request, file string) (stats.Kind, bool) {
+	ua := strings.ToLower(r.UserAgent())
+	if ua == "" || botUA.MatchString(ua) {
+		return 0, false
+	}
+	if strings.Contains(r.Header.Get("Sec-Purpose")+r.Header.Get("Purpose"), "prefetch") {
+		return 0, false
+	}
+	dest := r.Header.Get("Sec-Fetch-Dest")
+	switch {
+	case file == "index.html":
+		if dest == "document" || (dest == "" && r.Header.Get("If-Modified-Since") == "") {
+			return stats.View, true
+		}
+	case strings.HasPrefix(file, "latest."):
+		if dest == "empty" {
+			return stats.Poll, true
+		}
+	}
+	return 0, false
+}
+
+var botUA = regexp.MustCompile(`bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|telegram|viber|curl|wget|python|go-http|httpclient|okhttp|headless|lighthouse|monitor|uptime`)
 
 // securityHeaders are the unconditional ones (DESIGN.md §7.4). All free, and
 // none of them depends on the page being correct.

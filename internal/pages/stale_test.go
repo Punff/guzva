@@ -97,7 +97,7 @@ func TestStaticRevalidatesBothFiles(t *testing.T) {
 		t.Fatalf("cache-buster %q is not an integer id: %v", v, err)
 	}
 
-	h := Static(f.w.Root())
+	h := Static(f.w.Root(), nil)
 	for _, path := range []string{"/jadro/index.html", "/jadro/latest.jpg?v=" + v} {
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
@@ -115,7 +115,7 @@ func TestPageSecurityHeadersAndCSP(t *testing.T) {
 	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {
 		t.Fatal(err)
 	}
-	h := Static(f.w.Root())
+	h := Static(f.w.Root(), nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/jadro/index.html", nil))
 
@@ -170,7 +170,7 @@ func TestPageIsGzippedOnTheWire(t *testing.T) {
 	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {
 		t.Fatal(err)
 	}
-	h := Static(f.w.Root())
+	h := Static(f.w.Root(), nil)
 
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/jadro/index.html", nil))
@@ -480,7 +480,7 @@ func TestIndexHtmlConditionalGet(t *testing.T) {
 	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {
 		t.Fatal(err)
 	}
-	h := Static(f.w.Root())
+	h := Static(f.w.Root(), nil)
 	get := func(target, ims string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodGet, target, nil)
 		if ims != "" {

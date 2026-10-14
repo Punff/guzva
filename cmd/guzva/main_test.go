@@ -51,7 +51,7 @@ func newTestMux(t *testing.T) *http.ServeMux {
 	if err != nil {
 		t.Fatalf("admin: %v", err)
 	}
-	return newMux(ing, adm, pub.Root(), healthzHandler(dir, time.Now()))
+	return newMux(ing, adm, pub.Root(), nil, healthzHandler(dir, time.Now()))
 }
 
 func TestMuxComposition(t *testing.T) {
@@ -130,7 +130,7 @@ func TestStaticServesOnlyPublicFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(pub.Root(), slug, "latest.png"), []byte{0x89, 0x50, 0x4e, 0x47}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	static := pages.Static(pub.Root())
+	static := pages.Static(pub.Root(), nil)
 	for path, want := range map[string]int{
 		"/" + slug + "/":           http.StatusOK,
 		"/" + slug + "/latest.png": http.StatusOK,

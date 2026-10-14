@@ -23,6 +23,7 @@ import (
 	"guzva/internal/i18n"
 	"guzva/internal/proto"
 	"guzva/internal/render"
+	"guzva/internal/stats"
 	"guzva/internal/store"
 	"guzva/internal/venue"
 	"guzva/internal/webui"
@@ -39,10 +40,13 @@ type Server struct {
 	// Kit enables the component gallery at /admin/_kit (DESIGN.md §6/B1).
 	// Dev builds only: it exists so a solo builder can eyeball every state,
 	// not as a product surface. Set from GUZVA_KIT=1.
-	Kit  bool
-	tmpl *template.Template
-	log  *slog.Logger
-	now  func() time.Time
+	Kit bool
+	// Stats is the live visit recorder ("watching right now"); nil in
+	// tests that don't care.
+	Stats *stats.Recorder
+	tmpl  *template.Template
+	log   *slog.Logger
+	now   func() time.Time
 }
 
 // New builds the admin server. passHash is the bcrypt hash from

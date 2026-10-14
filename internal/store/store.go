@@ -209,6 +209,25 @@ const schemaV9 = `
 ALTER TABLE devices ADD COLUMN profile TEXT NOT NULL DEFAULT '';
 `
 
+// schemaV10 adds the owner panel's visit counts (internal/stats). Counts
+// only: no IPs, no visitor ids — those never leave memory.
+const schemaV10 = `
+CREATE TABLE visits_hourly (
+  venue_id INTEGER NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+  hour     INTEGER NOT NULL,          -- unix seconds, start of the UTC hour
+  views    INTEGER NOT NULL DEFAULT 0,
+  polls    INTEGER NOT NULL DEFAULT 0,
+  qr       INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (venue_id, hour)
+);
+CREATE TABLE visits_daily (
+  venue_id INTEGER NOT NULL REFERENCES venues(id) ON DELETE CASCADE,
+  day      TEXT NOT NULL,             -- UTC date, 2006-01-02
+  visitors INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (venue_id, day)
+);
+`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []struct {
 	sql  string
@@ -218,6 +237,7 @@ var migrations = []struct {
 	{sql: schemaV5}, {sql: schemaV6}, {sql: schemaV7},
 	{sql: schemaV8, post: backfillMasks},
 	{sql: schemaV9},
+	{sql: schemaV10},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -861,4 +881,99 @@ func MarshalMasks(m []render.Rect) string {
 	}
 	b, _ := json.Marshal(m)
 	return string(b)
+}
+
+// --- visits (owner statistics) ----------------------------------------------
+
+// VisitHour is one venue-hour of public-page counts.
+type VisitHour struct {
+	Hour  time.Time // start of the UTC hour
+	Views int64
+	Polls int64 // still refreshes of an open tab, ~30 s of watching each
+	QR    int64
+}
+
+// VisitDay is one venue's distinct visitors on a UTC day.
+type VisitDay struct {
+	Day      string // 2006-01-02
+	Visitors int64
+}
+
+// AddVisitHour adds counts to a venue-hour (deltas from the recorder).
+func (s *Store) AddVisitHour(ctx context.Context, venueID int64, hour time.Time, views, polls, qr int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO visits_hourly (venue_id, hour, views, polls, qr) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (venue_id, hour) DO UPDATE SET
+			views = views + excluded.views, polls = polls + excluded.polls, qr = qr + excluded.qr`,
+		venueID, ts(hour), views, polls, qr)
+	return err
+}
+
+// SetVisitDay records a day's distinct visitors, keeping the larger of the
+// stored and given counts (a restart empties the in-memory set).
+func (s *Store) SetVisitDay(ctx context.Context, venueID int64, day string, visitors int64) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO visits_daily (venue_id, day, visitors) VALUES (?, ?, ?)
+		ON CONFLICT (venue_id, day) DO UPDATE SET visitors = MAX(visitors, excluded.visitors)`,
+		venueID, day, visitors)
+	return err
+}
+
+// VisitHours returns a venue's hourly counts at or after since, oldest first.
+func (s *Store) VisitHours(ctx context.Context, venueID int64, since time.Time) ([]VisitHour, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT hour, views, polls, qr FROM visits_hourly
+		WHERE venue_id = ? AND hour >= ? ORDER BY hour`, venueID, ts(since))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []VisitHour
+	for rows.Next() {
+		var h VisitHour
+		var at int64
+		if err := rows.Scan(&at, &h.Views, &h.Polls, &h.QR); err != nil {
+			return nil, err
+		}
+		h.Hour = fromTS(at)
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// VisitDays returns a venue's daily visitors on or after sinceDay.
+func (s *Store) VisitDays(ctx context.Context, venueID int64, sinceDay string) ([]VisitDay, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT day, visitors FROM visits_daily
+		WHERE venue_id = ? AND day >= ? ORDER BY day`, venueID, sinceDay)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []VisitDay
+	for rows.Next() {
+		var d VisitDay
+		if err := rows.Scan(&d.Day, &d.Visitors); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// PruneVisits drops visit counts older than cutoff (a year is plenty for
+// "how is my page doing" and keeps the table bounded).
+func (s *Store) PruneVisits(ctx context.Context, cutoff time.Time) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM visits_hourly WHERE hour < ?`, ts(cutoff)); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM visits_daily WHERE day < ?`, cutoff.UTC().Format("2006-01-02"))
+	return err
+}
+
+// FramesSince counts a venue's stored (status ok) frames received at or
+// after since — the camera-uptime numerator on the owner panel.
+func (s *Store) FramesSince(ctx context.Context, venueID int64, since time.Time) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frames
+		WHERE venue_id = ? AND status = 'ok' AND received_at >= ?`, venueID, ts(since)).Scan(&n)
+	return n, err
 }

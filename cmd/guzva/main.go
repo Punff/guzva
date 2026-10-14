@@ -35,6 +35,7 @@ import (
 	"guzva/internal/proto"
 	"guzva/internal/render"
 	"guzva/internal/sched"
+	"guzva/internal/stats"
 	"guzva/internal/store"
 )
 
@@ -67,13 +68,13 @@ func envOr(flagVal, envName string) string {
 // The ingest route is method-scoped (POST/GET) so the static GET "/" catch-
 // all cannot swallow its 405 (Go 1.22: method sets must be disjoint or
 // paths comparable).
-func newMux(ing *frames.Server, adm *admin.Server, publicDir string, healthz http.Handler) *http.ServeMux {
+func newMux(ing *frames.Server, adm *admin.Server, publicDir string, rec *stats.Recorder, healthz http.Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+proto.PathIngest, ing.HandleIngest)
 	mux.HandleFunc("GET "+proto.PathIngest, methodNotPOST)
 	adm.Register(mux)
-	mux.Handle("GET "+proto.PathHealthz, healthz) // method-scoped: a bare "/healthz" would conflict with GET "/"
-	mux.Handle("GET /", pages.Static(publicDir))  // file bytes only, no DB (D5)
+	mux.Handle("GET "+proto.PathHealthz, healthz)     // method-scoped: a bare "/healthz" would conflict with GET "/"
+	mux.Handle("GET /", pages.Static(publicDir, rec)) // file bytes + in-memory visit counts, no DB (D5)
 	return mux
 }
 
@@ -170,7 +171,11 @@ func serveMain(args []string) int {
 	}
 
 	started := time.Now()
-	mux := newMux(ing, adm, pub.Root(), healthzHandler(*dataDir, started))
+	// Visit counts for the owner panel: memory on the request path, a
+	// once-a-minute flush to SQLite from sched (internal/stats).
+	rec := stats.New(nil)
+	adm.Stats = rec
+	mux := newMux(ing, adm, pub.Root(), rec, healthzHandler(*dataDir, started))
 
 	srv := &http.Server{
 		Addr:    *listen,
@@ -211,9 +216,16 @@ func serveMain(args []string) int {
 			Name:  "prune",
 			Every: time.Hour,
 			Run: func(ctx context.Context) error {
-				_, err := ing.Prune(ctx)
-				return err
+				if _, err := ing.Prune(ctx); err != nil {
+					return err
+				}
+				return st.PruneVisits(ctx, time.Now().Add(-stats.Retention))
 			},
+		},
+		sched.Job{
+			Name:  "visits",
+			Every: time.Minute,
+			Run:   func(ctx context.Context) error { return rec.Flush(ctx, st) },
 		},
 		sched.Job{
 			Name:  "pages",
@@ -241,6 +253,10 @@ func serveMain(args []string) int {
 		if err := srv.Shutdown(shutCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("shutdown", "err", err.Error())
 			return 1
+		}
+		// Up to a minute of visit counts is still in memory: keep it.
+		if err := rec.Flush(shutCtx, st); err != nil {
+			log.Error("visits: final flush", "err", err.Error())
 		}
 		return 0
 	case err := <-errCh:
