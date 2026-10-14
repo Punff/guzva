@@ -236,7 +236,7 @@ the stage comments in `internal/render/tisak.go`. In one table:
 |---|---|---|
 | 1 | Luma only, area-average to **320×240** (4:3 inputs only; non-4:3 → `422 dims`) | sensor-native QVGA |
 | 2 | Static privacy masks: zero weight in every filter, forced to `S0` | ≤ 4 rects, 320×240 cells |
-| 3 | Privacy low-pass P (normalized Gaussian) | σp = 2 cells |
+| 3 | Privacy low-pass P (normalized Gaussian) | σp = 1.75 cells (v6; 2 in v4–v5) |
 | 4 | Lighting field B (×8 downsample, odd-reflection edges) | σb = 48 cells |
 | 5 | Weber contrast `C = (P − B) / (B + k)` | k = 24 |
 | 6 | Fixed C-space thresholds → `S0 < −90/256 ≤ S1 < −28/256 ≤ S2 < 36/256 ≤ S3` | same for every venue |
@@ -255,7 +255,7 @@ a version bump, never a setting.
 | Removed | How |
 |---|---|
 | Colour | luminance-only from stage 1 |
-| Fine detail | σp = 2 low-pass on the 320×240 grid (privacy rule: head ÷ 4.7 ≤ ~4, print-v4 §4) |
+| Fine detail | σp = 1.75 low-pass on the 320×240 grid (privacy rule: head ÷ 4.1 ≤ ~4 → heads ≤ ~16 cells, print-v4 §4) |
 | Tonal detail | 4 tones (2 bits) |
 | Metadata | EXIF dropped by construction, PNG has no ancillary chunks (asserted) |
 | Close-up regions | static privacy masks (stage 3) |

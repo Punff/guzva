@@ -98,7 +98,7 @@ func TestProcessNormalizesAndStyles(t *testing.T) {
 	if out.Width != GW || out.Height != GH {
 		t.Errorf("dims = %dx%d, want %dx%d", out.Width, out.Height, GW, GH)
 	}
-	if out.Preset != "poster" || out.PresetVer != 5 {
+	if out.Preset != "poster" || out.PresetVer != 6 {
 		t.Errorf("preset = %s@%d", out.Preset, out.PresetVer)
 	}
 	if !out.ReceivedAt.Equal(testNow) {
@@ -395,7 +395,7 @@ func TestPresetsDifferAndAgreeOnShape(t *testing.T) {
 	if bytes.Equal(poster.PNG, mono.PNG) {
 		t.Fatal("poster and mono must differ")
 	}
-	if mono.Preset != "mono" || mono.PresetVer != 5 {
+	if mono.Preset != "mono" || mono.PresetVer != 6 {
 		t.Errorf("mono metadata = %s@%d", mono.Preset, mono.PresetVer)
 	}
 }

@@ -70,7 +70,7 @@ type Params struct {
 // the synthetic lab (print-v4 §5); re-freeze from the real corpus as a
 // preset version bump, never as a setting.
 var Defaults = Params{
-	SigmaP: 2, SigmaB: 48, K: 24,
+	SigmaP: 1.75, SigmaB: 48, K: 24,
 	Dark2: -90, Dark1: -28, Light: 36,
 	Cleanup: true,
 	Edge:    20,
