@@ -12,7 +12,7 @@
  *      compile-time constant — auto exposure/gain/white balance, QVGA, q14.
  *      No remote camera config; changing the profile is a new build. The
  *      profile id rides every POST so the server knows what made a frame.
- *      Mounting orientation is the PROFILE_FLIP build flag.
+ *      Mounting orientation is PROFILE_VFLIP / PROFILE_HMIRROR (settings.h).
  *    - no frame queue: upload failure = drop frame, post_fail++, fresh
  *      capture on the next tick
  *    - TLS: WiFiClientSecure + embedded CA (setCACert); keep-alive reuse of
@@ -148,8 +148,13 @@ static const char PART_TAIL[] = "--" MP_BOUNDARY "--\r\n";
 // runtime: each knob was another way to break the picture remotely. A new
 // profile = a new PROFILE_ID and a new build.
 #define PROFILE_ID "p1"
-#ifndef PROFILE_FLIP
-#define PROFILE_FLIP 0          // 1 = camera mounted upside down
+// Mounting is a per-install fact: set these in settings.h (gitignored, per
+// board) — both 1 = rotated 180°, VFLIP alone = flipped top-to-bottom.
+#ifndef PROFILE_VFLIP
+#define PROFILE_VFLIP 0
+#endif
+#ifndef PROFILE_HMIRROR
+#define PROFILE_HMIRROR 0
 #endif
 static const framesize_t PROFILE_FRAMESIZE = FRAMESIZE_QVGA;  // 320x240, the render grid
 static const int         PROFILE_QUALITY   = 14;              // JPEG, lower = better
@@ -282,8 +287,8 @@ static void applyProfile() {
   if (s->set_ae_level)      s->set_ae_level(s, 0);
   if (s->set_dcw)           s->set_dcw(s, 1);
   if (s->set_lenc)          s->set_lenc(s, 1);
-  if (s->set_hmirror)       s->set_hmirror(s, PROFILE_FLIP);
-  if (s->set_vflip)         s->set_vflip(s, PROFILE_FLIP);
+  if (s->set_hmirror)       s->set_hmirror(s, PROFILE_HMIRROR);
+  if (s->set_vflip)         s->set_vflip(s, PROFILE_VFLIP);
 }
 
 // ============================ NVS / IDENTITY ===============================

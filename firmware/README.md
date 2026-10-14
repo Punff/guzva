@@ -89,7 +89,8 @@ Profile `p1`: QVGA 320×240, JPEG q14, auto exposure/gain/white balance,
 defaults. There is no remote camera config: the server's render removes
 the room's lighting itself, so nothing needs tuning per venue. The profile
 id rides every POST (`profile`) and `/api/status`. Upside-down mount:
-build with `-DPROFILE_FLIP=1`. A dark room (4 dark rejects in a row) slows
+set `PROFILE_VFLIP` / `PROFILE_HMIRROR` in that board's `settings.h` (both
+= 180°). A dark room (4 dark rejects in a row) slows
 the cadence to 300 s until a frame passes.
 
 **Install instead of tune:** focus the lens at the real viewing distance

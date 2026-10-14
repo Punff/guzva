@@ -72,3 +72,9 @@ static const char *LAN_PROBE_HOST = "192.168.1.11";
 //   1. NVS namespace "prov", key "token"  (installer can re-provision)
 //   2. this compile-time fallback
 static const char *DEVICE_TOKEN = "CHANGE-ME";
+
+// Mounting orientation (camera Profile v1 — a per-install fact, so it lives
+// here, not in platformio.ini). VFLIP alone = flipped top-to-bottom; both
+// = rotated 180°.
+#define PROFILE_VFLIP   0
+#define PROFILE_HMIRROR 0
