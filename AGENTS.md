@@ -57,14 +57,16 @@ proven setup. History of the team mode lives in docs/ops-log.md.)
 
 ## Open queue (docs/qa-findings.md is the tracker)
 
-- Q-01 (P1): mean-luma instrumentation on dark/dead rejects —
-  spec restated by QA round 1.
-- Q-05 (P1): zero-length frame part answers 201 like a health
-  beat (ingest.go `len(frameRaw) == 0` intercept).
-- Q-04 (P2): `Vary: Accept-Encoding` only on the gzip branch.
-- Item D: cfg coherence validation (`agc=1 ∧ agc_gain=0` reject,
-  fixed-exposure warn) at cfg-set.
-- Item E: admin board shows last reject reason + mean + since.
-- Bench-verify: dark escalation + TLS backoff need an induced
-  failure to observe on hardware.
+- **Print v4 rollout** (docs/print-v4.md): S2 render + S4 server cleanup and
+  S3 firmware are in the tree (not deployed, not flashed). Next:
+  `make tag/deploy` the server (old firmware keeps working — no
+  desired_cfg is apply-if-found), then flash Profile v1 and soak 48 h.
+- **S0/S1 real corpus:** v4 constants were picked on the synthetic hard
+  scene. Capture 30–40 local raw frames (never committed, `corpus/`), run
+  `go run ./tools/styleproof -sweep -out /tmp/sheet corpus/*.jpg`, re-freeze
+  as a preset bump. The human legibility/recognition tests are the gate.
+- Q-08 (P2): prod serves the bench self-signed cert (autocert + domain).
+- Item E remainder: per-frame mean luma on rejects (journal-only today).
+- Bench-verify: dark backoff (now 300 s after 4 dark rejects) + TLS backoff
+  need an induced failure to observe on hardware.
 - WiFi password rotation (router) — needs the user.

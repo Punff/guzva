@@ -1071,3 +1071,26 @@ checklists still owed after deploy.
   firmware serial bootlog script `/tmp/opencode/esp32-bootlog.py`
   was lost (tmp cleanup) — regenerate before the next bench session;
   backend Q-01/Q-04/Q-05 re-dispatch; WiFi password rotation.
+
+### Solo pass — Print v4 + cleanup (2026-10-14, not deployed)
+
+Code only; prod still runs `v0.6.3`, the bench board still runs v0.6.3
+firmware. Commits `5c67796..` on master, CI green on each push.
+
+- **Render v4** (`f9957a0`): 320×240 band-pass, Weber-contrast tones,
+  masks-only venue state (schema v8 backfills calib_json masks ×2).
+  Constants chosen on the synthetic hard scene only — NOT on real frames.
+  Local render 14 ms for one QVGA frame (dev laptop; e2-micro unmeasured).
+- **Device-config plane removed server-side** (`c8eb598`): no desired_cfg,
+  no `guzva cfg`, schema v9 `devices.profile`. Verified locally: legacy
+  meta with `cfg_ver_applied` still ingests (422 dark path exercised), and
+  v0.6.3 firmware's apply-if-found parser leaves its NVS config untouched
+  when desired_cfg is absent (read in main.cpp before the change).
+- **Firmware Profile v1** (`38c7a05`): built with `pio run`, not flashed.
+  Fixes the dark-escalation no-op (now a 300 s backoff).
+- **Rollback note:** v8/v9 are additive, but a `v0.6.3` binary refuses a v9
+  database ("unknown schema version"). Rolling back after deploying this
+  needs the on-deploy snapshot restore, not just `make rollback`.
+- Admin: fleet creation forms folded into disclosures, device page is
+  read-only health; public print 1:1 on 360 px phones. Q-03, Q-04 fixed.
+

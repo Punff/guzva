@@ -47,8 +47,8 @@ are shown **once** at provision time and never stored recoverably.
 4. Status LED (GPIO33, active LOW — on means attention):
    2 Hz blink = connecting · short flash = good POST · double-blink/1.2 s =
    401 revoked (identity kept, health-only beats) · 0.5 Hz pulse =
-   camera-degraded · **off = healthy**. The white flash LED (GPIO4) follows
-   `led_pwm` in desired_cfg (`0` = off).
+   camera-degraded · **off = healthy**. The white flash LED (GPIO4) is held
+   off (Profile v1; older firmware followed its stored `led_pwm`).
 5. Serial recipe: 115200 8N1; reset pulse is `dtr=False, rts=True→False`.
    LAN cage on port 80 (installer-facing): `/api/status`, `/jpg`, `/ping`,
    `/api/factory-reset` (caged — see firmware README before touching).
@@ -60,9 +60,6 @@ are shown **once** at provision time and never stored recoverably.
 journalctl -u guzva -f | grep ingest
 # restart (gap <2 s, absorbed by idempotent ingest + device retry)
 systemctl restart guzva
-# show / change device config (takes effect on the device's next POST)
-guzva cfg -serial bd2a58b -data /var/lib/guzva
-guzva cfg -serial bd2a58b -data /var/lib/guzva -set led_pwm=0
 # add a device (prints token ONCE — record it offline immediately)
 guzva provision -slug <slug> -name <name> -serial <serial> -data /var/lib/guzva
 # rotate the admin password (bcrypt; restart to pick up the env file)
@@ -70,11 +67,10 @@ guzva hashpw          # type pw on stdin, paste hash into /etc/guzva/guzva.env
 systemctl restart guzva
 ```
 
-`guzva cfg -set` accepts the 22 documented keys (`guzva cfg -serial X` with
-no `-set` lists them); anything unknown or out of range is rejected before it
-can reach a field unit. `ver` is server-managed — it bumps on every change and
-the board echoes it back as `cfg_ver_applied` (amber on the admin board until
-it does).
+There is no remote device config (print v4): the camera profile is frozen in
+firmware. A picture problem is fixed by focus/mounting at the venue (use the
+LAN `/jpg`) or by a new firmware build — never by a server setting. Firmware
+before Profile v1 keeps running on whatever config it last stored in NVS.
 
 ## Venue owners (the /owner/ panel)
 

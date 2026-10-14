@@ -14,6 +14,13 @@ missing product plan on top. The current state is *messy but sound*: the hard
 part (device → TLS → ingest → render → static page, idempotent, private) works
 end to end; what is missing is polish, management and automation.
 
+Status (14 Oct 2026): **Print v4 landed in the tree** (docs/print-v4.md) —
+320×240 band-pass render (`poster@4`/`mono@4`), masks-only venue render
+state, the remote device-config plane (`desired_cfg`, `guzva cfg`, the
+22 keys) removed server-side, firmware camera Profile v1 built but not yet
+flashed. The bullets below are the 13 Oct state and are kept for history;
+where they mention desired_cfg/calibration, print-v4.md supersedes them.
+
 Status (13 Oct 2026 — v0.6.0 deployed; product rounds 1–4 shipped):
 - **Go server live on the VPS** (`guzva.service`, `make deploy` the only
   deploy path), serving the real board; rollback anchors kept (last 3),
@@ -155,14 +162,15 @@ owned by a dedicated `guzva` user.
 
 `POST /v1/ingest` — multipart: `meta` (JSON) + optional `frame` (JPEG).
 - `meta`: `capture_id` (`C<boot>-<ctr>-<rand4>`, monotonic from NVS, bound to
-  identity), `fw`, `rssi`, `free_heap`, `cfg_ver_applied`, counters
+  identity), `fw`, `rssi`, `free_heap`, `profile`, counters
   (`boot, brownout, join_fail, post_fail, tls_fail, capture_fail`), `reason`.
 - No `frame` = health-only beat (camera-degraded mode).
 - Auth: `Authorization: Bearer <device token>`; server stores only sha256.
 - Responses: `201` stored · `409` duplicate (same body) · `422` rejected +
   reason (quarantined) · `401` revoked/unknown · `413` too big · `429` +
   `Retry-After` · `507` disk degraded.
-- Response body: `{ desired_cfg: {ver, interval_s, quality, …}, next_s, server_time }`
+- Response body: `{ next_s, server_time }` (+ `reason` on 422). No device config
+  rides the response since print v4 — the camera profile is frozen in firmware.
   (full device-plane key set — `docs/proto-v1.md`, proven live).
 
 Hostnames: ingest on its own name (`ingest.guzva.ba`) from day 1, stored in
@@ -224,7 +232,7 @@ death and WiFi loss recover without a power cycle.
 `auth → rate-limit (per-IP + per-device) → MaxBytesReader → parse meta →
 idempotency check → render.Process → write ring file + frames row → atomically
 replace latest.jpg → update venue.last_frame_at → rewrite index.html if state
-changed → respond with desired_cfg`.
+changed → respond with next_s`.
 
 Bounded work: one goroutine per connection; a global semaphore caps concurrent
 `Process` calls; `ReadHeaderTimeout` / `ReadTimeout` stop slow clients. Gate:
@@ -406,11 +414,11 @@ Shipped through v0.6.0 — the user's mockup composition, honest states:
 
 ### 9.3 Super-admin console (`/admin`)
 - **Fleet overview** (§11): every venue's freshness, last frame, device health,
-  config read-back (amber), and open alerts at a glance.
+  camera profile, and open alerts at a glance.
 - Venue page: details, hours, owner account, public-page preview link, QR
   poster, reference-frame sign-off record.
-- Device page: full `desired_cfg` form **grouped** (cadence vs image vs
-  hardware) with ranges and inline validation — not a 21-row table; token
+- Device page: read-only health — firmware, camera profile, signal, last
+  rejected frame (print v4: no device config exists to edit); token
   mint (once) / revoke; counters explained in plain language, not `b181·bo4·j0`.
 - Vendor lifecycle actions (§10).
 - Activity/audit view (§11), and a "what changed" feed per venue.

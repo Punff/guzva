@@ -227,55 +227,35 @@ their display names are **Tisak** (print, 4 tones) and **Šablon** (stencil, 2 t
 **Non-goals.** Recognising anything: no face/people/plate detection or counting
 (D9). Nothing here "finds" a person; the style just *coarsens everything equally*.
 
-### 5.2 Pipeline (`poster@3`)
+### 5.2 Pipeline (`poster@4`) — superseded v3 text removed
 
-All stages are pure, integer-friendly, stdlib-only. Input: decoded JPEG; output:
-`160×120` paletted PNG.
+The shipped pipeline is **Tisak v4**; its contract is `docs/print-v4.md` §4 and
+the stage comments in `internal/render/tisak.go`. In one table:
 
-| # | Stage | Parameters | Why |
-|---|---|---|---|
-| 1 | Take **luminance only** (the `Y` plane of the decoded `YCbCr`; any other colour model → `color.GrayModel`) | — | Colour (skin, hair, clothes, branding) is discarded at the first step and never converted. EXIF is already gone. |
-| 2 | **Area-average** to a **160×120 grid** (4:3 inputs only; exact for 160/320/640/800/1600 wide, fixed-point Q8 edge weights otherwise; non-4:3 → `422 dims`) | grid = 160×120 = 19,200 cells | The mosaic *is* the grid. 4× oversampling from VGA gives clean averaging; QVGA (2×) is plenty. |
-| 3 | **Privacy masks** — overwrite listed rectangles with a constant luma | ≤ 4 rects in grid coords ⚑ | Static, installer-drawn geometry for regions where people sit too close (§5.3). Applied *before* blur so nothing inside leaks — and **again after the mode filter** in the shipped pipeline (edge bleed would otherwise smuggle gradients back; invariant-tested). |
-| 4 | **Blur** 3×3 binomial `[1 2 1]²/16` | σ ≈ 0.85 cells | Kills sub-cell detail and sensor noise before thresholding. |
-| 5 | **Quantise** to 4 tones with thresholds `t = (64, 128, 192)` by default; per-venue `calib` overrides (`t`, `bias`, `invert`) ⚑ | 2 bits/cell | Flat bands, ~2 bits of tone. Fixed thresholds: **no per-frame auto-levels** (§5.10). |
-| 6 | **Mode filter** 3×3 (majority; ties keep the centre) | — | Removes isolated speckle where a smooth area sits on a threshold. |
-| 7 | **Encode** paletted PNG, 4 fixed palette entries, best compression | Go's encoder picks 2-bit depth for ≤4 colours; no ancillary chunks | Tiny, lossless, no JPEG ringing on flat art. |
+| # | Stage | Constant (frozen in `render.Defaults`) |
+|---|---|---|
+| 1 | Luma only, area-average to **320×240** (4:3 inputs only; non-4:3 → `422 dims`) | sensor-native QVGA |
+| 2 | Static privacy masks: zero weight in every filter, forced to `S0` | ≤ 4 rects, 320×240 cells |
+| 3 | Privacy low-pass P (normalized Gaussian) | σp = 2 cells |
+| 4 | Lighting field B (×8 downsample, odd-reflection edges) | σb = 48 cells |
+| 5 | Weber contrast `C = (P − B) / (B + k)` | k = 24 |
+| 6 | Fixed C-space thresholds → `S0 < −90/256 ≤ S1 < −28/256 ≤ S2 < 36/256 ≤ S3` | same for every venue |
+| 7 | Isolated-cell despeckle (keeps thin shapes, unlike v3's mode filter) | — |
+| 8 | Paletted PNG, fixed ramp, no ancillary chunks | 2-bit (Tisak) / 1-bit (Šablon) |
 
-(Seven stages: the burned-in timestamp that used to be stage 7 was removed at
-`v3` — §5.6, ⚑2.)
-
-`mono` (Šablon): same stages with 2 tones (`S0`/`S3`), one threshold, 1-bit PNG.
-
-A note on versions: the shipped presets are `@3`. Version 1 was the 640-px
-JPEG era; v2 the stamped Tisak pipeline; v3 (12 Oct 2026) drops the
-burned-in stamp (§5.6). Old sidecar rows keep meaning what they recorded
-(PLAN D2 outranks this doc where the two disagree).
-
-Sketch of the package surface (not final code):
-
-```go
-// internal/render/tisak.go — poster@3
-const GW, GH = 160, 120
-
-func lumaGrid(img image.Image) (g []uint8, err error)  // stages 1–2
-func applyMasks(g []uint8, m []Rect)                   // 3
-func blur121(g []uint8) []uint8                        // 4
-func quant(g []uint8, t [3]uint8, invert bool) []uint8 // 5
-func mode3(q []uint8, levels int) []uint8              // 6
-func encode(q []uint8) []byte                          // 7  (palette = fixed S0..S3)
-```
-
-`Preset.Render` stays pure: inputs are the decoded frame, the tone count and the
-venue's `calib` — all passed in, so determinism ×100 and goldens still hold. (The
-venue-local `HH:MM` input went with the stamp: nothing render-side knows the time.)
+`mono` (Šablon): the same C map, ink where `C < −28/256`, ink-on-paper palette.
+Versions: v1 colour JPEG, v2 stamped PNG, v3 160×120 blur/threshold/mode (the
+lighting-dominated blobs), v4 this. Old sidecar rows keep meaning what they
+recorded (D2). The constants were picked on the procedural hard scene
+(`tools/styleproof -synthetic`); re-freezing them from the real bench corpus is
+a version bump, never a setting.
 
 ### 5.3 What it removes — and the install geometry gate
 
 | Removed | How |
 |---|---|
 | Colour | luminance-only from stage 1 |
-| Fine detail | 160×120 grid + blur; a VGA frame has 16× more samples |
+| Fine detail | σp = 2 low-pass on the 320×240 grid (privacy rule: head ÷ 4.7 ≤ ~4, print-v4 §4) |
 | Tonal detail | 4 tones (2 bits) |
 | Metadata | EXIF dropped by construction, PNG has no ancillary chunks (asserted) |
 | Close-up regions | static privacy masks (stage 3) |
@@ -386,27 +366,16 @@ no date (the stale tiers and the label handle "when").
 
 ### 5.8 Presets registry and versioning
 
-`poster@3` (Tisak), `mono@3` (Šablon). Sidecars record `preset@version`, as in
-PLAN §7. Style *and* version changes apply to new frames only. New style = one file +
-one registry line + one golden test (unchanged contract).
+`poster@4` (Tisak), `mono@4` (Šablon). Sidecars record `preset@version`, as in
+PLAN §7. Style *and* version changes apply to new frames only. New style = one row
+in `render.styles` + one golden test.
 
-### 5.9 Per-venue calibration (⚑ `venues.calib_json`)
+### 5.9 Per-venue calibration — removed in print v4
 
-Default thresholds 64/128/192 work when the device's auto-exposure keeps the scene
-near mid-grey. Where they don't (dark floors, bright windows), the **calibration
-step** in the wizard (§8.4) helps *without ever storing a raw frame*:
-
-1. Admin puts the venue in "calibrate" for ~2 minutes.
-2. Each incoming frame is rendered in RAM into **candidate stylised sheets**
-   (bias −24 / 0 / +24 × Tisak/Šablon) and a 256-bin histogram; only the *candidate
-   PNGs* (stylised, allowed at rest) and the histogram numbers are kept under
-   `data/ref/candidates/`.
-3. The installer taps the best candidate; the venue stores
-   `calib_json = {"t":[a,b,c],"bias":0,"invert":false,"masks":[…],"preset":"poster"}`.
-
-Suggested helper: place thresholds in histogram valleys (multi-Otsu) as the *default
-candidate*. All of it is numbers and stylised images — consistent with PLAN §1 privacy.
-Migration: one nullable column (the plan's migration rule: exercised across a reopen).
+Thresholds, bias, invert and the calibration candidate sheets are gone: v4
+normalises the room's lighting itself, so the only per-venue render state is
+`style` and `venues.masks_json` (≤ 4 rects). See `docs/print-v4.md` §2 and
+decision 3. Offline tuning lives in `tools/styleproof` against a local corpus.
 
 ### 5.10 Considered and rejected
 

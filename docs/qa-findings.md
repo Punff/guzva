@@ -149,7 +149,7 @@ B.
 
 ### Q-03 · P2 · `internal/i18n/i18n.go` import block is malformed
 
-**Status:** OPEN — `internal/i18n/` is in this session's remit (P2), but it is
+**Status:** FIXED — commit `1ce5fef` (imports regrouped). Original note: P2,
 a pure-cosmetic cleanup and `make css`/`gofmt` are green, so it is deferred
 until the round's real fixes land and it does not get lost in a merge.
 
@@ -174,8 +174,9 @@ the next person to run `goimports -w` gets a spurious diff. Worth one line.
 
 ### Q-04 · P2 · the still poller and the page poller disagree about `Vary`
 
-**Status:** OPEN — `internal/pages/static.go` (backend's B commit will touch
-this file; do not fix in parallel). Recorded so B's author sees it.
+**Status:** FIXED — commit `1ce5fef`: `Vary` is set before the encoding
+branch and the 304; `TestPageIsGzippedOnTheWire` asserts it on the identity
+response (verified failing without the fix).
 
 `pageCache.serve` sets `Vary: Accept-Encoding` **only on the gzip branch**
 (`static.go:183`). The non-gzip branch returns 200 before that line is
@@ -509,3 +510,17 @@ it only fires on real prose. It currently reports nothing.
 `#c9a227` fails the contrast test (2.07:1), and changing the en `stale.detail`
 placeholder to `{t}` fails the parity test with
 `en placeholders {t}, hr placeholders {time}`.
+
+---
+
+## Solo pass — 2026-10-14 (print v4)
+
+- **Q-03, Q-04 FIXED** in `1ce5fef` (see their entries above).
+- **Item D (cfg coherence validation) — WITHDRAWN.** There is no cfg-set any
+  more: print v4 removed the remote device config (`c8eb598`). The
+  `agc=1 ∧ agc_gain=0` trap cannot be set remotely; Profile v1 firmware runs
+  AGC with the driver's default ceiling.
+- **Item E (last reject on the admin board) — PARTIAL.** The device page shows
+  the venue's last rejected frame (reason + age). Mean luma is still only in
+  the journal (`mean_luma=`), not stored per frame.
+

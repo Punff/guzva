@@ -3,7 +3,7 @@
 A camera answers one question: *ima li gužve?* — is it busy? An ESP32-CAM
 at a venue captures a still every minute, pushes it over TLS to one Go
 binary, and the server destroys the photograph and publishes a **stylised
-160×120 print** — its gallery label carries the time, never the image.
+320×240 print** — its gallery label carries the time, never the image.
 Guests scan a QR code and see
 whether the terrace is full — a four-tone silhouette, never a photo, never a
 face, never stored raw.
@@ -68,7 +68,7 @@ make rollback TAG=…   # flip the symlink back
 | `internal/i18n/` | one message catalog: Croatian product, English fallback |
 | `web/` | design tokens (Tailwind v4 source) → compiled into `internal/webui/` |
 | `firmware/` | ESP32-CAM firmware (PlatformIO + arduino-esp32) |
-| `tools/` | fakecam (load gate), styleproof (calibration sheets), bench-cert.sh |
+| `tools/` | fakecam (load gate), styleproof (render lab: variant contact sheets), bench-cert.sh |
 | `deploy/` | provision.sh, systemd units, backup timer |
 
 Dependencies flow downward only; `internal/store` is the sole SQL speaker;
