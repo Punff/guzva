@@ -1048,3 +1048,26 @@ tree was verified NUL-free before commit.
 
 Ships as `v0.6.3`: firmware reflash + bench verify of the three
 checklists still owed after deploy.
+
+### Deploy — `v0.6.3` live (2026-10-14 14:00 local)
+
+- CI run 38575683255 green (10 commits `2fd0443..1b96718`), tag pushed.
+- Server: `make deploy` OK, healthcheck `version v0.6.3, page + admin answer`,
+  disk 39 %.
+- **Hours-edit fix verified live**: `GET /bench/` → 200 with
+  `Last-Modified: Wed, 14 Oct 2026 13:59:13 GMT`; future
+  `If-Modified-Since` → 304. The flip detector can fire in production
+  now (QA-07 closed).
+- Firmware reflash (`pio run -t upload`, hash verified) → **boot 20**,
+  brownout 0. Bench-verified warm-up gate in production: captures
+  C20-516/517 posted as health-only beats (no `render_ms` — frames
+  discarded while the OV2640 exposure converges), C20-518 posted a
+  real frame (`render_ms 9.6`). Exactly the designed behaviour:
+  2 discards, then normal cadence.
+- Feed healthy at handoff: 201s at ~50 s cadence, rssi −69…−71,
+  free_heap 145 K.
+- Still owed (follow-ups, not blockers): bench-verify checklists for
+  dark-escalation + TLS backoff (need an induced failure to observe);
+  firmware serial bootlog script `/tmp/opencode/esp32-bootlog.py`
+  was lost (tmp cleanup) — regenerate before the next bench session;
+  backend Q-01/Q-04/Q-05 re-dispatch; WiFi password rotation.
