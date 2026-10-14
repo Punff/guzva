@@ -180,13 +180,16 @@ func TestPageIsGzippedOnTheWire(t *testing.T) {
 	if got, want := w.Body.Len(), len(f.readIndex(t)); got != want {
 		t.Errorf("plain body = %d bytes, want %d", got, want)
 	}
+	if v := w.Header().Get("Vary"); v != "Accept-Encoding" {
+		t.Errorf("identity response Vary = %q, want Accept-Encoding (Q-04)", v)
+	}
 
 	r := httptest.NewRequest(http.MethodGet, "/jadro/index.html", nil)
 	r.Header.Set("Accept-Encoding", "gzip")
 	w2 := httptest.NewRecorder()
 	h.ServeHTTP(w2, r)
-	if w2.Header().Get("Content-Encoding") != "gzip" {
-		t.Fatal("no gzip when the client accepts it")
+	if w2.Header().Get("Content-Encoding") != "gzip" || w2.Header().Get("Vary") != "Accept-Encoding" {
+		t.Fatal("no gzip + Vary when the client accepts it")
 	}
 	if w2.Body.Len() >= len(f.readIndex(t)) {
 		t.Errorf("gzip did not help: %d >= %d", w2.Body.Len(), len(f.readIndex(t)))

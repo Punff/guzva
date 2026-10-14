@@ -176,6 +176,9 @@ func (c *pageCache) serve(w http.ResponseWriter, r *http.Request, dir string, mt
 	// to the second: HTTP dates carry no finer resolution.
 	mt := mtime.UTC().Truncate(time.Second)
 	w.Header().Set("Last-Modified", mt.Format(http.TimeFormat))
+	// Vary on every answer, both encodings and the 304 (Q-04): the body
+	// depends on Accept-Encoding whichever branch runs.
+	w.Header().Set("Vary", "Accept-Encoding")
 	if ims := r.Header.Get("If-Modified-Since"); ims != "" {
 		if t, err := time.Parse(http.TimeFormat, ims); err == nil && !mt.After(t) {
 			w.WriteHeader(http.StatusNotModified)
@@ -193,7 +196,6 @@ func (c *pageCache) serve(w http.ResponseWriter, r *http.Request, dir string, mt
 		return
 	}
 	w.Header().Set("Content-Encoding", "gzip")
-	w.Header().Set("Vary", "Accept-Encoding")
 	w.Header().Set("Content-Length", strconv.Itoa(len(gz)))
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {

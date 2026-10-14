@@ -15,11 +15,11 @@ package i18n
 
 import (
 	"fmt"
-
-	"guzva/internal/venue"
 	"math"
 	"strings"
 	"time"
+
+	"guzva/internal/venue"
 )
 
 // Lang identifies a catalog. Unknown/absent means the default.
