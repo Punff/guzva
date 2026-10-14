@@ -311,6 +311,7 @@ type fleetModel struct {
 	Venues      []venueView
 	DeviceOpts  []store.Venue // for the create-device <select>
 	ShowCreated bool
+	Devices     int              // fleet-wide count: opens "New device" when 0
 	Days        [7]venue.DayForm // create-form hours, Mo-Fr 09-17 prefilled
 }
 
@@ -331,7 +332,7 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 		byVenue[d.VenueID] = append(byVenue[d.VenueID], newDeviceView(d, now))
 	}
 	defHours, _ := venue.ParseSpec("Mo-Fr 09:00-17:00")
-	model := fleetModel{DeviceOpts: venues, ShowCreated: r.URL.Query().Get("created") != "",
+	model := fleetModel{DeviceOpts: venues, Devices: len(devices), ShowCreated: r.URL.Query().Get("created") != "",
 		Days: venue.EditModel(defHours, i18n.For(i18n.EN).DayNames())}
 	// Needs attention first (design-pass2 §6): the board is the "is
 	// everything OK" screen, so it must read top-down — no signal beats
