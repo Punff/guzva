@@ -194,78 +194,99 @@ const schemaV7 = `
 ALTER TABLE venues ADD COLUMN location TEXT NOT NULL DEFAULT '';
 `
 
+// schemaV8 replaces the render calibration with masks only (print v4:
+// thresholds, bias, invert and preset are gone; the style column already
+// holds the preset). Masks are in the 320×240 grid; calib_json is left in
+// place, unused, so a restore of an older backup still reads.
+const schemaV8 = `
+ALTER TABLE venues ADD COLUMN masks_json TEXT NOT NULL DEFAULT '';
+`
+
+// migrations[i] takes the schema from version i to i+1. Append only.
+var migrations = []struct {
+	sql  string
+	post func(ctx context.Context, tx *sql.Tx) error
+}{
+	{sql: schemaV1}, {sql: schemaV2}, {sql: schemaV3}, {sql: schemaV4},
+	{sql: schemaV5}, {sql: schemaV6}, {sql: schemaV7},
+	{sql: schemaV8, post: backfillMasks},
+}
+
 func (s *Store) migrate(ctx context.Context) error {
 	var ver int
 	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&ver); err != nil {
 		return fmt.Errorf("store: read user_version: %w", err)
 	}
-	switch ver {
-	case 0:
-		if _, err := s.db.ExecContext(ctx, schemaV1); err != nil {
-			return fmt.Errorf("store: migration v1: %w", err)
-		}
-		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 1"); err != nil {
-			return fmt.Errorf("store: set user_version: %w", err)
-		}
-		ver = 1 // fresh database also needs v2
-		fallthrough
-	case 1:
-		if _, err := s.db.ExecContext(ctx, schemaV2); err != nil {
-			return fmt.Errorf("store: migration v2: %w", err)
-		}
-		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 2"); err != nil {
-			return fmt.Errorf("store: set user_version: %w", err)
-		}
-		ver = 2 // ... and v3 as well
-		fallthrough
-	case 2:
-		if _, err := s.db.ExecContext(ctx, schemaV3); err != nil {
-			return fmt.Errorf("store: migration v3: %w", err)
-		}
-		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 3"); err != nil {
-			return fmt.Errorf("store: set user_version: %w", err)
-		}
-		ver = 3 // ... and v4 as well; every step must reach the terminal
-		fallthrough
-	case 3:
-		if _, err := s.db.ExecContext(ctx, schemaV4); err != nil {
-			return fmt.Errorf("store: migration v4: %w", err)
-		}
-		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 4"); err != nil {
-			return fmt.Errorf("store: set user_version: %w", err)
-		}
-		ver = 4 // ... and v5 as well; every step must reach the terminal
-		fallthrough
-	case 4:
-		if _, err := s.db.ExecContext(ctx, schemaV5); err != nil {
-			return fmt.Errorf("store: migration v5: %w", err)
-		}
-		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 5"); err != nil {
-			return fmt.Errorf("store: set user_version: %w", err)
-		}
-		ver = 5 // ... and v6 as well; every step must reach the terminal
-		fallthrough
-	case 5:
-		if _, err := s.db.ExecContext(ctx, schemaV6); err != nil {
-			return fmt.Errorf("store: migration v6: %w", err)
-		}
-		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 6"); err != nil {
-			return fmt.Errorf("store: set user_version: %w", err)
-		}
-		ver = 6
-		fallthrough
-	case 6:
-		if _, err := s.db.ExecContext(ctx, schemaV7); err != nil {
-			return fmt.Errorf("store: migration v7: %w", err)
-		}
-		if _, err := s.db.ExecContext(ctx, "PRAGMA user_version = 7"); err != nil {
-			return fmt.Errorf("store: set user_version: %w", err)
-		}
-		ver = 7
-	case 7:
-		// current — nothing to do.
-	default:
+	if ver > len(migrations) {
 		return fmt.Errorf("store: unknown schema version %d (binary older than db?)", ver)
+	}
+	for ; ver < len(migrations); ver++ {
+		m := migrations[ver]
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, m.sql); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("store: migration v%d: %w", ver+1, err)
+		}
+		if m.post != nil {
+			if err := m.post(ctx, tx); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("store: migration v%d: %w", ver+1, err)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", ver+1)); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("store: set user_version: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// backfillMasks carries v3 masks (160×120 cells, inside calib_json) over to
+// masks_json at the 320×240 grid. A calib document that does not parse
+// carried no effective masks before either, so it is skipped.
+func backfillMasks(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id, calib_json FROM venues WHERE calib_json != ''`)
+	if err != nil {
+		return err
+	}
+	type upd struct {
+		id  int64
+		doc string
+	}
+	var ups []upd
+	for rows.Next() {
+		var id int64
+		var raw string
+		if err := rows.Scan(&id, &raw); err != nil {
+			rows.Close()
+			return err
+		}
+		var doc struct {
+			Masks []render.Rect `json:"masks"`
+		}
+		if json.Unmarshal([]byte(raw), &doc) != nil || len(doc.Masks) == 0 {
+			continue
+		}
+		for i := range doc.Masks {
+			m := &doc.Masks[i]
+			m.X0, m.Y0, m.X1, m.Y1 = m.X0*2, m.Y0*2, m.X1*2, m.Y1*2
+		}
+		ups = append(ups, upd{id, MarshalMasks(doc.Masks)})
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, u := range ups {
+		if _, err := tx.ExecContext(ctx, `UPDATE venues SET masks_json = ? WHERE id = ?`, u.doc, u.id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -329,13 +350,15 @@ func (s *Store) CreateVenue(ctx context.Context, v Venue) (int64, error) {
 	return res.LastInsertId()
 }
 
-const venueCols = `id, slug, name, tz, style, description, phone, location, owner_hash, lang, calib_json, last_frame_at, created_at`
+const venueCols = `id, slug, name, tz, style, description, phone, location, owner_hash, lang, masks_json, last_frame_at, created_at`
 
 func scanVenue(row interface{ Scan(...any) error }) (*Venue, error) {
 	var v Venue
 	var last, created int64
+	var masks string
 	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &v.Description, &v.Phone,
-		&v.Location, &v.OwnerHash, &v.Lang, &v.CalibJSON, &last, &created)
+		&v.Location, &v.OwnerHash, &v.Lang, &masks, &last, &created)
+	v.Masks = ParseMasks(masks)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -441,8 +464,8 @@ type Venue struct {
 	Phone       string // optional public contact, digits/+/spaces
 	Location    string // optional public "where we are" line, free text
 	OwnerHash   string
-	Lang        string // page language, "hr" (default) or "en" (⚑9)
-	CalibJSON   string // render calib document, "" = defaults (⚑5)
+	Lang        string        // page language, "hr" (default) or "en" (⚑9)
+	Masks       []render.Rect // static privacy masks, 320×240 cells (print v4)
 	LastFrameAt time.Time
 	CreatedAt   time.Time
 }
@@ -457,18 +480,16 @@ func (s *Store) UpdateVenue(ctx context.Context, id int64, name, style, tz, desc
 	return err
 }
 
-// SetOwnerHash stores the bcrypt hash of the owner's panel password
-// (super-admin only; the password itself never reaches the store).
-// SetCalib stores the venue's render calibration document (DESIGN.md ⚑5).
-// The document must already be validated — SetCalib stores exactly what it is
-// given, so callers validate first (the admin form builds it from fields;
-// ParseCalib remains the read-path backstop for hand-edited rows).
-func (s *Store) SetCalib(ctx context.Context, id int64, calibJSON string) error {
+// SetMasks stores the venue's static privacy masks (at most
+// render.MaxMasks; callers validate geometry first).
+func (s *Store) SetMasks(ctx context.Context, id int64, masks []render.Rect) error {
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE venues SET calib_json = ? WHERE id = ?`, calibJSON, id)
+		`UPDATE venues SET masks_json = ? WHERE id = ?`, MarshalMasks(masks), id)
 	return err
 }
 
+// SetOwnerHash stores the bcrypt hash of the owner's panel password
+// (super-admin only; the password itself never reaches the store).
 func (s *Store) SetOwnerHash(ctx context.Context, id int64, hash string) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE venues SET owner_hash = ? WHERE id = ?`, hash, id)
@@ -866,9 +887,21 @@ func (s *Store) PruneMeta(ctx context.Context, metaCutoff time.Time) error {
 	return err
 }
 
-// ParseCalib decodes a venue's calib_json into a render Calib. The parsing
-// rules (empty/malformed → defaults) live in render so the pipeline and the
-// store cannot disagree about what a document means.
-func ParseCalib(raw string) render.Calib {
-	return render.ParseCalib(raw)
+// ParseMasks decodes masks_json. Malformed means no masks — but every
+// writer goes through MarshalMasks, so that only happens to a hand edit.
+func ParseMasks(raw string) []render.Rect {
+	var m []render.Rect
+	if raw == "" || json.Unmarshal([]byte(raw), &m) != nil {
+		return nil
+	}
+	return m[:min(len(m), render.MaxMasks)]
+}
+
+// MarshalMasks is the one writer of the masks_json format ("" for none).
+func MarshalMasks(m []render.Rect) string {
+	if len(m) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(m)
+	return string(b)
 }

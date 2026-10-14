@@ -1,7 +1,7 @@
 // Package render implements the server-side image pipeline (PLAN §7, D1):
 //
-//	decode (4 MiB cap) → validate → luma grid 160×120 → masks → blur →
-//	quantise → mode filter → masks again → paletted PNG
+//	decode (4 MiB cap) → validate → luma grid 320×240 → band-pass
+//	(privacy low-pass − lighting field) → 4 fixed tones → paletted PNG
 //
 // The raw JPEG exists only inside one Process call: it is never written, and
 // the input buffer is zeroed on return (privacy proof: input-zeroed test).
@@ -52,18 +52,15 @@ type FrameIn struct {
 	CaptureID string
 	Preset    string // venue style; unknown names fall back to the default
 	Raw       []byte // the JPEG exactly as it arrived off the wire
-	// Calib is the venue's render calibration: thresholds, bias, invert and
-	// static privacy masks (DESIGN.md ⚑5/⚑6). Zero value = defaults, no masks.
-	// (The burned-in HH:MM stamp is gone — the page's print label carries
-	// the time; see tisak.go. ReceivedAt remains the canonical instant.)
-	Calib Calib
+	// Masks are the venue's static privacy rects in grid cells (≤ MaxMasks).
+	Masks []Rect
 }
 
 // Output is the result of a successful Process.
 type Output struct {
-	PNG        []byte // public stylised render, 160×120 paletted PNG
-	Width      int    // always GW (160)
-	Height     int    // always GH (120)
+	PNG        []byte // public stylised render, GW×GH paletted PNG
+	Width      int    // always GW
+	Height     int    // always GH
 	SHA256     string // sha256 of Raw before zeroing — idempotency guard (§1)
 	RawBytes   int    // size of the raw input (metadata only)
 	Preset     string
@@ -212,8 +209,8 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 		return Output{}, RejectWithMean(proto.ReasonDead, mean)
 	}
 
-	// --- the print: masks → blur → quantise → mode → masks → PNG.
-	pngBytes, err := renderGrid(g, preset.Levels(), in.Calib)
+	// --- the print (tisak.go).
+	pngBytes, err := encode(tones(g, preset.Levels(), in.Masks, Defaults), preset.Levels())
 	if err != nil {
 		return Output{}, err
 	}

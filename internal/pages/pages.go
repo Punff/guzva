@@ -305,7 +305,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		}
 		// The print is shown at integer scale with pixelated rendering (§5.7);
 		// anything else on disk is a pre-print JPEG shown 1:1.
-		vw.Pixelated = latest.Width == render.GW && latest.Height == render.GH
+		vw.Pixelated = latest.Width > 0 && render.GW%latest.Width == 0 // v4 320 or v3 160 grid
 	}
 	// State = shape + colour + sentence (§3.2). Two stale tiers (DESIGN.md
 	// ⚑3) so a camera merely running behind reads differently from one that

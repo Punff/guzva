@@ -2,304 +2,264 @@ package render
 
 import (
 	"bytes"
-	"encoding/binary"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
-	"math/rand"
+	"os"
 	"testing"
 )
 
-// scene renders a procedural 4:3 "room": gradients, a bright window, dark
-// furniture blocks, and head-sized dark blobs — flat enough to be legible,
-// textured enough to exercise the mode filter. Seeded, so every run draws the
-// same room. NEVER a real venue frame: real frames must never be committed.
-func scene(t *testing.T, w, h int, seed int64) image.Image {
+// hardScene is the procedural lab frame (tools/styleproof -synthetic): dim,
+// lit unevenly from the upper right, soft focus, four people — the case v3
+// turned into lighting blobs.
+func hardScene(t *testing.T) image.Image {
 	t.Helper()
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	rnd := rand.New(rand.NewSource(seed))
+	b, err := os.ReadFile("testdata/hard-scene.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := jpeg.Decode(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return img
+}
+
+// gray builds a w×h grey image from f(x, y).
+func gray(w, h int, f func(x, y int) uint8) *image.Gray {
+	img := image.NewGray(image.Rect(0, 0, w, h))
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			// Vertical gradient (bright ceiling → dark floor) + window block.
-			v := 200 - y*160/h
-			if x > w*3/4 && y < h/3 {
-				v = 235 // window
-			}
-			if x > w/4 && x < w/2 && y > h/2 {
-				v = 40 // furniture
-			}
-			v += rnd.Intn(16) - 8 // sensor noise
-			img.SetRGBA(x, y, color.RGBA{uint8(clamp(v)), uint8(clamp(v)), uint8(clamp(v + 6)), 255})
-		}
-	}
-	// Two head-sized dark blobs (people).
-	for _, hx := range []int{w / 3, w * 2 / 3} {
-		for dy := -h / 20; dy <= h/20; dy++ {
-			for dx := -w / 60; dx <= w/60; dx++ {
-				x, y := hx+dx, h/2+dy
-				if x >= 0 && x < w && y >= 0 && y < h {
-					img.SetRGBA(x, y, color.RGBA{30, 28, 26, 255})
-				}
-			}
+			img.Pix[y*w+x] = f(x, y)
 		}
 	}
 	return img
 }
 
-func clamp(v int) int {
-	if v < 0 {
-		return 0
-	}
-	if v > 255 {
-		return 255
-	}
-	return v
-}
-
-// decodePNG parses our own output back into levels + palette, so the
-// invariants assert on bytes, not on our encoder's good intentions.
-func decodePNG(t *testing.T, b []byte) (levels []uint8, pal color.Palette) {
+func decodeLevels(t *testing.T, b []byte) (*image.Paletted, map[uint8]int) {
 	t.Helper()
 	img, err := png.Decode(bytes.NewReader(b))
 	if err != nil {
-		t.Fatalf("decode own png: %v", err)
+		t.Fatal(err)
 	}
 	p, ok := img.(*image.Paletted)
 	if !ok {
-		t.Fatalf("output is %T, want *image.Paletted", img)
+		t.Fatalf("render decoded as %T, want paletted", img)
 	}
-	return p.Pix, p.Palette
+	hist := map[uint8]int{}
+	for _, v := range p.Pix {
+		hist[v]++
+	}
+	return p, hist
 }
 
-func TestPipelineInvariants(t *testing.T) {
-	out, err := Pipeline(scene(t, 640, 480, 7), 4, Calib{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(out) == 0 {
-		t.Fatal("empty output")
-	}
-	levels, pal := decodePNG(t, out)
-
-	// Exactly 160×120.
-	if len(levels) != GW*GH {
-		t.Fatalf("grid = %d cells, want %d", len(levels), GW*GH)
-	}
-	// ≤ 4 palette entries, in the fixed ramp order.
-	if len(pal) > 4 {
-		t.Fatalf("palette has %d entries, want ≤ 4", len(pal))
-	}
-	for i, c := range pal {
-		r, g, b, _ := c.RGBA()
-		want := ramp[i]
-		if uint8(r>>8) != want.R || uint8(g>>8) != want.G || uint8(b>>8) != want.B {
-			t.Fatalf("palette[%d] = #%02x%02x%02x, want ramp #%02x%02x%02x",
-				i, r>>8, g>>8, b>>8, want.R, want.G, want.B)
-		}
-	}
-	// Every cell references a palette entry that exists.
-	for i, lv := range levels {
-		if int(lv) >= len(pal) {
-			t.Fatalf("cell %d references palette entry %d of %d", i, lv, len(pal))
-		}
-	}
-	// No ancillary chunks: IHDR, PLTE, IDAT, IEND only. EXIF, text and
-	// profiles cannot survive — asserted on the raw bytes.
-	for _, c := range pngChunks(t, out) {
-		switch c {
-		case "IHDR", "PLTE", "IDAT", "IEND":
-		default:
-			t.Fatalf("ancillary chunk %q in output", c)
-		}
-	}
-}
-
-// pngChunks lists chunk types in order from the raw bytes.
+// pngChunks lists the chunk types in file order.
 func pngChunks(t *testing.T, b []byte) []string {
 	t.Helper()
-	if len(b) < 8 || string(b[:8]) != "\x89PNG\r\n\x1a\n" {
-		t.Fatalf("not a png (magic %q)", b[:min(8, len(b))])
-	}
 	var out []string
-	r := bytes.NewReader(b[8:])
-	for {
-		var length uint32
-		if err := binary.Read(r, binary.BigEndian, &length); err != nil {
-			t.Fatalf("chunk length: %v", err)
-		}
-		typ := make([]byte, 4)
-		if _, err := r.Read(typ); err != nil {
-			t.Fatalf("chunk type: %v", err)
-		}
-		out = append(out, string(typ))
-		if _, err := r.Seek(int64(length)+4, 1); err != nil {
-			t.Fatalf("chunk skip: %v", err)
-		}
-		if string(typ) == "IEND" {
-			return out
-		}
+	for i := 8; i+8 <= len(b); {
+		n := int(b[i])<<24 | int(b[i+1])<<16 | int(b[i+2])<<8 | int(b[i+3])
+		out = append(out, string(b[i+4:i+8]))
+		i += 12 + n
 	}
+	return out
 }
 
-func TestPipelineSizeBound(t *testing.T) {
-	// A busy scene is the worst case for a palette PNG; the bound guards
-	// accidental dither or noise leaking into the output.
-	busy := scene(t, 640, 480, 99)
-	for y := 0; y < 480; y += 3 {
-		for x := 0; x < 640; x += 3 {
-			busy.(*image.RGBA).Set(x, y, color.RGBA{10, 10, 10, 255})
-		}
-	}
-	for _, tc := range []struct {
-		name   string
-		img    image.Image
-		levels int
-	}{
-		{"tisak-clean", scene(t, 640, 480, 7), 4},
-		{"tisak-busy", busy, 4},
-		{"sablon", scene(t, 640, 480, 7), 2},
-	} {
-		out, err := Pipeline(tc.img, tc.levels, Calib{})
+// The output contract: 320×240, paletted, ≤ 4 entries (2 for Šablon), the
+// fixed ramp, only IHDR/PLTE/IDAT/IEND, under the 12 KB size cap.
+func TestPipelineInvariants(t *testing.T) {
+	img := hardScene(t)
+	for _, levels := range []int{4, 2} {
+		b, err := Pipeline(img, levels, nil, Defaults)
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("%s: %d bytes", tc.name, len(out))
-		// DESIGN.md §5.11: a render over 6 KB fails the test.
-		if len(out) > 6<<10 {
-			t.Errorf("%s = %d bytes, over the 6 KB bound", tc.name, len(out))
+		p, _ := decodeLevels(t, b)
+		if p.Bounds().Dx() != GW || p.Bounds().Dy() != GH {
+			t.Errorf("levels=%d: dims %v", levels, p.Bounds())
+		}
+		if len(p.Palette) != levels {
+			t.Errorf("levels=%d: palette has %d entries", levels, len(p.Palette))
+		}
+		if p.Palette[0] != color.Color(ramp[0]) || p.Palette[levels-1] != color.Color(ramp[3]) {
+			t.Errorf("levels=%d: palette ends are not ink/paper", levels)
+		}
+		for _, c := range pngChunks(t, b) {
+			if c != "IHDR" && c != "PLTE" && c != "IDAT" && c != "IEND" {
+				t.Errorf("levels=%d: ancillary chunk %q", levels, c)
+			}
+		}
+		if len(b) > 12<<10 {
+			t.Errorf("levels=%d: %d bytes > 12 KB cap", levels, len(b))
 		}
 	}
 }
 
-func TestPipelineDeterministic(t *testing.T) {
-	img := scene(t, 320, 240, 3)
-	first, err := Pipeline(img, 4, Calib{})
+// The v3 failure, pinned: on a dim, unevenly lit scene the print must use
+// at least three tones, and the lighting gradient alone must not create
+// bands — a smooth ramp with no objects renders (almost) flat s2.
+func TestLightingDoesNotDecideTones(t *testing.T) {
+	b, err := Pipeline(hardScene(t), 4, nil, Defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 100; i++ {
-		got, err := Pipeline(scene(t, 320, 240, 3), 4, Calib{})
-		if err != nil {
-			t.Fatal(err)
+	_, hist := decodeLevels(t, b)
+	used := 0
+	for _, n := range hist {
+		if n > GW*GH/100 {
+			used++
 		}
-		if !bytes.Equal(got, first) {
-			t.Fatalf("run %d differs", i)
-		}
+	}
+	if used < 3 {
+		t.Errorf("hard scene uses %d tones (>1%% each), want ≥ 3: %v", used, hist)
+	}
+
+	ramp := gray(320, 240, func(x, y int) uint8 { return uint8(30 + x*150/320 + y*40/240) })
+	b, err = Pipeline(ramp, 4, nil, Defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, hist = decodeLevels(t, b)
+	if hist[2] < GW*GH*97/100 {
+		t.Errorf("object-free lighting ramp is not flat neutral: %v", hist)
 	}
 }
 
-func TestMasksAreLevelZeroWhateverTheInput(t *testing.T) {
-	// A bright scene with a mask over the brightest part: after the pipeline
-	// every mask cell must read level 0, including the 1-cell border the blur
-	// would otherwise smear a gradient across.
-	img := scene(t, 640, 480, 7)
-	m := []Rect{{X0: 100, Y0: 80, X1: 140, Y1: 110}}
-	out, err := Pipeline(img, 4, Calib{Masks: m})
-	if err != nil {
-		t.Fatal(err)
+// Darker-than-surroundings reads as ink, lighter as paper, whatever the
+// absolute brightness: the same scene at a third of the light gives the
+// same picture (within a few cells).
+func TestToneIsRelative(t *testing.T) {
+	scene := func(scale int) image.Image {
+		return gray(320, 240, func(x, y int) uint8 {
+			v := 150
+			if x >= 60 && x < 100 && y >= 80 && y < 200 { // dark figure
+				v = 50
+			}
+			if x >= 200 && x < 280 && y >= 40 && y < 100 { // bright screen
+				v = 250
+			}
+			return uint8(v * scale / 3)
+		})
 	}
-	levels, _ := decodePNG(t, out)
-	for y := 80; y < 110; y++ {
-		for x := 100; x < 140; x++ {
-			if levels[y*GW+x] != 0 {
-				t.Fatalf("mask cell (%d,%d) = level %d, want 0", x, y, levels[y*GW+x])
+	bright, _ := Pipeline(scene(3), 4, nil, Defaults)
+	dim, _ := Pipeline(scene(1), 4, nil, Defaults)
+	pb, _ := decodeLevels(t, bright)
+	pd, _ := decodeLevels(t, dim)
+	if got := pb.Pix[140*GW+80]; got != 0 {
+		t.Errorf("figure centre = s%d, want s0", got)
+	}
+	if got := pb.Pix[70*GW+240]; got != 3 {
+		t.Errorf("screen centre = s%d, want s3", got)
+	}
+	diff := 0
+	for i := range pb.Pix {
+		if pb.Pix[i] != pd.Pix[i] {
+			diff++
+		}
+	}
+	if diff > GW*GH/50 {
+		t.Errorf("dim vs bright differ in %d cells (> 2%%)", diff)
+	}
+}
+
+// Privacy dial: detail finer than the low-pass (a 1-cell checkerboard —
+// eyes, text, a face's features) must not survive as structure.
+func TestFinestDetailDies(t *testing.T) {
+	img := gray(320, 240, func(x, y int) uint8 {
+		if x >= 100 && x < 220 && y >= 60 && y < 180 && (x+y)%2 == 0 {
+			return 200
+		}
+		if x >= 100 && x < 220 && y >= 60 && y < 180 {
+			return 60
+		}
+		return 130
+	})
+	b, _ := Pipeline(img, 4, nil, Defaults)
+	p, _ := decodeLevels(t, b)
+	for y := 80; y < 160; y++ {
+		for x := 120; x < 200; x++ {
+			if p.Pix[y*GW+x] != p.Pix[120*GW+160] {
+				t.Fatalf("checkerboard survived at (%d,%d)", x, y)
 			}
 		}
 	}
-	// Masks beyond the cap are ignored, not shifted: the fifth rect must not
-	// eat the fourth's slot. Assert on a white grid so pre-existing zeros
-	// cannot hide a miss.
-	white := make([]uint8, GW*GH)
-	for i := range white {
-		white[i] = 255
-	}
-	many := []Rect{{X0: 1, Y0: 1, X1: 2, Y1: 2}, {X0: 3, Y0: 3, X1: 4, Y1: 4},
-		{X0: 5, Y0: 5, X1: 6, Y1: 6}, {X0: 7, Y0: 7, X1: 8, Y1: 8},
-		{X0: 9, Y0: 9, X1: 10, Y1: 10}}
-	applyMasks(white, many)
-	for _, c := range [][2]int{{1, 1}, {3, 3}, {5, 5}, {7, 7}} {
-		if white[c[1]*GW+c[0]] != 0 {
-			t.Fatalf("mask %v not applied", c)
+}
+
+// Thin shapes survive the cleanup (v3's mode filter erased arms and chair
+// backs): a 3-cell dark bar on a mid wall stays ink end to end.
+func TestThinShapesSurvive(t *testing.T) {
+	img := gray(320, 240, func(x, y int) uint8 {
+		if x >= 100 && x < 103 && y >= 40 && y < 200 {
+			return 20
+		}
+		return 140
+	})
+	b, _ := Pipeline(img, 4, nil, Defaults)
+	p, _ := decodeLevels(t, b)
+	for y := 50; y < 190; y++ {
+		if p.Pix[y*GW+101] > 1 {
+			t.Fatalf("thin bar broken at y=%d (s%d)", y, p.Pix[y*GW+101])
 		}
 	}
-	if white[9*GW+9] != 255 {
-		t.Fatal("fifth mask applied — the cap moved")
+}
+
+// Mask cells are exactly level 0, and what is under a mask cannot leak
+// out: changing the masked content changes no visible cell.
+func TestMasks(t *testing.T) {
+	m := []Rect{{X0: 100, Y0: 60, X1: 200, Y1: 160}, {X0: -10, Y0: -10, X1: 5, Y1: 5}}
+	under := func(v uint8) image.Image {
+		return gray(320, 240, func(x, y int) uint8 {
+			if x >= 100 && x < 200 && y >= 60 && y < 160 {
+				return v
+			}
+			return uint8(80 + x/4)
+		})
+	}
+	a, _ := Pipeline(under(0), 4, m, Defaults)
+	b, _ := Pipeline(under(255), 4, m, Defaults)
+	if !bytes.Equal(a, b) {
+		t.Error("masked content leaked into visible cells")
+	}
+	p, _ := decodeLevels(t, a)
+	for y := 0; y < GH; y++ {
+		for x := 0; x < GW; x++ {
+			in := (x >= 100 && x < 200 && y >= 60 && y < 160) || (x < 5 && y < 5)
+			if in && p.Pix[y*GW+x] != 0 {
+				t.Fatalf("mask cell (%d,%d) = s%d", x, y, p.Pix[y*GW+x])
+			}
+		}
 	}
 }
 
 func TestNon43IsDimsReject(t *testing.T) {
-	for _, dim := range [][2]int{{640, 360}, {800, 500}, {100, 100}} {
-		img := image.NewRGBA(image.Rect(0, 0, dim[0], dim[1]))
-		if _, err := Pipeline(img, 4, Calib{}); err == nil {
-			t.Fatalf("%dx%d accepted, want dims reject", dim[0], dim[1])
-		} else if r, ok := IsReject(err); !ok || r != "dims" {
-			t.Fatalf("%dx%d: reason %q, want dims", dim[0], dim[1], r)
-		}
-	}
-	// Exact 4:3 at several widths, including odd ones (Q8 edge weights).
-	for _, w := range []int{160, 320, 480, 640, 800, 1600} {
-		img := scene(t, w, w*3/4, 5)
-		if _, err := Pipeline(img, 4, Calib{}); err != nil {
-			t.Fatalf("%dx%d rejected: %v", w, w*3/4, err)
+	for _, r := range []image.Rectangle{image.Rect(0, 0, 240, 240), image.Rect(0, 0, 320, 180)} {
+		if _, err := Pipeline(image.NewGray(r), 4, nil, Defaults); err == nil {
+			t.Errorf("%v: want dims reject", r)
+		} else if reason, _ := IsReject(err); reason != "dims" {
+			t.Errorf("%v: reason %q", r, reason)
 		}
 	}
 }
 
-func TestQuantThresholdsAndInvert(t *testing.T) {
-	g := []uint8{0, 63, 64, 127, 128, 191, 192, 255}
-	q := quant(g, 4, defaultThresholds, 0, false)
-	for i, want := range []uint8{0, 0, 1, 1, 2, 2, 3, 3} {
-		if q[i] != want {
-			t.Fatalf("luma %d → level %d, want %d", g[i], q[i], want)
-		}
-	}
-	qi := quant(g, 4, defaultThresholds, 0, true)
-	for i, want := range []uint8{3, 3, 2, 2, 1, 1, 0, 0} {
-		if qi[i] != want {
-			t.Fatalf("inverted luma %d → level %d, want %d", g[i], qi[i], want)
-		}
-	}
-	// Bias shifts the bands without moving the thresholds.
-	qb := quant([]uint8{60}, 4, defaultThresholds, 10, false)
-	if qb[0] != 1 {
-		t.Fatalf("biased luma 60+10 → level %d, want 1", qb[0])
-	}
-	// Mono: one threshold, two levels.
-	qm := quant(g, 2, defaultThresholds, 0, false)
-	for i, want := range []uint8{0, 0, 0, 0, 1, 1, 1, 1} {
-		if qm[i] != want {
-			t.Fatalf("mono luma %d → level %d, want %d", g[i], qm[i], want)
-		}
-	}
-}
-
+// Area averaging is exact: a VGA frame of 2×2 blocks averages to the block
+// means; a QQVGA frame replicates each pixel into 2×2 cells.
 func TestAreaAverageIsExact(t *testing.T) {
-	// Left half white, right half black at 640×480: the grid's middle column
-	// boundary falls exactly between cells, so cells are pure 255 or pure 0 —
-	// any smear means the averaging windows overlap.
-	img := image.NewRGBA(image.Rect(0, 0, 640, 480))
-	for y := 0; y < 480; y++ {
-		for x := 0; x < 640; x++ {
-			v := uint8(0)
-			if x < 320 {
-				v = 255
-			}
-			img.SetRGBA(x, y, color.RGBA{v, v, v, 255})
-		}
-	}
-	g, err := lumaGrid(img)
+	vga := gray(640, 480, func(x, y int) uint8 { return uint8((x/2+y/2)%7*30 + (x+y)%2*2) })
+	g, err := lumaGrid(vga)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for y := 0; y < GH; y++ {
-		for x := 0; x < GW; x++ {
-			want := uint8(0)
-			if x < GW/2 {
-				want = 255
-			}
-			if g[y*GW+x] != want {
-				t.Fatalf("cell (%d,%d) = %d, want %d", x, y, g[y*GW+x], want)
-			}
+	for _, c := range [][2]int{{0, 0}, {13, 7}, {319, 239}} {
+		x, y := c[0], c[1]
+		want := uint8((x+y)%7*30 + 1)
+		if got := g[y*GW+x]; got != want {
+			t.Errorf("VGA cell %v = %d, want %d", c, got, want)
 		}
+	}
+	qq := gray(160, 120, func(x, y int) uint8 { return uint8(x + y) })
+	g, _ = lumaGrid(qq)
+	if g[21*GW+41] != uint8(20+10) {
+		t.Errorf("QQVGA replicate: got %d", g[21*GW+41])
 	}
 }

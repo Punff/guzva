@@ -19,23 +19,22 @@ type Preset interface {
 	Levels() int
 }
 
-// TisakPreset: the 4-tone print (DESIGN.md §5, poster@3).
+// TisakPreset: the 4-tone print (poster@4).
 //
-// Version 3: v1 was the 640-wide colour JPEG era, v2 the stamped PNG
-// pipeline. v3 drops the burned-in HH:MM stamp (12 Oct 2026 — the page's
-// print label carries the time; a rendered clock next to the label's clock
-// read as two clocks). D2's rule: a bump whenever the output changes for
-// the same input, so old sidecars keep their meaning.
+// Versions: v1 colour JPEG, v2 stamped PNG, v3 160×120 blur/threshold/mode,
+// v4 the 320×240 band-pass with Weber-contrast tones (docs/print-v4.md).
+// D2's rule: bump whenever the output changes for the same input, so old
+// sidecars keep their meaning.
 type TisakPreset struct{}
 
 func (TisakPreset) Name() string { return "poster" }
-func (TisakPreset) Version() int { return 3 }
+func (TisakPreset) Version() int { return 4 }
 func (TisakPreset) Levels() int  { return 4 }
 
-// SablonPreset: the 2-tone stencil (DESIGN.md §5, mono@3). Same version
-// reasoning as Tisak; v3 drops the stamp with it.
+// SablonPreset: the 2-tone stencil (mono@4) — the same contrast map, inked
+// where the scene is darker than its surroundings.
 type SablonPreset struct{}
 
 func (SablonPreset) Name() string { return "mono" }
-func (SablonPreset) Version() int { return 3 }
+func (SablonPreset) Version() int { return 4 }
 func (SablonPreset) Levels() int  { return 2 }

@@ -1,31 +1,26 @@
-// Tisak pipeline (DESIGN.md §5.2, poster@3 / mono@3).
+// Tisak v4 pipeline (docs/print-v4.md §4, poster@4 / mono@4).
 //
-// All stages are pure, integer-only, stdlib-only. Input: a decoded frame;
-// output: a 160×120 paletted PNG. Same inputs → same bytes, always: no clock,
-// no randomness, no globals. (The venue calib arrives as an argument — see
-// Calib.)
+// Pure, integer-only, stdlib-only: same input → same bytes, on every
+// architecture. Input: a decoded 4:3 frame; output: a 320×240 paletted PNG.
 //
-// Stage order matters for privacy, not just looks:
-//  1. luminance only — colour (skin, hair, clothes, branding) is discarded
-//     first and never converted back. EXIF never survives the decode.
-//  2. area-average to the 160×120 grid — the mosaic IS the grid.
-//  3. privacy masks — constant luma over installer-drawn rects, BEFORE blur
-//     so nothing inside leaks outward through the blur kernel (and re-applied
-//     after, so the edge bleed blur leaves behind cannot smuggle a gradient
-//     back in — belt and braces, both directions).
-//  4. 3×3 binomial blur — sub-cell detail and sensor noise die here.
-//  5. quantise to fixed thresholds — flat bands, ~2 bits of tone. Fixed
-//     thresholds, never per-frame auto-levels: auto-levels would pump
-//     brightness between frames and make an empty room and a full one render
-//     the same tone mix.
-//  6. 3×3 mode filter — speckle where a smooth area sits on a threshold.
-//  7. paletted PNG, fixed palette, best compression — tiny, lossless, no
-//     JPEG ringing on flat art, no ancillary chunks.
+//  1. luma only, area-averaged to 320×240 (identity for QVGA) — colour dies
+//     first and is never reconstructed; EXIF never survives the decode.
+//  2. privacy masks: masked cells get zero WEIGHT in every filter below, so
+//     nothing inside a mask leaks outward and a mask casts no halo.
+//  3. privacy low-pass P, Gaussian σp — the privacy dial. Features smaller
+//     than about a third of a head are gone after this stage.
+//  4. lighting field B, Gaussian σb on a ×8 downsample — the room's light.
+//  5. Weber contrast C = (P − B) / (B + k): tone means "darker or lighter
+//     than its surroundings", independent of how bright the room is. This is
+//     what keeps window light from deciding the bands (v3's failure).
+//  6. fixed thresholds in C-space → 4 tones (neutral → s2, darker → s1/s0,
+//     brighter → s3). The same constants for every venue, never per frame.
+//  7. isolated-cell cleanup: a cell none of whose 8 neighbours agree with it
+//     takes their majority. Unlike v3's mode filter this keeps thin shapes.
+//  8. masks forced to level 0; paletted 2-bit PNG with the fixed ramp.
 //
-// (The HH:MM stamp that was stage 7 was removed 12 Oct 2026 — the page's
-// print label carries the time now, and two clocks on one picture read as
-// a bug, not a feature. The honesty contract is unchanged: the label clock
-// is the frame's server received_at, the same instant the stamp showed.)
+// Privacy rule for installers (print-v4 §4): head width in cells ÷ blur FWHM
+// (2.355·σp) ≤ ~4 at the nearest seat; otherwise move the camera or mask it.
 package render
 
 import (
@@ -34,105 +29,100 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 )
 
-// Grid geometry. 160×120 = 19,200 cells; a VGA frame has 16× more samples,
-// QVGA (the recommended capture, DESIGN.md ⚑10) has 4×.
+// Grid geometry: sensor-native QVGA, displayed at integer scale.
 const (
-	GW = 160
-	GH = 120
+	GW = 320
+	GH = 240
 )
 
-// Still ramp (DESIGN.md §5.4). Fixed in both UI themes; the order is part of
-// the preset version — changing a colour ships a new preset version, because
-// old frames on disk keep their meaning.
+// Still ramp (DESIGN.md §5.4). Changing a colour ships a new preset version:
+// old frames on disk keep their meaning (D2).
 var ramp = [4]color.RGBA{
 	{0x12, 0x20, 0x2d, 0xff}, // s0 ink — people, hair, shadows
 	{0x33, 0x60, 0x7f, 0xff}, // s1 dark mid
-	{0x7e, 0xa5, 0xc0, 0xff}, // s2 light mid
-	{0xf2, 0xed, 0xe2, 0xff}, // s3 paper — walls, windows, lights
+	{0x7e, 0xa5, 0xc0, 0xff}, // s2 light mid — neutral surroundings
+	{0xf2, 0xed, 0xe2, 0xff}, // s3 paper — lights, windows, bright objects
 }
 
-// Default thresholds (DESIGN.md §5.2 stage 5). A venue calib may move them,
-// but they are still fixed per venue — never per frame.
-var defaultThresholds = [3]uint8{64, 128, 192}
+// Params are the filter constants. Production always uses Defaults; the
+// struct exists so tools/styleproof can sweep variants offline. There are
+// no per-venue overrides (print-v4 decision 3).
+type Params struct {
+	SigmaP float64 // privacy low-pass, grid cells
+	SigmaB float64 // lighting field, grid cells (computed at ×8 downsample)
+	K      int     // Weber denominator floor, luma units: tames noise in the dark
+	// Contrast thresholds in 1/256 units of C: s0 below Dark2, s1 below
+	// Dark1, s3 at or above Light, s2 otherwise. Šablon inks below Dark1.
+	Dark2, Dark1, Light int
+	Cleanup             bool
+}
 
-// MonoThreshold is the single Šablon threshold: the middle default, so one
-// calib shape serves both presets.
-const MonoThreshold = 128
+// Defaults are the frozen poster@4 / mono@4 constants. Starting values from
+// the synthetic lab (print-v4 §5); re-freeze from the real corpus as a
+// preset version bump, never as a setting.
+var Defaults = Params{
+	SigmaP: 2, SigmaB: 48, K: 24,
+	Dark2: -90, Dark1: -28, Light: 36,
+	Cleanup: true,
+}
 
 // Rect is a privacy mask in grid cells, half-open [X0,X1)×[Y0,Y1).
 // Installer-drawn, static geometry only — never detection output (D9).
 type Rect struct {
-	X0, Y0, X1, Y1 int
+	X0 int `json:"x0"`
+	Y0 int `json:"y0"`
+	X1 int `json:"x1"`
+	Y1 int `json:"y1"`
 }
 
-// Calib is the per-venue render calibration (DESIGN.md ⚑5): threshold moves,
-// a luma bias, an optional inversion for negative rooms, the static masks,
-// and which preset they were chosen for. All numbers and geometry —
-// consistent with §1, because no raw frame is ever stored to produce them.
-type Calib struct {
-	T      [3]uint8 // quantise thresholds; zero value means defaults
-	Bias   int      // added to luma before thresholding (-255..255)
-	Invert bool     // render the negative (dark rooms with bright doors)
-	Masks  []Rect   // ≤ MaxMasks static privacy rects, grid coords
-	Preset string   // preset the calib was chosen against ("poster"/"mono")
-}
-
-// MaxMasks bounds the installer-drawn geometry (DESIGN.md §5.2 stage 3).
+// MaxMasks bounds the installer-drawn geometry.
 const MaxMasks = 4
 
-// thresholds resolves the zero value to the defaults.
-func (c Calib) thresholds() [3]uint8 {
-	if c.T == [3]uint8{} {
-		return defaultThresholds
-	}
-	return c.T
-}
-
-// clampRect clips a mask to the grid. Degenerate rects (empty or fully
-// outside) vanish — an installer drag that misses the grid must not shift
-// every other mask's meaning.
+// clampRect clips a mask to the grid; degenerate rects vanish.
 func clampRect(r Rect) (Rect, bool) {
-	if r.X0 < 0 {
-		r.X0 = 0
-	}
-	if r.Y0 < 0 {
-		r.Y0 = 0
-	}
-	if r.X1 > GW {
-		r.X1 = GW
-	}
-	if r.Y1 > GH {
-		r.Y1 = GH
-	}
+	r.X0, r.Y0 = max(r.X0, 0), max(r.Y0, 0)
+	r.X1, r.Y1 = min(r.X1, GW), min(r.Y1, GH)
 	return r, r.X0 < r.X1 && r.Y0 < r.Y1
 }
 
-// lumaGrid decodes to luminance and area-averages onto the grid (stages 1–2).
-//
-// Colour dies first: the Y plane of a decoded YCbCr is taken directly (it is
-// full-resolution regardless of chroma subsampling); anything else goes
-// through color.GrayModel. Either way, no colour value survives this function.
-//
-// Only 4:3 inputs are accepted — the grid is 4:3, and stretching any other
-// aspect onto it would silently change what a cell means. Anything else is a
-// 422 dims rejection, not a guess.
-//
-// Averaging is exact integer math (Q8 fixed-point edge weights): each cell
-// accumulates overlap-weighted source luma, so 160/320/640/800/1600-wide
-// inputs average whole blocks and odd widths still divide exactly.
+// maskGrid returns 1 for visible cells and 0 under a mask. Masks beyond
+// MaxMasks are ignored.
+func maskGrid(masks []Rect) []uint8 {
+	w := make([]uint8, GW*GH)
+	for i := range w {
+		w[i] = 1
+	}
+	for i, m := range masks {
+		if i >= MaxMasks {
+			break
+		}
+		r, ok := clampRect(m)
+		if !ok {
+			continue
+		}
+		for y := r.Y0; y < r.Y1; y++ {
+			for x := r.X0; x < r.X1; x++ {
+				w[y*GW+x] = 0
+			}
+		}
+	}
+	return w
+}
+
+// lumaGrid decodes to luminance and area-averages onto the grid (stage 1).
+// Only 4:3 inputs are accepted: stretching another aspect would silently
+// change what a cell means (422 dims). Exact integer math with Q8 edge
+// weights, so any 4:3 size averages (or replicates, below QVGA) exactly.
 func lumaGrid(img image.Image) ([]uint8, error) {
 	b := img.Bounds()
 	sw, sh := b.Dx(), b.Dy()
-	if sw < 1 || sh < 1 {
+	if sw < 1 || sh < 1 || sw*3 != sh*4 {
 		return nil, Reject("dims")
 	}
-	if sw*3 != sh*4 {
-		return nil, Reject("dims")
-	}
-
-	y, yw, xw := lumaPlane(img, b, sw, sh)
+	y, stride := lumaPlane(img, b, sw, sh)
 
 	g := make([]uint8, GW*GH)
 	const fp = 256 // Q8
@@ -144,15 +134,9 @@ func lumaGrid(img image.Image) ([]uint8, error) {
 			var sum uint64
 			for py := y0 / fp; py*fp < y1; py++ {
 				oy := overlap(py*fp, py*fp+fp, y0, y1)
-				if oy == 0 {
-					continue
-				}
 				for px := x0 / fp; px*fp < x1; px++ {
 					ox := overlap(px*fp, px*fp+fp, x0, x1)
-					if ox == 0 {
-						continue
-					}
-					sum += uint64(y[py*yw+px*xw]) * uint64(ox) * uint64(oy)
+					sum += uint64(y[py*stride+px]) * uint64(ox) * uint64(oy)
 				}
 			}
 			g[gy*GW+gx] = uint8(sum / uint64(cellW) / uint64(cellH))
@@ -161,137 +145,279 @@ func lumaGrid(img image.Image) ([]uint8, error) {
 	return g, nil
 }
 
-// lumaPlane extracts full-resolution luma plus strides. YCbCr decodes keep
-// their Y plane (no resampling, no colour math); everything else is reduced
-// through color.GrayModel into a scratch plane.
-func lumaPlane(img image.Image, b image.Rectangle, sw, sh int) (y []uint8, yw, xw int) {
+// lumaPlane returns full-resolution luma and its stride. YCbCr decodes keep
+// their Y plane untouched; anything else goes through color.GrayModel.
+func lumaPlane(img image.Image, b image.Rectangle, sw, sh int) ([]uint8, int) {
 	if yc, ok := img.(*image.YCbCr); ok {
-		// Y is full-resolution in Go's representation regardless of the
-		// chroma subsampling, but its origin follows the image bounds.
-		strideY := yc.YStride
-		off := (b.Min.Y-yc.Rect.Min.Y)*strideY + (b.Min.X - yc.Rect.Min.X)
-		return yc.Y[off : off+(sh-1)*strideY+sw], strideY, 1
+		off := (b.Min.Y-yc.Rect.Min.Y)*yc.YStride + (b.Min.X - yc.Rect.Min.X)
+		return yc.Y[off : off+(sh-1)*yc.YStride+sw], yc.YStride
 	}
-	y = make([]uint8, sw*sh)
+	y := make([]uint8, sw*sh)
 	for j := 0; j < sh; j++ {
 		for i := 0; i < sw; i++ {
 			y[j*sw+i] = color.GrayModel.Convert(img.At(b.Min.X+i, b.Min.Y+j)).(color.Gray).Y
 		}
 	}
-	return y, sw, 1
+	return y, sw
 }
 
 // overlap is the length of the intersection of [a0,a1) and [b0,b1).
 func overlap(a0, a1, b0, b1 int) int {
-	lo := max(a0, b0)
-	hi := min(a1, b1)
-	if hi <= lo {
-		return 0
-	}
-	return hi - lo
+	return max(min(a1, b1)-max(a0, b0), 0)
 }
 
-// applyMasks overwrites mask rects with luma 0 (stage 3). Masks beyond
-// MaxMasks are ignored — silently accepting a fifth rect would mean two
-// installers disagree about what is covered.
-func applyMasks(g []uint8, masks []Rect) {
-	n := 0
-	for _, m := range masks {
-		if n >= MaxMasks {
-			break
-		}
-		n++
-		r, ok := clampRect(m)
-		if !ok {
-			continue
-		}
-		for y := r.Y0; y < r.Y1; y++ {
-			for x := r.X0; x < r.X1; x++ {
-				g[y*GW+x] = 0
+// kernel is a one-sided integer Gaussian, k[0] the centre, radius ⌈3σ⌉.
+// Weights are rounded to Q8 once; the pipeline itself never touches floats.
+func kernel(sigma float64) []int64 {
+	r := int(math.Ceil(3 * sigma))
+	k := make([]int64, r+1)
+	for i := range k {
+		k[i] = int64(math.Round(256 * math.Exp(-float64(i*i)/(2*sigma*sigma))))
+	}
+	return k
+}
+
+// blurSep is a separable convolution over a w×h plane. Out-of-range taps
+// contribute nothing (zero weight, not edge-clamped), which together with
+// normalized convolution (blur(v·w) / blur(w)) means borders and masks bias
+// nothing.
+func blurSep(v []int64, w, h int, k []int64) []int64 {
+	r := len(k) - 1
+	tmp := make([]int64, len(v))
+	for y := 0; y < h; y++ {
+		row := v[y*w : (y+1)*w]
+		for x := 0; x < w; x++ {
+			s := k[0] * row[x]
+			for i := 1; i <= r; i++ {
+				if x-i >= 0 {
+					s += k[i] * row[x-i]
+				}
+				if x+i < w {
+					s += k[i] * row[x+i]
+				}
 			}
+			tmp[y*w+x] = s
 		}
 	}
-}
-
-// blur121 is the 3×3 binomial blur, [1 2 1]²/16 (stage 4, σ ≈ 0.85 cells).
-// Separable, edge-clamped, round-half-up — deterministic to the bit.
-func blur121(g []uint8) []uint8 {
-	tmp := make([]uint8, len(g))
-	out := make([]uint8, len(g))
-	for y := 0; y < GH; y++ {
-		for x := 0; x < GW; x++ {
-			xm, xp := max(x-1, 0), min(x+1, GW-1)
-			tmp[y*GW+x] = uint8((int(g[y*GW+xm]) + 2*int(g[y*GW+x]) + int(g[y*GW+xp]) + 2) >> 2)
-		}
-	}
-	for y := 0; y < GH; y++ {
-		ym, yp := max(y-1, 0)*GW, min(y+1, GH-1)*GW
-		for x := 0; x < GW; x++ {
-			out[y*GW+x] = uint8((int(tmp[ym+x]) + 2*int(tmp[y*GW+x]) + int(tmp[yp+x]) + 2) >> 2)
+	out := make([]int64, len(v))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			s := k[0] * tmp[y*w+x]
+			for i := 1; i <= r; i++ {
+				if y-i >= 0 {
+					s += k[i] * tmp[(y-i)*w+x]
+				}
+				if y+i < h {
+					s += k[i] * tmp[(y+i)*w+x]
+				}
+			}
+			out[y*w+x] = s
 		}
 	}
 	return out
 }
 
-// quant maps luma to levels 0..levels-1 (stage 5). Bias shifts the luma
-// before the fixed thresholds; invert renders the negative. Poster uses all
-// three thresholds; mono uses the middle one.
-func quant(g []uint8, levels int, t [3]uint8, bias int, invert bool) []uint8 {
-	q := make([]uint8, len(g))
-	if levels == 2 {
-		for i, v := range g {
-			lv := 0
-			if int(v)+bias >= int(t[1]) {
-				lv = 1
-			}
-			if invert {
-				lv = 1 - lv
-			}
-			q[i] = uint8(lv)
+// normBlur is a normalized convolution: the weighted mean of the visible
+// cells under the kernel, in Q4 luma (×16). Where no visible cell is in
+// reach the result is mid-grey; those cells are masked anyway.
+func normBlur(vals []int64, wts []int64, w, h int, k []int64) []int64 {
+	num := blurSep(vals, w, h, k)
+	den := blurSep(wts, w, h, k)
+	out := make([]int64, len(vals))
+	for i := range out {
+		if den[i] == 0 {
+			out[i] = 128 * 16
+			continue
 		}
-		return q
+		out[i] = (num[i]*16 + den[i]/2) / den[i]
 	}
-	for i, v := range g {
-		l := int(v) + bias
-		lv := 0
+	return out
+}
+
+// background estimates the lighting field B (stage 4) in Q4 luma: a ×8
+// block mean (visible cells only), odd-reflection padding, a normalized
+// Gaussian of σb/8 blocks, then bilinear back up to the grid.
+//
+// Why the padding: without it the blur near a frame edge averages only the
+// interior, so on a lighting gradient the dim edge reads "darker than its
+// surroundings" and the print grows a dark rim. Odd reflection
+// (m[−i] = 2·m[0] − m[i]) continues a linear gradient straight past the
+// edge. It is linear per axis, so padding x then y handles the corners.
+// Block means average 64 cells, so the reflection does not amplify noise.
+func background(g, vis []uint8, sigmaB float64) []int64 {
+	const f = 8
+	bw, bh := GW/f, GH/f
+	sum := make([]int64, bw*bh)
+	cnt := make([]int64, bw*bh)
+	for y := 0; y < GH; y++ {
+		for x := 0; x < GW; x++ {
+			if vis[y*GW+x] == 1 {
+				i := (y/f)*bw + x/f
+				sum[i] += int64(g[y*GW+x])
+				cnt[i]++
+			}
+		}
+	}
+	mean := make([]int64, bw*bh) // Q4
+	for i := range mean {
+		if cnt[i] > 0 {
+			mean[i] = (sum[i]*16 + cnt[i]/2) / cnt[i]
+		}
+	}
+	k := kernel(sigmaB / f)
+	r := min(len(k)-1, bw-1, bh-1)
+	pw, ph := bw+2*r, bh+2*r
+
+	// Pad x, then y over the padded rows.
+	mx, cx := make([]int64, pw*bh), make([]int64, pw*bh)
+	for y := 0; y < bh; y++ {
+		padAxis(mean[y*bw:(y+1)*bw], cnt[y*bw:(y+1)*bw], mx[y*pw:(y+1)*pw], cx[y*pw:(y+1)*pw], 1, 1, bw, r)
+	}
+	m, c := make([]int64, pw*ph), make([]int64, pw*ph)
+	for x := 0; x < pw; x++ {
+		padAxis(mx[x:], cx[x:], m[x:], c[x:], pw, pw, bh, r)
+	}
+	num := make([]int64, len(m))
+	for i := range m {
+		num[i] = max(m[i], 0) * c[i]
+	}
+	ns, ds := blurSep(num, pw, ph, k), blurSep(c, pw, ph, k)
+	blk := make([]int64, bw*bh)
+	for y := 0; y < bh; y++ {
+		for x := 0; x < bw; x++ {
+			i := (y+r)*pw + x + r
+			if ds[i] == 0 {
+				blk[y*bw+x] = 128 * 16
+			} else {
+				blk[y*bw+x] = (ns[i] + ds[i]/2) / ds[i]
+			}
+		}
+	}
+
+	// Bilinear: cell x's centre sits at (2x+1−f)/(2f) blocks from block 0's
+	// centre; in 1/16-block units that is 2x−7 for f=8.
+	out := make([]int64, GW*GH)
+	axis := func(c, n int) (i0, i1 int, fr int64) {
+		t := 2*c - (f - 1)
+		if t <= 0 {
+			return 0, 0, 0
+		}
+		i0, fr = t/16, int64(t%16)
+		if i0 >= n-1 {
+			return n - 1, n - 1, 0
+		}
+		return i0, i0 + 1, fr
+	}
+	for y := 0; y < GH; y++ {
+		y0, y1, fy := axis(y, bh)
+		for x := 0; x < GW; x++ {
+			x0, x1, fx := axis(x, bw)
+			top := blk[y0*bw+x0]*(16-fx) + blk[y0*bw+x1]*fx
+			bot := blk[y1*bw+x0]*(16-fx) + blk[y1*bw+x1]*fx
+			out[y*GW+x] = (top*(16-fy) + bot*fy + 128) / 256
+		}
+	}
+	return out
+}
+
+// padAxis copies n strided samples of (m, c) into the n+2r strided output
+// with r samples of odd reflection on each side. Weights reflect evenly,
+// capped by the edge weight, so a masked edge block stays weightless.
+func padAxis(m, c, om, oc []int64, in, out, n, r int) {
+	for i := -r; i < n+r; i++ {
+		j, e := i, 0
 		switch {
-		case l >= int(t[2]):
-			lv = 3
-		case l >= int(t[1]):
-			lv = 2
-		case l >= int(t[0]):
-			lv = 1
+		case i < 0:
+			j, e = -i, 0
+		case i >= n:
+			j, e = 2*(n-1)-i, n-1
 		}
-		if invert {
-			lv = 3 - lv
+		o := (i + r) * out
+		if j == i {
+			om[o], oc[o] = m[j*in], c[j*in]
+			continue
 		}
-		q[i] = uint8(lv)
+		om[o] = 2*m[e*in] - m[j*in]
+		oc[o] = min(c[e*in], c[j*in])
+	}
+}
+
+// tones runs stages 2–7 over the luma grid and returns the level grid.
+func tones(g []uint8, levels int, masks []Rect, p Params) []uint8 {
+	vis := maskGrid(masks)
+	vals := make([]int64, len(g))
+	wts := make([]int64, len(g))
+	for i, v := range g {
+		if vis[i] == 1 {
+			vals[i], wts[i] = int64(v), 1
+		}
+	}
+	lp := normBlur(vals, wts, GW, GH, kernel(p.SigmaP))
+	bg := background(g, vis, p.SigmaB)
+
+	q := make([]uint8, len(g))
+	for i := range q {
+		c := (lp[i] - bg[i]) * 256 / (bg[i] + int64(p.K)*16) // Q8 Weber contrast
+		switch {
+		case levels == 2:
+			if c >= int64(p.Dark1) {
+				q[i] = 1
+			}
+		case c < int64(p.Dark2):
+			q[i] = 0
+		case c < int64(p.Dark1):
+			q[i] = 1
+		case c < int64(p.Light):
+			q[i] = 2
+		default:
+			q[i] = 3
+		}
+	}
+	if p.Cleanup {
+		q = despeckle(q, levels)
+	}
+	for i := range q {
+		if vis[i] == 0 {
+			q[i] = 0
+		}
 	}
 	return q
 }
 
-// mode3 is the 3×3 majority filter (stage 6): ties keep the centre, so a
-// checkerboard the grid cannot resolve stays put instead of strobing between
-// frames. Edge-clamped like the blur.
-func mode3(q []uint8, levels int) []uint8 {
-	out := make([]uint8, len(q))
-	var counts [4]int
+// despeckle replaces each cell that no neighbour agrees with by the
+// neighbours' majority (ties → the lower level, for determinism). Thin
+// lines survive: a one-cell-wide arm still has two agreeing neighbours.
+func despeckle(q []uint8, levels int) []uint8 {
+	out := append([]uint8(nil), q...)
 	for y := 0; y < GH; y++ {
 		for x := 0; x < GW; x++ {
-			for i := range counts {
-				counts[i] = 0
-			}
+			c := q[y*GW+x]
+			var n [4]int
+			same := false
 			for dy := -1; dy <= 1; dy++ {
-				yy := min(max(y+dy, 0), GH-1)
 				for dx := -1; dx <= 1; dx++ {
-					xx := min(max(x+dx, 0), GW-1)
-					counts[q[yy*GW+xx]]++
+					xx, yy := x+dx, y+dy
+					if (dx == 0 && dy == 0) || xx < 0 || yy < 0 || xx >= GW || yy >= GH {
+						continue
+					}
+					v := q[yy*GW+xx]
+					if v == c {
+						same = true
+						break
+					}
+					n[v]++
+				}
+				if same {
+					break
 				}
 			}
-			best, bestN := int(q[y*GW+x]), counts[q[y*GW+x]]
-			for lv := 0; lv < levels; lv++ {
-				if counts[lv] > bestN {
-					best, bestN = lv, counts[lv]
+			if same {
+				continue
+			}
+			best := 0
+			for lv := 1; lv < levels; lv++ {
+				if n[lv] > n[best] {
+					best = lv
 				}
 			}
 			out[y*GW+x] = uint8(best)
@@ -300,12 +426,14 @@ func mode3(q []uint8, levels int) []uint8 {
 	return out
 }
 
-// encode renders the level grid as a paletted PNG (stage 8): the four fixed
-// ramp entries in order, best compression. Go picks 2-bit depth for ≤4
-// colours; the encoder writes no ancillary chunks by construction (EXIF,
-// text and profiles cannot survive — asserted byte-level in the tests).
-func encode(q []uint8) ([]byte, error) {
+// encode renders the level grid as a paletted PNG. Go picks 2-bit depth
+// for ≤4 colours and writes no ancillary chunks (asserted in the tests).
+// Šablon uses the ramp's two ends: ink and paper.
+func encode(q []uint8, levels int) ([]byte, error) {
 	pal := color.Palette{ramp[0], ramp[1], ramp[2], ramp[3]}
+	if levels == 2 {
+		pal = color.Palette{ramp[0], ramp[3]}
+	}
 	img := image.NewPaletted(image.Rect(0, 0, GW, GH), pal)
 	copy(img.Pix, q)
 	var buf bytes.Buffer
@@ -316,36 +444,12 @@ func encode(q []uint8) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Pipeline runs all seven stages over img: grid → masks → blur → quant →
-// mode → masks again → encode. Masks are applied twice (stage 3 and again
-// after the blur): the first application keeps masked content out of the
-// blur kernel, the second kills the 1-cell gradient bleed the blur leaves
-// at the rect border — so every mask cell is exactly level 0 whatever the
-// input is, which the invariant test pins.
-//
-// The burned-in HH:MM stamp (design §5.2 stage 7) was removed 12 Oct 2026:
-// the page's print label carries the time now, and a rendered time on the
-// picture read as a second, different clock (user feedback). The honesty
-// contract moves with it — the label clock is server-received_at, exactly
-// what the stamp was, so the two could never disagree anyway.
-func Pipeline(img image.Image, levels int, cal Calib) ([]byte, error) {
+// Pipeline renders img with the given parameters (styleproof's entry
+// point; the Engine always passes Defaults).
+func Pipeline(img image.Image, levels int, masks []Rect, p Params) ([]byte, error) {
 	g, err := lumaGrid(img)
 	if err != nil {
 		return nil, err
 	}
-	return renderGrid(g, levels, cal)
-}
-
-// renderGrid runs stages 3–7 from an already-built grid, so callers that
-// needed the grid for validation stats (dark/dead-sensor) do not pay for it
-// twice. The grid is the caller's to keep mutating afterwards — renderGrid
-// copies before the blur overwrites anything.
-func renderGrid(g []uint8, levels int, cal Calib) ([]byte, error) {
-	work := append([]uint8(nil), g...)
-	applyMasks(work, cal.Masks)
-	work = blur121(work)
-	q := quant(work, levels, cal.thresholds(), cal.Bias, cal.Invert)
-	q = mode3(q, levels)
-	applyMasks(q, cal.Masks)
-	return encode(q)
+	return encode(tones(g, levels, masks, p), levels)
 }

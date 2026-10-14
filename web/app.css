@@ -68,14 +68,14 @@
    * inline style (which the CSP would reject). */
   .push { margin-left: auto; }
 
-  /* The calibration mask overlay is created by calib.js at RUNTIME
+  /* The calibration mask overlay is created by masks.js at RUNTIME
    * (document.createElementNS), so no Tailwind scanner can generate its
    * positioning as utilities — the W2/B1 shape, which once left every
    * state chip in ink and here left the overlay SVG as a static block
    * below the picture, stretching the preview box with a dead zone.
    * Plain CSS: the overlay must sit exactly on the picture, in grid
-   * cells. calib.js sets no classes; this selector does the work. */
-  #calib-preview svg {
+   * cells. masks.js sets no classes; this selector does the work. */
+  #mask-preview svg {
     position: absolute;
     inset: 0;
     width: 100%;

@@ -9,7 +9,6 @@ package admin
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -60,7 +59,7 @@ func New(st *store.Store, passHash string, secret []byte, secure bool, log *slog
 	// shape resolves a status class to its silhouette (DESIGN.md §3.2). One
 	// source of truth: the fleet, the owner panel and the kit gallery all
 	// render through it, so a class can never gain the wrong shape.
-	funcs := template.FuncMap{"dict": dict, "appCSS": webui.AppPath, "shape": shape}
+	funcs := template.FuncMap{"dict": dict, "appCSS": webui.AppPath, "shape": shape, "inc": func(i int) int { return i + 1 }}
 	tmpl, err := template.New("").Funcs(funcs).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("admin: parse templates: %w", err)
@@ -109,7 +108,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	sub.HandleFunc("GET /admin/venues/{id}", s.require(s.venuePage))
 	sub.HandleFunc("POST /admin/venues/{id}", s.require(s.updateVenue))
 	sub.HandleFunc("POST /admin/venues/{id}/ownerpw", s.require(s.setOwnerPassword))
-	sub.HandleFunc("POST /admin/venues/{id}/calib", s.require(s.setCalib))
+	sub.HandleFunc("POST /admin/venues/{id}/masks", s.require(s.setMasks))
 	sub.HandleFunc("POST /admin/devices", s.require(s.createDevice))
 	sub.HandleFunc("GET /admin/devices/{id}", s.require(s.devicePage))
 	sub.HandleFunc("POST /admin/devices/{id}/cfg", s.require(s.updateDeviceCfg))
@@ -583,13 +582,10 @@ type venueEditModel struct {
 	HasOwner  bool
 	Saved     bool
 	OwnerSet  bool
-	CalibSet  bool
-	Calib     render.Calib
-	// Threshold/bias display strings: "" when unset (a [3]uint8 is always
-	// truthy in a template, so {{if .Calib.T}} would render value="0" for
-	// defaults — and saving that 0 would then fail validation).
-	CalibT [3]string
-	CalibB string
+	MasksSet  bool
+	// Masks are the four form rows as display strings, "" for an empty row
+	// (an int 0 would render value="0" and save as a real coordinate).
+	Masks [render.MaxMasks][4]string
 }
 
 func (s *Server) loadVenue(w http.ResponseWriter, r *http.Request) (*store.Venue, bool) {
@@ -618,17 +614,11 @@ func (s *Server) venuePage(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	cal := store.ParseCalib(v.CalibJSON)
 	m := venueEditModel{Venue: *v, HoursSpec: h.Spec(), Days: venue.EditModel(h, i18n.For(i18n.EN).DayNames()), HasOwner: v.OwnerHash != "",
 		Saved: r.URL.Query().Get("saved") != "", OwnerSet: r.URL.Query().Get("owner") != "",
-		CalibSet: r.URL.Query().Get("calib") != "", Calib: cal}
-	if cal.T != [3]uint8{} {
-		for i, t := range cal.T {
-			m.CalibT[i] = strconv.Itoa(int(t))
-		}
-	}
-	if v.CalibJSON != "" {
-		m.CalibB = strconv.Itoa(cal.Bias)
+		MasksSet: r.URL.Query().Get("masks") != ""}
+	for i, r := range v.Masks {
+		m.Masks[i] = [4]string{strconv.Itoa(r.X0), strconv.Itoa(r.Y0), strconv.Itoa(r.X1), strconv.Itoa(r.Y1)}
 	}
 	if err := s.tmpl.ExecuteTemplate(w, "venue.html", m); err != nil {
 		s.log.Error("admin: render venue", "err", err.Error())
@@ -925,120 +915,51 @@ func shape(cls string) template.HTML {
 	}
 }
 
-// setCalib stores the venue's render calibration from the form (DESIGN.md
-// ⚑5/⚑6). Every field is validated here, in words the installer understands —
-// a bad document never reaches the store, so ParseCalib's fail-open read path
-// is a backstop, not the validator.
-func (s *Server) setCalib(w http.ResponseWriter, r *http.Request) {
+// setMasks stores the venue's privacy masks from the four form rows. Every
+// field is validated here in words the installer understands; an empty row
+// is no mask, a partly filled one is an error.
+func (s *Server) setMasks(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.loadVenue(w, r)
 	if !ok {
 		return
 	}
 	r.ParseForm()
-	num := func(key string, min, max int) (int, string) {
-		raw := strings.TrimSpace(r.FormValue(key))
-		if raw == "" {
-			return 0, ""
-		}
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < min || n > max {
-			return 0, fmt.Sprintf("%s must be a number %d–%d", key, min, max)
-		}
-		return n, ""
-	}
-	var cal render.Calib
-	set := false
-	for i, key := range []string{"t0", "t1", "t2"} {
-		if strings.TrimSpace(r.FormValue(key)) == "" {
-			continue
-		}
-		n, ferr := num(key, 1, 254)
-		if ferr != "" {
-			s.flash(w, ferr)
-			return
-		}
-		cal.T[i] = uint8(n)
-		set = true
-	}
-	if cal.T != [3]uint8{} {
-		if !(cal.T[0] < cal.T[1] && cal.T[1] < cal.T[2]) {
-			s.flash(w, "thresholds must increase: t0 < t1 < t2")
-			return
-		}
-		set = true
-	}
-	if strings.TrimSpace(r.FormValue("bias")) != "" {
-		n, ferr := num("bias", -255, 255)
-		if ferr != "" {
-			s.flash(w, ferr)
-			return
-		}
-		cal.Bias = n
-		set = true
-	}
-	cal.Invert = r.FormValue("invert") == "1"
-	if cal.Invert {
-		set = true
-	}
+	var masks []render.Rect
 	for m := 0; m < render.MaxMasks; m++ {
-		var rect render.Rect
-		any := false
+		var c [4]int
+		filled := 0
 		for j, key := range []string{"x0", "y0", "x1", "y1"} {
 			k := fmt.Sprintf("m%d%s", m, key)
-			if strings.TrimSpace(r.FormValue(k)) == "" {
+			raw := strings.TrimSpace(r.FormValue(k))
+			if raw == "" {
 				continue
 			}
-			any = true
-			max := render.GW
+			filled++
+			hi := render.GW
 			if j%2 == 1 {
-				max = render.GH
+				hi = render.GH
 			}
-			n, ferr := num(k, 0, max)
-			if ferr != "" {
-				s.flash(w, ferr)
+			n, err := strconv.Atoi(raw)
+			if err != nil || n < 0 || n > hi {
+				s.flash(w, fmt.Sprintf("mask %d %s must be a number 0–%d", m+1, key, hi))
 				return
 			}
-			switch j {
-			case 0:
-				rect.X0 = n
-			case 1:
-				rect.Y0 = n
-			case 2:
-				rect.X1 = n
-			case 3:
-				rect.Y1 = n
-			}
+			c[j] = n
 		}
-		if !any {
+		if filled == 0 {
 			continue
 		}
-		if rect.X0 >= rect.X1 || rect.Y0 >= rect.Y1 {
-			s.flash(w, fmt.Sprintf("mask %d is empty: x0<x1 and y0<y1", m+1))
+		rect := render.Rect{X0: c[0], Y0: c[1], X1: c[2], Y1: c[3]}
+		if filled < 4 || rect.X0 >= rect.X1 || rect.Y0 >= rect.Y1 {
+			s.flash(w, fmt.Sprintf("mask %d needs all four numbers with x0<x1 and y0<y1", m+1))
 			return
 		}
-		cal.Masks = append(cal.Masks, rect)
-		set = true
+		masks = append(masks, rect)
 	}
-	cal.Preset = v.Style
-	doc := ""
-	if set {
-		raw, err := json.Marshal(cal)
-		if err != nil {
-			s.internal(w, "marshal calib", err)
-			return
-		}
-		doc = string(raw)
-		// Read back through the same parser the render path uses: the stored
-		// document and the effective calibration cannot disagree.
-		if back := store.ParseCalib(doc); back.Bias != cal.Bias || len(back.Masks) != len(cal.Masks) {
-			s.internal(w, "calib round-trip", fmt.Errorf("stored document does not parse back"))
-			return
-		}
-	}
-	if err := s.st.SetCalib(r.Context(), v.ID, doc); err != nil {
-		s.internal(w, "set calib", err)
+	if err := s.st.SetMasks(r.Context(), v.ID, masks); err != nil {
+		s.internal(w, "set masks", err)
 		return
 	}
-	s.log.Info("admin: calib set", "venue", v.ID, "masks", len(cal.Masks))
-	redirect(w, r, fmt.Sprintf("/admin/venues/%d?calib=1", v.ID))
+	s.log.Info("admin: masks set", "venue", v.ID, "masks", len(masks))
+	redirect(w, r, fmt.Sprintf("/admin/venues/%d?masks=1", v.ID))
 }

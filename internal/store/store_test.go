@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"guzva/internal/render"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -200,8 +201,8 @@ func TestMigrationV1ToV2(t *testing.T) {
 	defer s.Close()
 
 	var ver int
-	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 7 {
-		t.Fatalf("user_version = %d err=%v, want 7", ver, err)
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 8 {
+		t.Fatalf("user_version = %d err=%v, want 8", ver, err)
 	}
 	d, err := s.DeviceBySerial(context.Background(), "esp32-old")
 	if err != nil {
@@ -378,6 +379,43 @@ func TestStaleFramesKeepsLastGoodPerVenue(t *testing.T) {
 	}
 }
 
+// Migration v8 carries v3 masks (160×120 cells inside calib_json) over to
+// masks_json at the 320×240 grid; thresholds/bias are dropped.
+func TestMigrationV8BackfillsMasks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v7.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range migrations[:7] {
+		if _, err := db.Exec(m.sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 7`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO venues (slug, name, created_at, calib_json) VALUES
+		('a', 'A', 0, '{"t":[50,100,150],"bias":4,"masks":[{"x0":10,"y0":20,"x1":30,"y1":40}]}'),
+		('b', 'B', 0, 'not json')`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a, _ := s.VenueBySlug(context.Background(), "a")
+	if len(a.Masks) != 1 || a.Masks[0] != (render.Rect{X0: 20, Y0: 40, X1: 60, Y1: 80}) {
+		t.Errorf("a masks = %v, want one rect scaled ×2", a.Masks)
+	}
+	b, _ := s.VenueBySlug(context.Background(), "b")
+	if b.Masks != nil {
+		t.Errorf("b masks = %v, want none", b.Masks)
+	}
+}
+
 // Migration v3 adds owner_hash; old databases gain the column with existing
 // venues intact and no owner login until the super-admin sets one.
 func TestMigrationToV3(t *testing.T) {
@@ -404,8 +442,8 @@ func TestMigrationToV3(t *testing.T) {
 	}
 	defer s.Close()
 	var ver int
-	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 7 {
-		t.Fatalf("user_version = %d err=%v, want 7", ver, err)
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&ver); err != nil || ver != 8 {
+		t.Fatalf("user_version = %d err=%v, want 8", ver, err)
 	}
 	v, err := s.VenueBySlug(context.Background(), "old")
 	if err != nil {
@@ -416,8 +454,8 @@ func TestMigrationToV3(t *testing.T) {
 	if v.Lang != "hr" {
 		t.Fatalf("venue lang = %q after migrating from v1, want \"hr\"", v.Lang)
 	}
-	if v.CalibJSON != "" {
-		t.Fatalf("venue calib = %q after migrating from v1, want empty (defaults)", v.CalibJSON)
+	if v.Masks != nil {
+		t.Fatalf("venue masks = %v after migrating from v1, want none", v.Masks)
 	}
 	if v.Name != "Old" || v.OwnerHash != "" {
 		t.Fatalf("v1 venue not intact: %+v", v)
@@ -486,10 +524,9 @@ func TestVenueDetailsAndOwner(t *testing.T) {
 // restart after the first boot failed to open the store.
 func TestReopenCurrentDatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "reopen.db")
-	// A fresh database migrates 0→6 in one open; reopens stay at 6.
-	// Every step of the chain must be terminal — a missing case is what
-	// turned a deploy into an outage once.
-	for i, want := range []int{7, 7, 7} {
+	// A fresh database migrates fully in one open; reopens stay there.
+	want := len(migrations)
+	for i := range 3 {
 		s, err := Open(path)
 		if err != nil {
 			t.Fatalf("open #%d: %v", i+1, err)

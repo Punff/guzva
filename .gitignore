@@ -12,7 +12,7 @@ firmware/include/fw_version.h
 
 # Go build output
 dist/
-styleproof
+/styleproof
 
 # Local test data
 mydata/
@@ -28,3 +28,6 @@ tools/bin/
 # Local agent/dev artifacts
 .devbin
 .openchamber/
+
+# Print v4 lab corpus: raw bench frames, local only (docs/print-v4.md §5)
+corpus/

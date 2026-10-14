@@ -104,7 +104,7 @@ func TestProcessNormalizesAndStyles(t *testing.T) {
 	if out.Width != GW || out.Height != GH {
 		t.Errorf("dims = %dx%d, want %dx%d", out.Width, out.Height, GW, GH)
 	}
-	if out.Preset != "poster" || out.PresetVer != 3 {
+	if out.Preset != "poster" || out.PresetVer != 4 {
 		t.Errorf("preset = %s@%d", out.Preset, out.PresetVer)
 	}
 	if !out.ReceivedAt.Equal(testNow) {
@@ -212,7 +212,7 @@ func TestDeterminism100(t *testing.T) {
 // §7 golden render: catches unintended style changes. Regenerate with
 // UPDATE_GOLDEN=1 go test ./internal/render.
 func TestGoldenPoster(t *testing.T) {
-	raw := syntheticFrame(t, 320, 240, 4)
+	raw, _ := os.ReadFile("testdata/hard-scene.jpg")
 	out, err := process(t, testEngine(), raw, "poster")
 	if err != nil {
 		t.Fatal(err)
@@ -221,7 +221,7 @@ func TestGoldenPoster(t *testing.T) {
 }
 
 func TestGoldenMono(t *testing.T) {
-	raw := syntheticFrame(t, 320, 240, 4)
+	raw, _ := os.ReadFile("testdata/hard-scene.jpg")
 	out, err := process(t, testEngine(), raw, "mono")
 	if err != nil {
 		t.Fatal(err)
@@ -250,7 +250,7 @@ func pixelSum(t *testing.T, pngBytes []byte) string {
 	if err != nil {
 		t.Fatalf("decode golden render: %v", err)
 	}
-	// The pipeline emits a paletted PNG (PLAN §7): 160×120, four ramp colours,
+	// The pipeline emits a paletted PNG (PLAN §7): 320×240, ≤ four ramp colours,
 	// a few hundred bytes on disk. Pinning the type keeps the protection the
 	// byte hash happened to give — a silent encoder switch to RGBA would leave
 	// every pixel equal while quadrupling the still's size.
@@ -398,7 +398,7 @@ func TestPresetsDifferAndAgreeOnShape(t *testing.T) {
 	if bytes.Equal(poster.PNG, mono.PNG) {
 		t.Fatal("poster and mono must differ")
 	}
-	if mono.Preset != "mono" || mono.PresetVer != 3 {
+	if mono.Preset != "mono" || mono.PresetVer != 4 {
 		t.Errorf("mono metadata = %s@%d", mono.Preset, mono.PresetVer)
 	}
 }

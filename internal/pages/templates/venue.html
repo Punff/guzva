@@ -85,7 +85,7 @@
         {{if .ShowStill}}
           {{if .HasFrame}}
             <img id="still" src="{{.StillFile}}?v={{.StillVer}}"
-                 width="{{if .StillW}}{{.StillW}}{{else}}160{{end}}" height="{{if .StillH}}{{.StillH}}{{else}}120{{end}}"
+                 width="{{if .StillW}}{{.StillW}}{{else}}320{{end}}" height="{{if .StillH}}{{.StillH}}{{else}}240{{end}}"
                  decoding="async" fetchpriority="high"
                  alt="{{if .Updated}}{{.AltStill}}{{else}}{{.AltNow}}{{end}}"
                  class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">

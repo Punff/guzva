@@ -625,63 +625,51 @@ func TestKitGated(t *testing.T) {
 	}
 }
 
-// Calibration form (DESIGN.md ⚑5/⚑6): valid documents store, invalid ones
-// flash in words, and the stored document parses back through the same
-// parser the render path uses.
-func TestSetCalib(t *testing.T) {
+// Masks form: valid rows store, an empty row is no mask, bad geometry
+// flashes in words, clearing every row removes the masks.
+func TestSetMasks(t *testing.T) {
 	f := newFixture(t, mustHash(t, "sekret"))
 	ck := f.login(t)
 	f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{
 		"slug": {"jadro"}, "name": {"Jadro"}, "style": {"poster"},
 	}, nil), ck, true)
-
 	set := func(v url.Values) *httptest.ResponseRecorder {
-		return f.do(t, http.MethodPost, "/admin/venues/1/calib", v, ck, true)
+		return f.do(t, http.MethodPost, "/admin/venues/1/masks", v, ck, true)
 	}
-	// Thresholds + bias + invert + one mask.
-	w := set(url.Values{
-		"t0": {"70"}, "t1": {"140"}, "t2": {"200"}, "bias": {"-12"},
-		"invert": {"1"}, "m0x0": {"10"}, "m0y0": {"20"}, "m0x1": {"30"}, "m0y1": {"40"},
-	})
-	if w.Header().Get("HX-Redirect") == "" {
-		t.Fatalf("valid calib: no redirect, body %q", w.Body.String())
-	}
-	v, err := f.st.VenueByID(t.Context(), 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cal := store.ParseCalib(v.CalibJSON)
-	if cal.T != [3]uint8{70, 140, 200} || cal.Bias != -12 || !cal.Invert {
-		t.Fatalf("stored calib = %+v", cal)
-	}
-	if len(cal.Masks) != 1 || cal.Masks[0] != (render.Rect{X0: 10, Y0: 20, X1: 30, Y1: 40}) {
-		t.Fatalf("stored masks = %+v", cal.Masks)
+	masks := func() []render.Rect {
+		v, err := f.st.VenueByID(t.Context(), 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v.Masks
 	}
 
-	// Non-monotonic thresholds are refused in words.
-	w = set(url.Values{"t0": {"200"}, "t1": {"100"}, "t2": {"50"}})
-	if !strings.Contains(w.Body.String(), "must increase") {
-		t.Fatalf("bad thresholds accepted: %q", w.Body.String())
-	}
-	// Empty mask rect is refused in words.
-	w = set(url.Values{"m0x0": {"30"}, "m0y0": {"20"}, "m0x1": {"10"}, "m0y1": {"40"}})
-	if !strings.Contains(w.Body.String(), "empty") {
-		t.Fatalf("empty mask accepted: %q", w.Body.String())
-	}
-	// Clearing everything restores defaults.
-	w = set(url.Values{})
+	w := set(url.Values{"m1x0": {"10"}, "m1y0": {"20"}, "m1x1": {"300"}, "m1y1": {"240"}})
 	if w.Header().Get("HX-Redirect") == "" {
-		t.Fatalf("clear calib: no redirect, body %q", w.Body.String())
+		t.Fatalf("valid masks: no redirect, body %q", w.Body.String())
 	}
-	if v, err := f.st.VenueByID(t.Context(), 1); err != nil {
-		t.Fatal(err)
-	} else if v.CalibJSON != "" {
-		t.Fatalf("cleared calib = %q", v.CalibJSON)
+	if m := masks(); len(m) != 1 || m[0] != (render.Rect{X0: 10, Y0: 20, X1: 300, Y1: 240}) {
+		t.Fatalf("stored masks = %+v", m)
 	}
-	// The venue page shows the form with the current values.
+	for _, bad := range []url.Values{
+		{"m0x0": {"30"}, "m0y0": {"20"}, "m0x1": {"10"}, "m0y1": {"40"}}, // inverted
+		{"m0x0": {"30"}, "m0y0": {"20"}},                                 // partial
+		{"m0x0": {"0"}, "m0y0": {"0"}, "m0x1": {"321"}, "m0y1": {"40"}},  // off grid
+	} {
+		if w := set(bad); !strings.Contains(w.Body.String(), "mask 1") {
+			t.Errorf("bad mask %v accepted: %q", bad, w.Body.String())
+		}
+	}
+	if len(masks()) != 1 {
+		t.Fatal("a rejected form changed the stored masks")
+	}
+	set(url.Values{})
+	if m := masks(); m != nil {
+		t.Fatalf("cleared masks = %+v", m)
+	}
 	w = f.do(t, http.MethodGet, "/admin/venues/1", nil, ck, false)
-	if !strings.Contains(w.Body.String(), "Print & privacy setup") {
-		t.Fatal("venue page missing calibration section")
+	if !strings.Contains(w.Body.String(), "Privacy masks") {
+		t.Fatal("venue page missing masks section")
 	}
 }
 
