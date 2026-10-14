@@ -96,6 +96,7 @@ var hr = &Catalog{
 		"live.newpic":    "Nova slika.",
 
 		"venue.about": "O salonu",
+		"venue.call":  "Nazovi",
 
 		"owner.about": "Opis (javno)",
 		"owner.phone": "Telefon (javno)",
@@ -247,6 +248,7 @@ var en = &Catalog{
 		"live.newpic":    "New picture.",
 
 		"venue.about": "About",
+		"venue.call":  "Call",
 
 		"owner.about": "Description (public)",
 		"owner.phone": "Phone (public)",

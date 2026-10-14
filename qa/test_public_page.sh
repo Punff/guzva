@@ -50,11 +50,11 @@ qa_case "the clock is display-scale, not a caption-sized label (round 6)"
 # Tailwind arbitrary values are matched as FIXED strings: qa_has does bash
 # pattern matching, where [2.25rem] is a character class.
 qa_hasf_file "2.25rem base size"          "$HTML" 'id="hl"'
-qa_hasf_file "the hl span carries the display scale" "$HTML" 'text-[2.25rem] leading-none font-bold tnum sm:text-[3rem]" id="hl"'
-qa_hasf_file "tabular figures (a clock must not jitter)" "$HTML" 'tnum sm:text-[3rem]" id="hl"'
-qa_hasf_file "mono (digits align)"        "$HTML" 'font-mono text-[2.25rem]'
+qa_hasf_file "the hl span carries the caption scale" "$HTML" 'text-[1.75rem] leading-none font-bold tnum" id="hl"'
+qa_hasf_file "tabular figures (a clock must not jitter)" "$HTML" 'font-bold tnum" id="hl"'
+qa_hasnt "no monospace (tabular figures do the aligning)" "$(cat "$HTML")" 'class="[^"]*font-mono'
 # The h1 is the SAME two steps — that equality is the round-6 ruling.
-qa_hasf_file "the h1 steps up identically (one type scale)" "$HTML" '<h1 class="text-[2.25rem] leading-10 font-bold tracking-tight sm:text-[3rem]'
+qa_hasf_file "the h1 type scale" "$HTML" '<h1 class="text-[2rem] leading-[1.1] font-extrabold tracking-tight'
 
 qa_case "the clock sits below the print, inside the figure, with the state"
 qa_true "figcaption contains #hl" bash -c \
@@ -197,9 +197,9 @@ qa_has "back to 'Svježa slika'" "$(cat "$HTML")" 'Svježa slika'
 qa_case "semantic landmarks"
 qa_has "<header>" "$(cat "$HTML")" '<header'
 qa_has "<footer>" "$(cat "$HTML")" '<footer'
-qa_has "<h1> is the venue name, display-scale" "$(cat "$HTML")" '<h1 class="text-[2.25rem]'
-qa_has "<section> for hours" "$(cat "$HTML")" '<section class="border-2'
-qa_has "section headings are h2" "$(cat "$HTML")" '<h2 class="text-sm'
+qa_hasf_file "<h1> is the venue name, display-scale" "$HTML" '<h1 class="text-[2rem]'
+qa_has "hours are a native disclosure (works without JS)" "$(cat "$HTML")" '<details'
+qa_has "the disclosure carries a visible label" "$(cat "$HTML")" '<summary'
 qa_has "<figure>/<figcaption> for the print" "$(cat "$HTML")" '<figcaption'
 
 qa_case "the still has real alt text (not a filename)"

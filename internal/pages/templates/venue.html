@@ -62,62 +62,49 @@
     <span class="ml-auto text-sm text-muted">{{.Tagline}}</span>
   </header>
 
-  <h1 class="text-[2.25rem] leading-10 font-bold tracking-tight sm:text-[3rem] sm:leading-12 break-words">{{.Name}}</h1>
+  <h1 class="text-[2rem] leading-[1.1] font-extrabold tracking-tight break-words sm:text-[2.5rem]">{{.Name}}</h1>
+  {{if .OpenText}}<p class="-mt-2 text-base">{{.OpenText}}</p>{{end}}
 
-  {{/* The status row (mockup ruling 3): the state chip and the open state
-       as plain text beside it — the state is a fact, the open state its
-       consequence; they read together, above the print they describe. */}}
-  <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-    <span class="chip chip--lg" id="chip-{{.StateClass}}">
-      <span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}
-    </span>
-    {{if .OpenText}}<p class="text-base">{{.OpenText}}</p>{{end}}
-  </div>
-
-  <!-- THE PRINT (design-pass2 §1, mockup ruling 4): a mounted print —
-       hard border, paper mat, step shadow. The picture carries no clock
-       of its own: the label below is the page's one and only time. -->
-  <figure class="flex flex-col gap-2">
-    <div class="border-2 border-ink bg-paper-2 p-0.5 min-[400px]:p-3 shadow-step">
-      <div class="relative bg-s3"
-           id="frame"
-           style="aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}}">
-        {{if .ShowStill}}
-          {{if .HasFrame}}
-            <img id="still" src="{{.StillFile}}?v={{.StillVer}}"
-                 width="{{if .StillW}}{{.StillW}}{{else}}320{{end}}" height="{{if .StillH}}{{.StillH}}{{else}}240{{end}}"
-                 decoding="async" fetchpriority="high"
-                 alt="{{if .Updated}}{{.AltStill}}{{else}}{{.AltNow}}{{end}}"
-                 class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
-            {{/* Late / no-signal overlays are CSS only — the picture itself is
-                 never altered (§5.6). */}}
-            {{if eq .StateClass "late"}}<div class="absolute inset-0 tx-hatch-light pointer-events-none" aria-hidden="true"></div>{{end}}
-            {{if eq .StateClass "nosignal"}}<div class="absolute inset-0 tx-hatch" aria-hidden="true"></div>{{end}}
-          {{else}}
-            <div class="absolute inset-0 tx-dither" aria-hidden="true"></div>
-          {{end}}
+  {{/* THE WINDOW (four-inks pass, 14 Oct 2026): the picture sits in a band
+       of its own deep-blue ink — full-bleed on phones, framed on desktop —
+       at exact 1:1 / 2× scale, with its caption printed in paper type: the
+       time the picture was taken and its state. The one bold element on
+       the page; everything below stays quiet. */}}
+  <figure class="-mx-4 bg-s1 text-paper px-4 pt-4 pb-3 sm:mx-0 sm:border-2 sm:border-ink">
+    <div class="relative mx-auto max-w-full w-[320px] md:w-[640px] bg-s3"
+         id="frame"
+         style="aspect-ratio: {{if .StillW}}{{.StillW}} / {{.StillH}}{{else}}4 / 3{{end}}">
+      {{if .ShowStill}}
+        {{if .HasFrame}}
+          <img id="still" src="{{.StillFile}}?v={{.StillVer}}"
+               width="{{if .StillW}}{{.StillW}}{{else}}320{{end}}" height="{{if .StillH}}{{.StillH}}{{else}}240{{end}}"
+               decoding="async" fetchpriority="high"
+               alt="{{if .Updated}}{{.AltStill}}{{else}}{{.AltNow}}{{end}}"
+               class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
+          {{/* Late / no-signal overlays are CSS only — the picture itself is
+               never altered (§5.6). */}}
+          {{if eq .StateClass "late"}}<div class="absolute inset-0 tx-hatch-light pointer-events-none" aria-hidden="true"></div>{{end}}
+          {{if eq .StateClass "nosignal"}}<div class="absolute inset-0 tx-hatch" aria-hidden="true"></div>{{end}}
         {{else}}
-          <!-- Closed: no still at all. Privacy after hours, honesty, bytes. -->
-          <div class="absolute inset-0 tx-shutter" aria-hidden="true"></div>
+          <div class="absolute inset-0 tx-dither" aria-hidden="true"></div>
         {{end}}
-      </div>
+      {{else}}
+        <!-- Closed: no still at all. Privacy after hours, honesty, bytes. -->
+        <div class="absolute inset-0 tx-shutter" aria-hidden="true"></div>
+      {{end}}
     </div>
-    {{/* The page's ONE clock: the poller's live time below the print, and
-         the page's live region — a new time is announced with the state
-         above. (A second, in-frame clock was removed: one time, one place.)
-         Display-size mono, flush with the print border — the clock carries
-         the weight the removed badge used to (mockup round 6). */}}
-    <figcaption class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1"
+    {{/* The caption: the page's ONE clock (the poller rewrites #hl from the
+         still's Last-Modified) and the state it describes, as a live region. */}}
+    <figcaption class="mx-auto max-w-full w-[320px] md:w-[640px] mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
                 role="status" aria-live="polite">
-      <span class="font-mono text-[2.25rem] leading-none font-bold tnum sm:text-[3rem]" id="hl">
+      <span class="text-[1.75rem] leading-none font-bold tnum" id="hl">
         {{if .ShowStill}}{{if .Updated}}{{.Updated}}{{else}}—{{end}}{{else}}—{{end}}
+      </span>
+      <span class="chip chip--lg text-ink" id="chip-{{.StateClass}}">
+        <span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}
       </span>
     </figcaption>
   </figure>
-
-  {{/* The stale detail stands alone under the print: it is the honest
-       sentence for old frames, not a second caption. The open state lives
-       in the info card below — one surface, not two. */}}
 
   <p id="banner" class="hidden text-sm border-2 border-ink bg-paper-2 px-3 py-2" role="alert"></p>
   <p id="idle" class="hidden text-sm text-muted">
@@ -126,38 +113,38 @@
   </p>
 
   {{if .StateDetail}}
-  <p class="text-sm text-muted border-l-2 border-ink pl-3">{{.StateDetail}}</p>
+  <p class="text-sm text-muted">{{.StateDetail}}</p>
   {{end}}
 
-  {{/* The hours card (mockup ruling 6): its own bordered card, a
-       letterspaced heading, and the week in rows — day left, mono times
-       right. Closed days gray out with a dash; today's row (venue-local
-       weekday, TodayIdx) goes bold with "· danas" and aria-current. */}}
+  {{/* Today's hours on one line; the week behind a native disclosure (no
+       JS). Today's row stays marked with aria-current inside it. */}}
   {{if .HoursToday}}
-  <section class="border-2 border-ink bg-paper-2 p-4">
-    <h2 class="text-sm font-semibold uppercase tracking-[0.15em] text-muted mb-3">{{.HoursTitle}}</h2>
-    <ul class="grid gap-2">
+  <details class="pt-1">
+    <summary class="flex min-h-11 cursor-pointer items-center justify-between gap-3">
+      <span><span class="font-bold capitalize">{{.StrToday}}</span> <span class="tnum">{{.HoursToday}}</span></span>
+      <span class="text-sm text-s1 underline">{{.HoursTitle}}</span>
+    </summary>
+    <ul class="mt-2 grid gap-1.5">
       {{range $i, $c := .Week}}
-      <li class="flex items-baseline justify-between gap-3 text-base{{if $c.Closed}} text-muted{{end}}{{if eq $.TodayIdx $i}} font-bold{{end}}"{{if eq $.TodayIdx $i}} aria-current="date"{{end}}>
-        <span>{{$c.Name}}{{if eq $.TodayIdx $i}} · {{$.StrToday}}{{end}}</span>
-        {{if $c.Closed}}<span aria-hidden="true">—</span>{{else}}<span class="font-mono tnum">{{$c.Text}}</span>{{end}}
+      <li class="flex items-baseline justify-between gap-3{{if $c.Closed}} text-muted{{end}}{{if eq $.TodayIdx $i}} font-bold{{end}}"{{if eq $.TodayIdx $i}} aria-current="date"{{end}}>
+        <span>{{$c.Name}}{{if eq $.TodayIdx $i}} <span class="text-sm font-normal text-s1">({{$.StrToday}})</span>{{end}}</span>
+        {{if $c.Closed}}<span aria-hidden="true">—</span>{{else}}<span class="tnum">{{$c.Text}}</span>{{end}}
       </li>
       {{end}}
     </ul>
-  </section>
+  </details>
   {{end}}
-  {{/* The INFO card (mockup ruling 7): no call button — the number is a
-       tel: link inside the same card treatment as the hours: contact,
-       where we are, one sentence about the place. Heading rides the
-       existing "about" key. Rows render only when they have content. */}}
-  {{if or .Phone .Location .Description}}
-  <section class="border-2 border-ink bg-paper-2 p-4 flex flex-col gap-2">
-    <h2 class="text-sm font-semibold uppercase tracking-[0.15em] text-muted">{{.AboutTitle}}</h2>
-    {{if .Phone}}
-    <a class="text-base font-semibold underline min-h-11 flex items-center" href="tel:{{.PhoneHref}}">{{.Phone}}</a>
-    {{end}}
-    {{if .Location}}<p class="text-base">{{.Location}}</p>{{end}}
-    {{if .Description}}<p class="text-base">{{.Description}}</p>{{end}}
+
+  {{/* Contact: the number is the action a guest at the door takes, so it is
+       a full-width call button; where and what follow as plain text. */}}
+  {{if .Phone}}
+  <a class="btn btn--block bg-ink text-paper" href="tel:{{.PhoneHref}}">{{.StrCall}} {{.Phone}}</a>
+  {{end}}
+  {{if or .Location .Description}}
+  <section class="flex flex-col gap-1">
+    <h2 class="font-bold">{{.AboutTitle}}</h2>
+    {{if .Location}}<p>{{.Location}}</p>{{end}}
+    {{if .Description}}<p class="text-muted">{{.Description}}</p>{{end}}
   </section>
   {{end}}
 
@@ -166,7 +153,6 @@
        there is no privacy target to link to, and inventing one would be
        a backend route, not a template. */}}
   <footer class="mt-auto pt-4 text-xs text-muted">
-    <div class="h-2 tx-hatch mb-3" aria-hidden="true"></div>
     <p>{{.PrivacyLine}}</p>
   </footer>
 </div>

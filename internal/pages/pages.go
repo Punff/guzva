@@ -145,6 +145,7 @@ type view struct {
 	// second hand-written dictionary (W2: one catalog, internal/i18n).
 	StrOffline, StrIdle, StrResume    string
 	StrNewPic, StrToday, StrYesterday string
+	StrCall                           string // "Nazovi" — the phone button's verb
 
 	// DESIGN.md §3.2: a state is a SHAPE, a COLOUR and a SENTENCE. Colour is
 	// never the only signal, so all three travel together.
@@ -286,6 +287,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		StrResume:    cat.Get("idle.resume"),
 		StrNewPic:    cat.Get("live.newpic"),
 		StrToday:     cat.Get("when.today"),
+		StrCall:      cat.Get("venue.call"),
 		StrYesterday: cat.Get("when.yesterday"),
 	}
 	if vw.HasFrame {
