@@ -202,6 +202,13 @@ const schemaV8 = `
 ALTER TABLE venues ADD COLUMN masks_json TEXT NOT NULL DEFAULT '';
 `
 
+// schemaV9 retires the remote device config (print v4: the camera profile
+// is frozen in firmware). The cfg_* columns stay, unused, so a restore of an
+// older backup still opens; profile records what the device reports.
+const schemaV9 = `
+ALTER TABLE devices ADD COLUMN profile TEXT NOT NULL DEFAULT '';
+`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []struct {
 	sql  string
@@ -210,6 +217,7 @@ var migrations = []struct {
 	{sql: schemaV1}, {sql: schemaV2}, {sql: schemaV3}, {sql: schemaV4},
 	{sql: schemaV5}, {sql: schemaV6}, {sql: schemaV7},
 	{sql: schemaV8, post: backfillMasks},
+	{sql: schemaV9},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -518,57 +526,36 @@ func (s *Store) DevicesByVenue(ctx context.Context, venueID int64) ([]Device, er
 
 // Device is the device-plane entity.
 type Device struct {
-	ID            int64
-	VenueID       int64
-	Serial        string
-	Status        string // active | revoked
-	FW            string
-	RSSI          int
-	FreeHeap      int
-	Counters      proto.Counters
-	CfgVer        int
-	CfgIntervalS  int
-	CfgQuality    int
-	CfgExtra      map[string]int // operator-set sensor keys (cfg_json), may be nil
-	CfgAppliedVer int
-	LastSeenAt    time.Time
-	LastReason    string
-	CreatedAt     time.Time
-}
-
-// DesiredCfg is what the server tells the device to run (piggybacked on
-// every ingest response): cadence trio from the columns, sensor keys from
-// cfg_json. Extra is shared with the struct — callers must not mutate it.
-func (d *Device) DesiredCfg() proto.DesiredCfg {
-	return proto.DesiredCfg{
-		Ver: d.CfgVer, IntervalS: d.CfgIntervalS, Quality: d.CfgQuality,
-		Extra: d.CfgExtra,
-	}
+	ID         int64
+	VenueID    int64
+	Serial     string
+	Status     string // active | revoked
+	FW         string
+	RSSI       int
+	FreeHeap   int
+	Counters   proto.Counters
+	Profile    string // camera profile the firmware was built with (print v4)
+	LastSeenAt time.Time
+	LastReason string
+	CreatedAt  time.Time
 }
 
 const deviceCols = `id, venue_id, serial, status, fw, rssi, free_heap,
 	boot, brownout, join_fail, post_fail, tls_fail, capture_fail,
-	cfg_ver, cfg_interval_s, cfg_quality, cfg_json, cfg_applied_ver, last_seen_at, last_reason, created_at`
+	profile, last_seen_at, last_reason, created_at`
 
 func scanDevice(row interface{ Scan(...any) error }) (*Device, error) {
 	var d Device
 	var seen, created int64
-	var cfgJSON string
 	err := row.Scan(&d.ID, &d.VenueID, &d.Serial, &d.Status, &d.FW, &d.RSSI, &d.FreeHeap,
 		&d.Counters.Boot, &d.Counters.Brownout, &d.Counters.JoinFail, &d.Counters.PostFail,
 		&d.Counters.TLSFail, &d.Counters.CaptureFail,
-		&d.CfgVer, &d.CfgIntervalS, &d.CfgQuality, &cfgJSON, &d.CfgAppliedVer,
-		&seen, &d.LastReason, &created)
+		&d.Profile, &seen, &d.LastReason, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: scan device: %w", err)
-	}
-	if cfgJSON != "" {
-		if err := json.Unmarshal([]byte(cfgJSON), &d.CfgExtra); err != nil {
-			return nil, fmt.Errorf("store: parse cfg_json: %w", err)
-		}
 	}
 	d.LastSeenAt = fromTS(seen)
 	d.CreatedAt = fromTS(created)
@@ -582,14 +569,10 @@ func (s *Store) CreateDevice(ctx context.Context, d Device, tokenHash string) (i
 	if status == "" {
 		status = "active"
 	}
-	cfgJSON, err := marshalCfgExtra(d.CfgExtra)
-	if err != nil {
-		return 0, err
-	}
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO devices (venue_id, serial, token_hash, status, cfg_ver, cfg_interval_s, cfg_quality, cfg_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		d.VenueID, d.Serial, tokenHash, status, d.CfgVer, d.CfgIntervalS, d.CfgQuality, cfgJSON, ts(time.Now()))
+		INSERT INTO devices (venue_id, serial, token_hash, status, created_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		d.VenueID, d.Serial, tokenHash, status, ts(time.Now()))
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return 0, ErrSerialTaken
@@ -600,7 +583,7 @@ func (s *Store) CreateDevice(ctx context.Context, d Device, tokenHash string) (i
 }
 
 // DeviceBySerial resolves a device by its serial (admin label, §4). Used by
-// the offline `guzva cfg` tooling; ingest never sees a serial.
+// the offline CLI; ingest never sees a serial.
 func (s *Store) DeviceBySerial(ctx context.Context, serial string) (*Device, error) {
 	return scanDevice(s.db.QueryRowContext(ctx,
 		`SELECT `+deviceCols+` FROM devices WHERE serial = ?`, serial))
@@ -625,13 +608,13 @@ func (s *Store) DeviceByTokenHash(ctx context.Context, tokenHash string) (*Devic
 // Beat is the health portion of one ingest (always applied, even for
 // health-only beats and quarantined frames — liveness is not freshness).
 type Beat struct {
-	FW            string
-	RSSI          int
-	FreeHeap      int
-	Counters      proto.Counters
-	CfgAppliedVer int
-	Reason        string
-	At            time.Time
+	FW       string
+	RSSI     int
+	FreeHeap int
+	Counters proto.Counters
+	Profile  string
+	Reason   string
+	At       time.Time
 }
 
 // UpdateDeviceBeat records the health headers of one ingest.
@@ -639,54 +622,28 @@ func (s *Store) UpdateDeviceBeat(ctx context.Context, deviceID int64, b Beat) er
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE devices SET fw = ?, rssi = ?, free_heap = ?,
 			boot = ?, brownout = ?, join_fail = ?, post_fail = ?, tls_fail = ?, capture_fail = ?,
-			cfg_applied_ver = ?, last_seen_at = ?, last_reason = ?
+			profile = ?, last_seen_at = ?, last_reason = ?
 		WHERE id = ?`,
 		b.FW, b.RSSI, b.FreeHeap,
 		b.Counters.Boot, b.Counters.Brownout, b.Counters.JoinFail,
 		b.Counters.PostFail, b.Counters.TLSFail, b.Counters.CaptureFail,
-		b.CfgAppliedVer, ts(b.At), b.Reason, deviceID)
+		b.Profile, ts(b.At), b.Reason, deviceID)
 	return err
 }
 
-// SetDeviceCfg applies a full desired-config change (device plane, §1): the
-// cadence trio updates its columns and every other validated key lands in
-// cfg_json. cfg.Ver must already be the NEW version (the caller bumps it) —
-// ver is the read-back contract with the device. The audit trail is a slog
-// line at the caller — v3.1 dropped settings_log (§6.2 "changes are slog
-// audit lines").
-func (s *Store) SetDeviceCfg(ctx context.Context, deviceID int64, cfg proto.DesiredCfg) error {
-	cfgJSON, err := marshalCfgExtra(cfg.Extra)
-	if err != nil {
-		return err
+// LastReject returns the venue's most recent quarantined frame (reason and
+// when), or ErrNotFound. The admin device page shows it so "why is the
+// print stale?" is answered without the journal.
+func (s *Store) LastReject(ctx context.Context, venueID int64) (string, time.Time, error) {
+	var reason string
+	var at int64
+	err := s.db.QueryRowContext(ctx, `SELECT reason, received_at FROM frames
+		WHERE venue_id = ? AND status = 'quarantined' ORDER BY received_at DESC, id DESC LIMIT 1`,
+		venueID).Scan(&reason, &at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", time.Time{}, ErrNotFound
 	}
-	_, err = s.db.ExecContext(ctx, `
-		UPDATE devices SET cfg_ver = ?, cfg_interval_s = ?, cfg_quality = ?, cfg_json = ? WHERE id = ?`,
-		cfg.Ver, cfg.IntervalS, cfg.Quality, cfgJSON, deviceID)
-	return err
-}
-
-// marshalCfgExtra renders the sensor-key map for cfg_json. The cadence trio
-// lives in typed columns; if a caller puts one in Extra anyway it is dropped
-// here so the column cannot drift from the columns.
-func marshalCfgExtra(extra map[string]int) (string, error) {
-	if len(extra) == 0 {
-		return "", nil
-	}
-	m := make(map[string]int, len(extra))
-	for k, v := range extra {
-		if k == "ver" || k == "interval_s" || k == "quality" {
-			continue
-		}
-		m[k] = v
-	}
-	if len(m) == 0 {
-		return "", nil
-	}
-	b, err := json.Marshal(m)
-	if err != nil {
-		return "", fmt.Errorf("store: marshal cfg_json: %w", err)
-	}
-	return string(b), nil
+	return reason, fromTS(at), err
 }
 
 // SetDeviceStatus flips a device between active and revoked (admin revoke).

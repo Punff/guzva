@@ -257,7 +257,7 @@ qa_page_url() { echo "${QA_BASE}/${QA_SLUG}/"; }
 
 # qa_meta <capture_id> — a valid meta part (proto-v1 §meta).
 qa_meta() {
-  printf '{"capture_id":"%s","fw":"qa-0","rssi":-60,"free_heap":150000,"cfg_ver_applied":1,"counters":{"boot":3,"brownout":0}}' "$1"
+  printf '{"capture_id":"%s","fw":"qa-0","rssi":-60,"free_heap":150000,"profile":"qa","counters":{"boot":3,"brownout":0}}' "$1"
 }
 
 # qa_cid [n] — a valid C<boot>-<ctr>-<rand4> id, unique per call.

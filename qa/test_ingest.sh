@@ -34,7 +34,7 @@ F="$QA_FIX"
 qa_case "201 stored — the good frame is accepted and lands on disk"
 r="$(qa_post "$F/good.jpg")"
 qa_eq "status"                   "$(qa_status "$r")" "201"
-qa_has "body carries desired_cfg" "$(qa_body "$r")" '"desired_cfg"'
+qa_hasnt "no desired_cfg (print v4)" "$(qa_body "$r")" '"desired_cfg"'
 qa_has "body carries next_s"       "$(qa_body "$r")" '"next_s"'
 qa_has "body carries server_time"  "$(qa_body "$r")" '"server_time"'
 qa_hasnt "no reason on an accept"  "$(qa_body "$r")" '"reason"'
@@ -57,7 +57,7 @@ qa_eq "retry post" "$(qa_status "$r2")" "409"
 qa_eq "retry body is the same shape as the 201 (proto §409)" \
   "$(qa_body "$r1" | sed 's/"server_time":"[^"]*"/T/')" \
   "$(qa_body "$r2" | sed 's/"server_time":"[^"]*"/T/')"
-qa_has "409 still carries desired_cfg" "$(qa_body "$r2")" '"desired_cfg"'
+qa_has "409 still carries next_s" "$(qa_body "$r2")" '"next_s"'
 
 qa_case "201 health-only beat (no frame part — the camera-degraded path)"
 r="$(qa_post -)"
@@ -72,7 +72,7 @@ code="$(curl -sS -o "$mf.body" -w '%{http_code}' -X POST "${QA_BASE}/v1/ingest" 
   -F "meta=@${mf};type=application/json" -F "frame=@${F}/good.jpg")"
 qa_eq "status" "$code" "401"
 qa_has "error body" "$(cat "$mf.body")" '"error"'
-qa_hasnt "no desired_cfg leaked to an unauthenticated caller" "$(cat "$mf.body")" 'desired_cfg'
+qa_hasnt "no next_s leaked to an unauthenticated caller" "$(cat "$mf.body")" 'next_s'
 rm -f "$mf" "$mf.body"
 
 qa_case "401 with no Authorization header at all"
@@ -91,7 +91,7 @@ qa_eq "status" "$code" "405"
 # assert_reject <fixture> <expected reason> <label>
 # The body MUST carry the reason (that is what the firmware's dark-loop
 # escalation and the admin device board key off) AND still carry
-# desired_cfg, so a device on a 422 still knows its cadence.
+# next_s, so a device on a 422 still knows its cadence.
 assert_reject() {
   local fx="$1" want="$2" label="$3"
   local r
@@ -99,7 +99,6 @@ assert_reject() {
   qa_eq "$label: status"               "$(qa_status "$r")" "422"
   qa_has "$label: reason == $want"     "$(qa_body "$r")" "\"reason\":\"${want}\""
   qa_has "$label: cadence hint next_s" "$(qa_body "$r")" '"next_s"'
-  qa_has "$label: device keeps config" "$(qa_body "$r")" '"desired_cfg"'
 }
 
 qa_case "422 dims — 1:1 (THE 11:44 INCIDENT: framesize=0 → 96×96)"

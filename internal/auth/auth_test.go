@@ -49,7 +49,6 @@ func seedDevice(t *testing.T, status string) (*store.Store, string) {
 	const hash = "aabbcc"
 	if _, err := st.CreateDevice(ctx, store.Device{
 		VenueID: vid, Serial: "s1", Status: status,
-		CfgVer: 1, CfgIntervalS: 60, CfgQuality: 18,
 	}, hash); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +71,6 @@ func TestAuthenticate(t *testing.T) {
 	}
 	if _, err := st.CreateDevice(ctx, store.Device{
 		VenueID: vid.ID, Serial: "s2",
-		CfgVer: 1, CfgIntervalS: 60, CfgQuality: 18,
 	}, HashToken("secret-token")); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +100,6 @@ func TestAuthenticate(t *testing.T) {
 	// Revoked tokens answer 401 too (§4) — seed a revoked device.
 	if _, err := st.CreateDevice(ctx, store.Device{
 		VenueID: vid.ID, Serial: "s3", Status: "revoked",
-		CfgVer: 1, CfgIntervalS: 60, CfgQuality: 18,
 	}, HashToken("revoked-token")); err != nil {
 		t.Fatal(err)
 	}

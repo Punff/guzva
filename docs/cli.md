@@ -39,7 +39,7 @@ bearer token **exactly once**. The server stores only its sha256.
 
 ```
 guzva provision -slug jadro -name "Jadro" [-style poster|mono] \
-  [-tz Europe/Sarajevo] [-interval 60] [-quality 18] \
+  [-tz Europe/Sarajevo] \
   [-hours "Mo-Fr 09:00-17:00;Sa 10:00-14:00"] \
   [-serial bd2a58] [-token <existing>] [-devices N] [-data /var/lib/guzva]
 ```
@@ -58,21 +58,8 @@ guzva provision -slug jadro -name "Jadro" [-style poster|mono] \
   re-flash). Mutually exclusive with `-devices`.
 - `-devices`: mint N devices for the fakecam gate harness (§6.1).
 
-## guzva cfg
-
-Shows or changes a device's `desired_cfg` — the 22-key device plane of
-`docs/proto-v1.md`. Takes effect on the device's next POST; every change
-bumps `ver`, which the board echoes back as `cfg_ver_applied` (an amber
-read-back on the fleet board until it does).
-
-```
-guzva cfg -serial bd2a58 -data /var/lib/guzva                 # show
-guzva cfg -serial bd2a58 -set framesize=5,led_pwm=80          # change
-```
-
-Keys and ranges are the same table the admin form uses; out-of-range values
-are rejected before they can reach a field unit. `guzva cfg` with no `-set`
-lists every settable key.
+There is no `guzva cfg` any more (print v4): the camera profile is frozen in
+firmware, so changing it means a new firmware build, not a server setting.
 
 ## guzva hashpw
 

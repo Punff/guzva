@@ -30,7 +30,6 @@ Commands:
   serve       run the server: device ingest + public pages + consoles
               (the systemd unit runs exactly this)
   provision   create a venue + device, print the device token once
-  cfg         show or change a device's desired_cfg (22 keys, proto-v1)
   hashpw      bcrypt-hash a password for GUZVA_ADMIN_HASH
   version     print the build version (same stamp /healthz reports)
   help        this usage
@@ -51,8 +50,6 @@ func run(args []string) int {
 		return serveMain(args[1:])
 	case "provision":
 		return provisionMain(args[1:])
-	case "cfg":
-		return cfgMain(args[1:])
 	case "hashpw":
 		return hashpwMain(args[1:])
 	case "version":

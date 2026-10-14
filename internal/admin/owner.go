@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -174,21 +173,7 @@ func (s *Server) ownerDash(w http.ResponseWriter, r *http.Request, v *store.Venu
 	}
 
 	for _, d := range devs {
-		dv := deviceView{
-			ID: d.ID, Serial: d.Serial, Status: d.Status, FW: d.FW, RSSI: d.RSSI,
-			SeenAge: age(now, d.LastSeenAt), Counters: d.Counters,
-			CfgVer: d.CfgVer, CfgApplied: d.CfgAppliedVer,
-			Amber: d.Status == "active" && d.CfgAppliedVer != d.CfgVer,
-		}
-		// A board that has never checked in has no reading; "0 dBm" would read
-		// as a perfect signal (same rule as the fleet board).
-		if d.LastSeenAt.IsZero() {
-			dv.RSSIText = "—"
-		} else {
-			dv.RSSIText = fmt.Sprintf("%d dBm", d.RSSI)
-			dv.Weak = d.RSSI <= InstallGateRSSI
-		}
-		m.Devices = append(m.Devices, dv)
+		m.Devices = append(m.Devices, newDeviceView(d, now))
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

@@ -2,7 +2,7 @@
 //
 //	ip-floor → auth → per-device limit → body cap → disk gate → parse meta →
 //	idempotency check → render.Process → write file + row in one logical
-//	step → update freshness → respond with desired_cfg
+//	step → update freshness → respond with next_s
 //
 // Bounded work: the render engine's global semaphore caps concurrent
 // Process calls; the http.Server's Read/Write timeouts (set in main) stop
@@ -111,12 +111,12 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 
 	// respond is THE exit path for 201/409/422: it logs one line (Info for
 	// accepted outcomes, Warn for rejects) and then writes the canonical
-	// body. All of these statuses carry desired_cfg (§4). The reject reason
+	// body. All of these statuses carry next_s (§4). The reject reason
 	// goes into the journal too — a 422 that only lives in quarantine.jsonl
 	// is invisible to whoever is on support.
 	respond := func(status int, reason string, meanLuma float64) {
 		s.logOutcome(status, dev, meta, r.TLS, renderMS, reason, meanLuma)
-		s.writeResp(w, status, s.response(dev, reason))
+		s.writeResp(w, status, s.response(reason))
 	}
 
 	// Per-IP floor first — a deliberate refinement of the §6.1 order:
@@ -185,11 +185,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 			// zeros, and a zero beat would overwrite good readings with lies
 			// on the fleet board (the meta-parsed check, not field sniffing).
 			if reason == proto.ReasonBadCaptureID {
-				if berr := s.st.UpdateDeviceBeat(ctx, dev.ID, store.Beat{
-					FW: meta.FW, RSSI: meta.RSSI, FreeHeap: int(meta.FreeHeap),
-					Counters: meta.Counters, CfgAppliedVer: meta.CfgVerApplied,
-					Reason: meta.Reason, At: s.now().UTC(),
-				}); berr != nil {
+				if berr := s.st.UpdateDeviceBeat(ctx, dev.ID, beatOf(meta, s.now().UTC())); berr != nil {
 					s.log.Error("beat update failed", "err", berr.Error())
 				}
 			}
@@ -237,11 +233,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	beat := store.Beat{
-		FW: meta.FW, RSSI: meta.RSSI, FreeHeap: int(meta.FreeHeap),
-		Counters: meta.Counters, CfgAppliedVer: meta.CfgVerApplied,
-		Reason: meta.Reason, At: now,
-	}
+	beat := beatOf(meta, now)
 
 	// Idempotency (§1): a retry answers 409 with the same body as a 201.
 	exists, err := s.st.FrameExists(ctx, dev.VenueID, meta.CaptureID)
@@ -512,15 +504,18 @@ func readCap(r io.Reader, max int64) ([]byte, error) {
 	return b, nil
 }
 
+// beatOf is the health portion of one parsed meta.
+func beatOf(meta proto.Meta, at time.Time) store.Beat {
+	return store.Beat{
+		FW: meta.FW, RSSI: meta.RSSI, FreeHeap: int(meta.FreeHeap),
+		Counters: meta.Counters, Profile: meta.Profile, Reason: meta.Reason, At: at,
+	}
+}
+
 // response builds the canonical ingest body (§4). 201 and 409 share this
 // construction, so a retry sees the same payload shape as a store.
-func (s *Server) response(dev *store.Device, reason string) proto.Response {
-	return proto.Response{
-		DesiredCfg: dev.DesiredCfg(),
-		NextS:      dev.CfgIntervalS,
-		ServerTime: s.now().UTC(),
-		Reason:     reason,
-	}
+func (s *Server) response(reason string) proto.Response {
+	return proto.Response{NextS: proto.IntervalS, ServerTime: s.now().UTC(), Reason: reason}
 }
 
 // quarantine writes the two headers-only records of §7: a frames row with

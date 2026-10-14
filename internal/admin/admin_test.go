@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	"guzva/internal/auth"
-	"guzva/internal/proto"
 	"guzva/internal/render"
 	"guzva/internal/store"
 )
@@ -483,7 +481,8 @@ func TestSuperAdminEdits(t *testing.T) {
 		t.Fatal("stored hash does not verify")
 	}
 
-	// Device page + config edit via the web (same gate as `guzva cfg`).
+	// Device page: read-only health (the camera profile is frozen in
+	// firmware, print v4) — no config form, no config route.
 	w = f.do(t, http.MethodPost, "/admin/devices", url.Values{
 		"venue_id": {"1"}, "serial": {"cam1"},
 	}, ck, true)
@@ -491,56 +490,19 @@ func TestSuperAdminEdits(t *testing.T) {
 		t.Fatalf("mint: %q", w.Body.String())
 	}
 	w = f.do(t, http.MethodGet, "/admin/devices/1", nil, ck, false)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "cfg_interval_s") {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "cam1") || strings.Contains(w.Body.String(), "cfg_") {
 		t.Fatalf("device page = %d", w.Code)
 	}
-	w = f.do(t, http.MethodPost, "/admin/devices/1/cfg", url.Values{
-		"cfg_interval_s": {"45"}, "cfg_quality": {"12"},
-		"cfg_framesize": {"5"}, "cfg_led_pwm": {"80"},
-	}, ck, true)
-	if w.Header().Get("HX-Redirect") == "" {
-		t.Fatalf("set cfg = %q", w.Body.String())
-	}
-	d, _ := f.st.DeviceBySerial(ctx, "cam1")
-	if d.CfgVer != 2 || d.CfgIntervalS != 45 || d.CfgQuality != 12 ||
-		d.CfgExtra["framesize"] != 5 || d.CfgExtra["led_pwm"] != 80 {
-		t.Fatalf("cfg = %+v extra=%v", d, d.CfgExtra)
-	}
-
-	// Out-of-range and non-integer values are rejected, nothing saved.
-	w = f.do(t, http.MethodPost, "/admin/devices/1/cfg", url.Values{
-		"cfg_interval_s": {"45"}, "cfg_led_pwm": {"999"},
-	}, ck, true)
-	if !strings.Contains(w.Body.String(), "out of range") {
-		t.Fatalf("range = %q", w.Body.String())
-	}
-	w = f.do(t, http.MethodPost, "/admin/devices/1/cfg", url.Values{
-		"cfg_quality": {"high"},
-	}, ck, true)
-	if !strings.Contains(w.Body.String(), "must be an integer") {
-		t.Fatalf("integer = %q", w.Body.String())
-	}
-	d, _ = f.st.DeviceBySerial(ctx, "cam1")
-	if d.CfgVer != 2 {
-		t.Fatalf("rejected edit bumped ver: %+v", d)
+	if w := f.do(t, http.MethodPost, "/admin/devices/1/cfg", url.Values{}, ck, true); w.Code != http.StatusNotFound && w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("config route still answers: %d", w.Code)
 	}
 	if w := f.do(t, http.MethodGet, "/admin/devices/999", nil, ck, false); w.Code != http.StatusNotFound {
 		t.Fatalf("missing device = %d", w.Code)
 	}
 }
 
-// Two presentation bugs a browser found that the assertions above could not:
-// a config hint that printed one bound instead of both, and a never-heard
-// board rendered as a perfect "0 dBm" signal.
-func TestConfigRangeAlwaysShowsBothBounds(t *testing.T) {
-	for _, f := range deviceFields(proto.DesiredCfg{IntervalS: 45, Quality: 12}) {
-		want := fmt.Sprintf("%d…%d", f.Min, f.Max)
-		if f.Range != want {
-			t.Errorf("%s: Range = %q, want %q", f.Key, f.Range, want)
-		}
-	}
-}
-
+// A presentation bug a browser found: a never-heard board rendered as a
+// perfect "0 dBm" signal.
 func TestNeverSeenDeviceHasNoSignalReading(t *testing.T) {
 	f := newFixture(t, mustHash(t, "sekret"))
 	ck := f.login(t)

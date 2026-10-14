@@ -317,12 +317,12 @@ func captureID(client, n int) string {
 
 func metaJSON(cid string) string {
 	m := map[string]any{
-		"capture_id":      cid,
-		"fw":              "fakecam-0",
-		"rssi":            -55,
-		"free_heap":       180000,
-		"cfg_ver_applied": 1,
-		"counters":        map[string]any{"boot": 1},
+		"capture_id": cid,
+		"fw":         "fakecam-0",
+		"rssi":       -55,
+		"free_heap":  180000,
+		"profile":    "fake",
+		"counters":   map[string]any{"boot": 1},
 	}
 	b, _ := json.Marshal(m)
 	return string(b)

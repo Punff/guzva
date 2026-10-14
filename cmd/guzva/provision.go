@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"guzva/internal/auth"
-	"guzva/internal/proto"
 	"guzva/internal/store"
 	"guzva/internal/venue"
 )
@@ -26,8 +25,6 @@ func provisionMain(args []string) int {
 	slug := fs.String("slug", "", "public venue slug, e.g. jadro (required)")
 	name := fs.String("name", "", "venue display name (required)")
 	style := fs.String("style", "poster", "preset: poster | mono (no raw preset exists, §7)")
-	interval := fs.Int("interval", proto.DefaultIntervalS, "device-plane interval_s (30-300 s)")
-	quality := fs.Int("quality", proto.DefaultQuality, "device-plane JPEG quality (4-63, lower = better)")
 	hours := fs.String("hours", "", `opening hours, e.g. "Mo-Fr 09:00-17:00;Sa 10:00-14:00" (empty = no badge)`)
 	serial := fs.String("serial", "", "device serial (default: random — replace with the efuse MAC label)")
 	token := fs.String("token", "", "import an existing token instead of minting one (cutover: the flashed board keeps its token — no re-flash)")
@@ -70,8 +67,6 @@ func provisionMain(args []string) int {
 		fmt.Fprintf(os.Stderr, "provision: bad -hours: %v\n", err)
 		return 2
 	}
-	*interval = proto.ClampInterval(*interval)
-	*quality = proto.ClampQuality(*quality)
 	if *serial == "" {
 		*serial = "esp32-" + randHex(3)
 	}
@@ -136,7 +131,6 @@ func provisionMain(args []string) int {
 	}
 	deviceID, err := st.CreateDevice(ctx, store.Device{
 		VenueID: venueID, Serial: *serial,
-		CfgVer: 1, CfgIntervalS: *interval, CfgQuality: *quality,
 	}, auth.HashToken(*token))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "provision: create device: %v\n", err)
@@ -168,7 +162,6 @@ token  %s
 		serial := fmt.Sprintf("%s-%d", *serial, i)
 		id, err := st.CreateDevice(ctx, store.Device{
 			VenueID: venueID, Serial: serial,
-			CfgVer: 1, CfgIntervalS: *interval, CfgQuality: *quality,
 		}, auth.HashToken(tok))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "provision: create device %d: %v\n", i, err)

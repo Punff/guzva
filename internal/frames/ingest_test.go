@@ -64,7 +64,6 @@ func newFixture(t *testing.T, devBurst int) *fixture {
 	}
 	did, err := st.CreateDevice(ctx, store.Device{
 		VenueID: vid, Serial: "esp32-aa",
-		CfgVer: 2, CfgIntervalS: 30, CfgQuality: 14,
 	}, auth.HashToken(testToken))
 	if err != nil {
 		t.Fatalf("create device: %v", err)
@@ -191,7 +190,7 @@ func (f *fixture) postFrame(t *testing.T, captureID string, frame []byte) *httpt
 	t.Helper()
 	return f.post(t, "Bearer "+testToken, metaJSON(t, proto.Meta{
 		CaptureID: captureID, FW: "1.0.0", RSSI: -60, FreeHeap: 120000,
-		CfgVerApplied: 2, Counters: proto.Counters{Boot: 1},
+		Profile: "p1", Counters: proto.Counters{Boot: 1},
 	}), frame)
 }
 
@@ -245,11 +244,10 @@ func TestIngestStoresFrame(t *testing.T) {
 		t.Errorf("X-Proto = %q", got)
 	}
 	body := decodeResponse(t, w)
-	dc := body["desired_cfg"].(map[string]any)
-	if dc["ver"] != float64(2) || dc["interval_s"] != float64(30) || dc["quality"] != float64(14) {
-		t.Errorf("desired_cfg = %v", dc)
+	if _, ok := body["desired_cfg"]; ok {
+		t.Errorf("response still carries desired_cfg: %v", body)
 	}
-	if body["next_s"] != float64(30) {
+	if body["next_s"] != float64(proto.IntervalS) {
 		t.Errorf("next_s = %v", body["next_s"])
 	}
 	if _, ok := body["reason"]; ok {
@@ -279,7 +277,7 @@ func TestIngestStoresFrame(t *testing.T) {
 		t.Error("last_frame_at not advanced")
 	}
 	d := f.device(t)
-	if !d.LastSeenAt.Equal(testNow) || d.FW != "1.0.0" || d.RSSI != -60 || d.CfgAppliedVer != 2 {
+	if !d.LastSeenAt.Equal(testNow) || d.FW != "1.0.0" || d.RSSI != -60 || d.Profile != "p1" {
 		t.Errorf("beat not applied: %+v", d)
 	}
 	if f.srv.Metrics().Get("stored") != 1 {
@@ -300,7 +298,7 @@ func TestIngestDuplicateAnswers409SameShape(t *testing.T) {
 		t.Fatalf("second: %d %s", second.Code, second.Body.String())
 	}
 
-	// Same body shape: identical keys, identical desired_cfg/next_s.
+	// Same body shape: identical keys, identical next_s.
 	b1, b2 := decodeResponse(t, first), decodeResponse(t, second)
 	if len(b1) != len(b2) {
 		t.Fatalf("shape differs: %v vs %v", b1, b2)
@@ -426,7 +424,7 @@ func TestIngestHealthOnlyBeat(t *testing.T) {
 	// Camera-degraded health beat: meta only, no frame part (§4).
 	w := f.post(t, "Bearer "+testToken, metaJSON(t, proto.Meta{
 		CaptureID: "C1-2-bbbb", FW: "1.0.0", RSSI: -71, FreeHeap: 90000,
-		CfgVerApplied: 2, Counters: proto.Counters{PostFail: 3},
+		Profile: "p1", Counters: proto.Counters{PostFail: 3},
 		Reason: "camera-degraded",
 	}), nil)
 	if w.Code != proto.StatusStored {
@@ -759,48 +757,6 @@ func TestOnStoredHook(t *testing.T) {
 	}
 	if fired[0] != f.vid {
 		t.Errorf("OnStored venue = %d, want %d", fired[0], f.vid)
-	}
-}
-
-// The device plane: operator-set sensor keys ride every response, flattened
-// into the one object proto-v1 specifies (apply-if-found subset is legal).
-func TestIngestDesiredCfgExtras(t *testing.T) {
-	f := newFixture(t, 4)
-	ctx := context.Background()
-	if err := f.st.SetDeviceCfg(ctx, f.did, proto.DesiredCfg{
-		Ver: 3, IntervalS: 45, Quality: 12,
-		Extra: map[string]int{"framesize": 5, "led_pwm": 80, "brightness": 1, "special_fx": 2},
-	}); err != nil {
-		t.Fatalf("set cfg: %v", err)
-	}
-
-	w := f.postFrame(t, "C1-1-aaaa", syntheticFrame(t, 320, 240, 7))
-	if w.Code != proto.StatusStored {
-		t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
-	}
-	dc := decodeResponse(t, w)["desired_cfg"].(map[string]any)
-	want := map[string]float64{
-		"ver": 3, "interval_s": 45, "quality": 12,
-		"framesize": 5, "led_pwm": 80, "brightness": 1, "special_fx": 2,
-	}
-	for k, v := range want {
-		if dc[k] != v {
-			t.Errorf("desired_cfg[%s] = %v, want %v (full: %v)", k, dc[k], v, dc)
-		}
-	}
-	// The trio is never duplicated inside an object; the wire form is flat.
-	if _, nested := dc["extra"]; nested {
-		t.Errorf("extra must be flattened, not nested: %v", dc)
-	}
-
-	// A reject (dark) carries the same config — cfg rides every response.
-	w = f.postFrame(t, "C1-2-bbbb", blackFrame(t, 640, 480))
-	if w.Code != proto.StatusRejected {
-		t.Fatalf("dark = %d", w.Code)
-	}
-	dc = decodeResponse(t, w)["desired_cfg"].(map[string]any)
-	if dc["led_pwm"] != float64(80) || dc["ver"] != float64(3) {
-		t.Errorf("422 desired_cfg = %v", dc)
 	}
 }
 

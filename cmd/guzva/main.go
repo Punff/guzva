@@ -2,7 +2,6 @@
 //
 //	guzva serve      ingest + static public pages + admin console
 //	guzva provision  create a venue + device, print the token once (-token = import)
-//	guzva cfg        show or change a device's desired_cfg (-set k=v,...)
 //	guzva hashpw     bcrypt-hash a password for GUZVA_ADMIN_HASH
 //	guzva version    print the build version
 //

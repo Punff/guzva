@@ -28,13 +28,13 @@
   <div class="hidden md:block">
   <table class="tbl tbl--bare">
     <thead>
-      <tr> <th>Serial</th> <th>State</th> <th>FW</th> <th>Signal</th> <th>Last seen</th> <th title="WiFi joins failed / uploads failed / TLS failed since boot">Failures</th> <th>Config</th>
+      <tr> <th>Serial</th> <th>State</th> <th>FW</th> <th>Signal</th> <th>Last seen</th> <th title="WiFi joins failed / uploads failed / TLS failed since boot">Failures</th> <th>Profile</th>
         <th></th>
       </tr>
     </thead>
     <tbody>
       {{range .Devices}}
-      <tr{{if .Amber}} title="read-back mismatch — desired {{.CfgVer}}, applied {{.CfgApplied}}"{{end}}>
+      <tr>
         <td class="font-mono"><a class="hover:underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a></td>
         <td>{{if eq .Status "active"}}<span class="text-fresh font-semibold">active</span>{{else}}<span class="text-muted">revoked</span>{{end}}</td>
         <td>{{if .FW}}{{.FW}}{{else}}—{{end}}</td>
@@ -46,7 +46,7 @@
           <span title="Uploads that failed">{{.Counters.PostFail}} upload</span> ·
           <span title="TLS connections that failed">{{.Counters.TLSFail}} tls</span>
         </td>
-        <td class="tnum{{if .Amber}} text-late{{end}}">{{.CfgVer}}/{{.CfgApplied}}</td>
+        <td class="font-mono">{{if .Profile}}{{.Profile}}{{else}}legacy{{end}}</td>
         <td>
           {{if eq .Status "active"}}
           {{/* method+action: revoke works without JS (DESIGN §8); htmx adds
@@ -73,7 +73,7 @@
         {{if .FW}}<span>fw {{.FW}}</span>{{end}}
         <span class="tnum{{if .Weak}} text-accent{{end}}">{{.RSSIText}}</span>
         <span>{{.SeenAge}}</span>
-        <span class="tnum{{if .Amber}} text-late{{end}}">config {{.CfgVer}}/{{.CfgApplied}}</span>
+        <span class="font-mono">{{if .Profile}}{{.Profile}}{{else}}legacy{{end}}</span>
       </div>
       <div class="text-xs text-muted mt-1">
         {{.Counters.JoinFail}} wifi · {{.Counters.PostFail}} upload · {{.Counters.TLSFail}} tls

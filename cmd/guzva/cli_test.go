@@ -46,7 +46,7 @@ func TestDispatchVersion(t *testing.T) {
 func TestUsageNamesEverySubcommand(t *testing.T) {
 	// The usage block is the front door; a subcommand missing from it is
 	// undiscoverable. Keep in sync with run() in cli.go.
-	for _, cmd := range []string{"serve", "provision", "cfg", "hashpw", "version", "help"} {
+	for _, cmd := range []string{"serve", "provision", "hashpw", "version", "help"} {
 		if !strings.Contains(usage, cmd) {
 			t.Errorf("usage: subcommand %q missing from the help text", cmd)
 		}

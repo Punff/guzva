@@ -111,7 +111,6 @@ func (s *Server) Register(mux *http.ServeMux) {
 	sub.HandleFunc("POST /admin/venues/{id}/masks", s.require(s.setMasks))
 	sub.HandleFunc("POST /admin/devices", s.require(s.createDevice))
 	sub.HandleFunc("GET /admin/devices/{id}", s.require(s.devicePage))
-	sub.HandleFunc("POST /admin/devices/{id}/cfg", s.require(s.updateDeviceCfg))
 	sub.HandleFunc("POST /admin/devices/{id}/revoke", s.require(s.revokeDevice))
 	sub.HandleFunc("GET /admin/_kit", s.require(s.kit))
 	s.registerOwner(sub)
@@ -260,18 +259,32 @@ const InstallGateRSSI = -65
 // --- fleet board -----------------------------------------------------------
 
 type deviceView struct {
-	ID         int64
-	Serial     string
-	Status     string
-	FW         string
-	RSSI       int
-	RSSIText   string // "−76 dBm", or "—" when the board has never been heard from
-	Weak       bool   // below the −65 dBm install gate (§10)
-	SeenAge    string // "never" | "2 min ago" (live board — relative is fine)
-	Counters   proto.Counters
-	CfgVer     int
-	CfgApplied int
-	Amber      bool // applied version behind desired (read-back mismatch, §1)
+	ID       int64
+	Serial   string
+	Status   string
+	FW       string
+	RSSI     int
+	RSSIText string // "−76 dBm", or "—" when the board has never been heard from
+	Weak     bool   // below the −65 dBm install gate (§10)
+	SeenAge  string // "never" | "2 min ago" (live board — relative is fine)
+	Counters proto.Counters
+	Profile  string // frozen camera profile; "" = firmware before Profile v1
+}
+
+// newDeviceView is the one device row builder (fleet board + owner panel).
+// A board that has never checked in has no reading: printing its zero RSSI
+// as "0 dBm" would read as a perfect signal, so it shows "—".
+func newDeviceView(d store.Device, now time.Time) deviceView {
+	dv := deviceView{
+		ID: d.ID, Serial: d.Serial, Status: d.Status, FW: d.FW, RSSI: d.RSSI,
+		SeenAge: age(now, d.LastSeenAt), Counters: d.Counters, Profile: d.Profile,
+		RSSIText: "—",
+	}
+	if !d.LastSeenAt.IsZero() {
+		dv.RSSIText = fmt.Sprintf("%d dBm", d.RSSI)
+		dv.Weak = d.RSSI <= InstallGateRSSI
+	}
+	return dv
 }
 
 type venueView struct {
@@ -315,23 +328,7 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 	now := s.now().UTC()
 	byVenue := map[int64][]deviceView{}
 	for _, d := range devices {
-		// A board that has never checked in has no reading. Printing its
-		// zero-value RSSI as "0 dBm" reads as a perfect signal; "—" is the
-		// honest answer, and it keeps it clear of the install-gate styling.
-		seen := !d.LastSeenAt.IsZero()
-		dv := deviceView{
-			ID: d.ID, Serial: d.Serial, Status: d.Status, FW: d.FW, RSSI: d.RSSI,
-			SeenAge: age(now, d.LastSeenAt), Counters: d.Counters,
-			CfgVer: d.CfgVer, CfgApplied: d.CfgAppliedVer,
-			Amber: d.Status == "active" && d.CfgAppliedVer != d.CfgVer,
-		}
-		if seen {
-			dv.RSSIText = fmt.Sprintf("%d dBm", d.RSSI)
-			dv.Weak = d.RSSI <= InstallGateRSSI
-		} else {
-			dv.RSSIText = "—"
-		}
-		byVenue[d.VenueID] = append(byVenue[d.VenueID], dv)
+		byVenue[d.VenueID] = append(byVenue[d.VenueID], newDeviceView(d, now))
 	}
 	defHours, _ := venue.ParseSpec("Mo-Fr 09:00-17:00")
 	model := fleetModel{DeviceOpts: venues, ShowCreated: r.URL.Query().Get("created") != "",
@@ -536,7 +533,6 @@ func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := s.st.CreateDevice(r.Context(), store.Device{
 		VenueID: venueID, Serial: serial,
-		CfgVer: 1, CfgIntervalS: proto.DefaultIntervalS, CfgQuality: proto.DefaultQuality,
 	}, auth.HashToken(token)); err != nil {
 		if err == store.ErrSerialTaken {
 			s.flash(w, "Serial already exists.")
@@ -693,63 +689,13 @@ func (s *Server) setOwnerPassword(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, fmt.Sprintf("/admin/venues/%d?owner=1", v.ID))
 }
 
-// cfgField is one row of the device-config form: key, current value and the
-// clamp range from the proto table (inputs carry min/max so typos die in the
-// browser, and the server re-validates every key anyway).
-type cfgField struct {
-	Key      string
-	Val      int
-	Min, Max int
-	Range    string // "30…90" — always both ends, never a bare bound
-	Cadence  bool   // interval_s/quality: when the board wakes up
-	Image    bool   // sensor/imaging keys (DESIGN.md §8.3)
-	Hardware bool   // flash LED, test pattern
-}
-
 type deviceModel struct {
-	Device store.Device
-	Cfg    proto.DesiredCfg
-	Fields []cfgField
-	Amber  bool // applied config version behind desired (read-back mismatch)
-	Weak   bool // signal below the −65 dBm install gate (§10)
-	Seen   bool // the board has ever checked in
-	Saved  bool
-}
-
-func deviceFields(cfg proto.DesiredCfg) []cfgField {
-	extra := cfg.Extra
-	if extra == nil {
-		extra = map[string]int{}
-	}
-	var out []cfgField
-	for _, k := range proto.SettableCfgKeys() {
-		spec := proto.CfgKeys[k]
-		val := extra[k]
-		cadence := false
-		switch k {
-		case "interval_s":
-			val, cadence = cfg.IntervalS, true
-		case "quality":
-			val, cadence = cfg.Quality, true
-		}
-		// Always print both bounds. A bare "30" under a 45 was unreadable —
-		// you could not tell min from max, and a lone "4" under quality
-		// looked like a fourth option rather than a ceiling.
-		f := cfgField{
-			Key: k, Val: val, Min: spec.Min, Max: spec.Max, Cadence: cadence,
-			Range: fmt.Sprintf("%d…%d", spec.Min, spec.Max),
-		}
-		if !cadence {
-			switch k {
-			case "led_pwm":
-				f.Hardware = true
-			default:
-				f.Image = true
-			}
-		}
-		out = append(out, f)
-	}
-	return out
+	Device    store.Device
+	Weak      bool // signal below the −65 dBm install gate (§10)
+	Seen      bool // the board has ever checked in
+	SeenAge   string
+	Reject    string // last quarantine reason for the venue, "" = none
+	RejectAge string
 }
 
 func (s *Server) devicePage(w http.ResponseWriter, r *http.Request) {
@@ -763,81 +709,19 @@ func (s *Server) devicePage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	cfg := d.DesiredCfg()
+	now := s.now().UTC()
+	m := deviceModel{Device: *d,
+		Seen:    !d.LastSeenAt.IsZero(),
+		SeenAge: age(now, d.LastSeenAt),
+		Weak:    !d.LastSeenAt.IsZero() && d.RSSI <= InstallGateRSSI}
+	if reason, at, err := s.st.LastReject(r.Context(), d.VenueID); err == nil {
+		m.Reject, m.RejectAge = reason, age(now, at)
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	m := deviceModel{Device: *d, Cfg: cfg, Fields: deviceFields(cfg),
-		Amber: d.Status == "active" && d.CfgAppliedVer != d.CfgVer,
-		Seen:  !d.LastSeenAt.IsZero(),
-		Weak:  !d.LastSeenAt.IsZero() && d.RSSI <= InstallGateRSSI,
-		Saved: r.URL.Query().Get("saved") != ""}
 	if err := s.tmpl.ExecuteTemplate(w, "device.html", m); err != nil {
 		s.log.Error("admin: render device", "err", err.Error())
 	}
-}
-
-// parseCfgForm reads the prefilled device-config form: every settable key
-// arrives as cfg_<key>; empty keeps the current value (a missing field must
-// never zero a sensor key). Each value is validated against the proto table
-// — the same gate as `guzva cfg -set`.
-func parseCfgForm(r *http.Request, cur proto.DesiredCfg) (proto.DesiredCfg, string) {
-	next := proto.DesiredCfg{Ver: cur.Ver + 1, IntervalS: cur.IntervalS, Quality: cur.Quality}
-	if cur.Extra != nil {
-		next.Extra = map[string]int{}
-		for k, v := range cur.Extra {
-			next.Extra[k] = v
-		}
-	} else {
-		next.Extra = map[string]int{}
-	}
-	for _, k := range proto.SettableCfgKeys() {
-		raw := strings.TrimSpace(r.FormValue("cfg_" + k))
-		if raw == "" {
-			continue
-		}
-		v, err := strconv.Atoi(raw)
-		if err != nil {
-			return cur, k + " must be an integer."
-		}
-		if err := proto.ValidateCfgKey(k, v); err != nil {
-			return cur, err.Error()
-		}
-		switch k {
-		case "interval_s":
-			next.IntervalS = v
-		case "quality":
-			next.Quality = v
-		default:
-			next.Extra[k] = v
-		}
-	}
-	return next, ""
-}
-
-func (s *Server) updateDeviceCfg(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || id <= 0 {
-		http.NotFound(w, r)
-		return
-	}
-	d, err := s.st.DeviceByID(r.Context(), id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	r.ParseForm()
-	next, ferr := parseCfgForm(r, d.DesiredCfg())
-	if ferr != "" {
-		s.flash(w, ferr)
-		return
-	}
-	if err := s.st.SetDeviceCfg(r.Context(), d.ID, next); err != nil {
-		s.internal(w, "set device cfg", err)
-		return
-	}
-	s.log.Info("admin: device cfg updated", "device_id", d.ID, "serial", d.Serial,
-		"ver", d.CfgVer, "actor", "admin")
-	redirect(w, r, fmt.Sprintf("/admin/devices/%d?saved=1", d.ID))
 }
 
 func randHex(n int) string {

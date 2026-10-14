@@ -9,68 +9,17 @@
 <div class="mx-auto w-full max-w-[52rem] px-4 py-6 sm:px-6">
 {{template "page-head.html" dict "title" .Device.Serial "trailHref" "/admin/" "trailText" "fleet" "signOut" "/admin/logout"}}
 
-<div id="flash">
-  {{if .Saved}}<div class="card card--inset text-sm" role="status">Config saved as ver {{.Cfg.Ver}} — the device applies it on its next POST.</div>{{end}}
-</div>
-
-{{/* Three cards, each titled with its job (design-pass2 §4): what the
-      board is doing, what you tell it to do, and what went wrong since it
-      last booted. */}}
-
 <section class="card card--raised mb-5">
   <h2 class="text-lg font-bold mb-3">Health</h2>
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
     <div><div class="lbl">Status</div><div class="font-semibold {{if eq .Device.Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Device.Status}}</div></div>
     <div><div class="lbl">Firmware</div><div>{{if .Device.FW}}{{.Device.FW}}{{else}}—{{end}}</div></div>
     <div><div class="lbl">Signal</div><div class="tnum{{if .Weak}} text-accent{{end}}"{{if .Weak}} title="Below the −65 dBm install gate"{{end}}>{{if not .Seen}}—{{else}}{{.Device.RSSI}} dBm{{end}}</div></div>
-    <div><div class="lbl">Config</div><div class="tnum{{if .Amber}} text-late{{end}}"{{if .Amber}} title="device has not applied the latest config"{{end}}>{{.Device.CfgVer}} / {{.Device.CfgAppliedVer}}</div></div>
+    <div><div class="lbl">Last seen</div><div>{{.SeenAge}}</div></div>
+    <div><div class="lbl">Camera profile</div><div class="font-mono">{{if .Device.Profile}}{{.Device.Profile}}{{else}}legacy{{end}}</div></div>
+    <div class="col-span-1 sm:col-span-3"><div class="lbl">Last rejected frame</div><div>{{if .Reject}}<span class="font-mono">{{.Reject}}</span> · {{.RejectAge}}{{else}}none{{end}}</div></div>
   </div>
-  <p class="text-xs text-muted mt-3">Desired / applied: the board confirms new config on its next POST; applied stays amber until then.</p>
-</section>
-
-<section class="card card--raised mb-5">
-  <h2 class="text-lg font-bold mb-3">Capture & upload</h2>
-  <p class="text-sm text-muted mb-4">Ranges match <code class="font-mono text-ink">guzva cfg -set</code>; out-of-range values never reach the board. Saving bumps <code class="font-mono text-ink">ver</code>, fetched on the next POST.</p>
-
-  <form method="post" action="/admin/devices/{{.Device.ID}}/cfg">
-    <h3 class="lbl mb-2 mt-1">Cadence</h3>
-    <p class="text-xs text-muted mb-3">How often the board wakes up: freshness against the venue's link budget.</p>
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-      {{range .Fields}}{{if .Cadence}}
-      <div class="fieldset">
-      <label class="lbl" for="cfg-{{.Key}}">{{.Key}}</label>
-        <input class="inp tnum" type="number" id="cfg-{{.Key}}" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}">
-        <span class="text-xs text-muted tnum">{{.Range}}</span>
-      </div>
-      {{end}}{{end}}
-    </div>
-
-    <h3 class="lbl mb-2 mt-1">Image</h3>
-    <p class="text-xs text-muted mb-3">What the sensor sends: these shape the bytes the render pipeline turns into the print.</p>
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-      {{range .Fields}}{{if .Image}}
-      <div class="fieldset">
-      <label class="lbl" for="cfg-{{.Key}}">{{.Key}}</label>
-        <input class="inp tnum" type="number" id="cfg-{{.Key}}" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}">
-        <span class="text-xs text-muted tnum">{{.Range}}</span>
-      </div>
-      {{end}}{{end}}
-    </div>
-
-    <h3 class="lbl mb-2 mt-1">Hardware</h3>
-    <p class="text-xs text-muted mb-3">The board itself: the white flash LED's duty.</p>
-    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-      {{range .Fields}}{{if .Hardware}}
-      <div class="fieldset">
-      <label class="lbl" for="cfg-{{.Key}}">{{.Key}}</label>
-        <input class="inp tnum" type="number" id="cfg-{{.Key}}" name="cfg_{{.Key}}" value="{{.Val}}" min="{{.Min}}" max="{{.Max}}">
-        <span class="text-xs text-muted tnum">{{.Range}}</span>
-      </div>
-      {{end}}{{end}}
-    </div>
-
-    <button class="btn btn--primary" type="submit">Save config (bumps ver)</button>
-  </form>
+  <p class="text-xs text-muted mt-3">The camera settings are frozen in firmware (print v4) — changing them is a new firmware build, not a setting. <span class="font-mono">legacy</span> = firmware from before Profile v1, still running on its stored config.</p>
 </section>
 
 <section class="card card--raised">
