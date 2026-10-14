@@ -1137,3 +1137,22 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   output and missed the gofmt line. Fixed in `705b2b9`; I now gate on the
   exit code of `make test`, not on grepped output.
 
+
+### Deploys `v0.8.0` + `v0.8.1`, bench firmware flipped (2026-10-14 17:31–17:50 UTC)
+
+- `v0.8.0` (owner stats, QR/poster, UI polish): backup first, `make check`
+  OK, schema 9 → 10 (visits tables). Live: the public page counted real
+  traffic within the hour (17:00 UTC: 8 views, 54 polls, 1 QR — the QR
+  view is my deploy probe — 2 distinct visitors).
+- User feedback on real v4 prints: image upside down; objects melt into
+  the background. Raw `/jpg` frames captured to `corpus/` (gitignored,
+  local only) confirmed a top-to-bottom flip.
+- `v0.8.1` = render v5 (outlines, `95c3f64`): `make check` OK.
+- Firmware `v0.8.0-2-gdc4ae96` with `PROFILE_VFLIP 1` in the bench
+  board's settings.h: first upload failed "port busy" (the CH340 had just
+  re-enumerated), retry flashed OK with hashes verified.
+- **Board offline since 17:44 UTC**: /dev/ttyUSB0 gone, no ping on
+  192.168.1.6 — unplugged/unpowered (the user is soak-testing it). Last
+  stored frame is still poster@4 from v0.7.0 firmware; the public page
+  correctly shows "Slika kasni". The flip and outlines are unverified on
+  hardware until it is powered again.
