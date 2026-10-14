@@ -1,12 +1,14 @@
 package admin
 
 import (
+	"html/template"
 	"net/http"
 	"strings"
 	"time"
 
 	"guzva/internal/auth"
 	"guzva/internal/i18n"
+	"guzva/internal/qr"
 	"guzva/internal/store"
 	"guzva/internal/venue"
 )
@@ -26,6 +28,7 @@ func (s *Server) registerOwner(mux *http.ServeMux) {
 	mux.HandleFunc("POST /owner/logout", s.requireOwner(s.ownerLogout))
 	mux.HandleFunc("GET /owner/{$}", s.requireOwner(s.ownerDash))
 	mux.HandleFunc("POST /owner/venue", s.requireOwner(s.ownerUpdateVenue))
+	mux.HandleFunc("GET /owner/poster", s.requireOwner(s.ownerPoster))
 }
 
 // requireOwner gates a handler on a valid owner session and loads the venue
@@ -121,6 +124,9 @@ func (s *Server) ownerLogout(w http.ResponseWriter, r *http.Request, v *store.Ve
 }
 
 type ownerDashModel struct {
+	Stats     ownerStats
+	Share     shareCard
+	HasFrame  bool
 	Venue     store.Venue
 	HoursSpec string
 	Days      [7]venue.DayForm
@@ -128,7 +134,7 @@ type ownerDashModel struct {
 	State     chip
 	Summary   string
 	Cat       *i18n.Catalog
-	Devices   []deviceView
+	Devices   []ownerDevice
 	Saved     bool
 }
 
@@ -172,9 +178,35 @@ func (s *Server) ownerDash(w http.ResponseWriter, r *http.Request, v *store.Venu
 		m.Summary = cat.F("owner.stale", clock)
 	}
 
+	since := now.Add(-24 * time.Hour)
 	for _, d := range devs {
-		m.Devices = append(m.Devices, newDeviceView(d, now))
+		m.Devices = append(m.Devices, newOwnerDevice(d, loc, cat))
+		if d.Status == "active" && d.CreatedAt.After(since) {
+			since = d.CreatedAt
+		}
 	}
+	m.HasFrame = !v.LastFrameAt.IsZero()
+	m.Share = s.share(r, v)
+	vh, err := s.st.VisitHours(r.Context(), v.ID, now.AddDate(0, 0, -29))
+	if err != nil {
+		s.internal(w, "visit hours", err)
+		return
+	}
+	vd, err := s.st.VisitDays(r.Context(), v.ID, now.AddDate(0, 0, -29).Format("2006-01-02"))
+	if err != nil {
+		s.internal(w, "visit days", err)
+		return
+	}
+	ft, err := s.st.FrameTimes(r.Context(), v.ID, now.Add(-24*time.Hour))
+	if err != nil {
+		s.internal(w, "frame times", err)
+		return
+	}
+	live := 0
+	if s.Stats != nil {
+		live = s.Stats.Live(v.Slug)
+	}
+	m.Stats = buildOwnerStats(now, loc, vh, vd, ft, since, live, cat)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	if err := s.tmpl.ExecuteTemplate(w, "owner_dash.html", m); err != nil {
@@ -224,4 +256,69 @@ func venueLoc(tz string) *time.Location {
 		return loc
 	}
 	return time.UTC
+}
+
+// shareCard is the public link and its QR code. The QR carries ?src=qr so
+// scans are counted apart from shared links (internal/stats).
+type shareCard struct {
+	URL string        // what the owner copies and shares
+	QR  template.HTML // inline SVG, generated here from a URL we built
+}
+
+// share builds the venue's public URL from the host the owner reached the
+// panel on — the same host guests use.
+func (s *Server) share(r *http.Request, v *store.Venue) shareCard {
+	scheme := "http"
+	if r.TLS != nil || s.secure {
+		scheme = "https"
+	}
+	base := scheme + "://" + r.Host + "/" + v.Slug + "/"
+	c := shareCard{URL: base}
+	if code, err := qr.Encode(base + "?src=qr"); err == nil {
+		// Safe to mark as HTML: the SVG is built from module coordinates
+		// and a constant colour, never from user text.
+		c.QR = template.HTML(code.SVG("#12202d"))
+	}
+	return c
+}
+
+type posterModel struct {
+	Venue store.Venue
+	Share shareCard
+	Cat   *i18n.Catalog
+}
+
+// ownerPoster is the printable table/door poster: name, the question, the
+// QR code and one honest line about what guests will see.
+func (s *Server) ownerPoster(w http.ResponseWriter, r *http.Request, v *store.Venue) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	m := posterModel{Venue: *v, Share: s.share(r, v), Cat: i18n.For(i18n.Normalize(v.Lang))}
+	if err := s.tmpl.ExecuteTemplate(w, "owner_poster.html", m); err != nil {
+		s.log.Error("admin: render poster", "err", err.Error())
+	}
+}
+
+// ownerDevice is a camera in the owner's words: no serial jargon beyond the
+// label, a clock time instead of "12 s ago", signal as good or weak.
+type ownerDevice struct {
+	Serial string
+	Off    bool   // revoked by the administrator
+	Last   string // "zadnja slika u 19:21" / "još nije poslala sliku"
+	Signal string // "" when never heard from
+	Weak   bool
+}
+
+func newOwnerDevice(d store.Device, loc *time.Location, cat *i18n.Catalog) ownerDevice {
+	od := ownerDevice{Serial: d.Serial, Off: d.Status != "active", Last: cat.Get("owner.device.never")}
+	if !d.LastSeenAt.IsZero() {
+		od.Last = cat.F("owner.device.last", cat.Time(d.LastSeenAt.In(loc)))
+		od.Weak = d.RSSI <= InstallGateRSSI
+		key := "owner.signal.ok"
+		if od.Weak {
+			key = "owner.signal.weak"
+		}
+		od.Signal = cat.F(key, d.RSSI)
+	}
+	return od
 }

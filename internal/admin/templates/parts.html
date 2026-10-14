@@ -11,14 +11,14 @@
 {{/* One header for every console page: title, optional trail link, and the
      sign-out on the right. Hand-rolling this four times is how the spacing
      and the type scale drifted apart. Call with a dict:
-       title, trailHref, trailText, signOut */}}
+       title, trailHref, trailText, signOut, signOutText (default English) */}}
 <header class="flex flex-wrap items-center gap-x-3 gap-y-2 mb-8">
   <h1 class="text-2xl font-bold tracking-tight">
     {{if .trailHref}}<a href="{{.trailHref}}" class="text-muted hover:underline">{{.trailText}}</a><span class="text-muted"> / </span>{{end}}{{.title}}
   </h1>
   {{if .signOut}}
   <form method="post" action="{{.signOut}}" class="push">
-    <button class="btn" type="submit">Sign out</button>
+    <button class="btn" type="submit">{{if .signOutText}}{{.signOutText}}{{else}}Sign out{{end}}</button>
   </form>
   {{end}}
 </header>
@@ -26,13 +26,13 @@
 
 {{define "section-head.html"}}<h2 class="text-lg font-bold mb-4">{{.}}</h2>{{end}}
 
+{{/* Footer only — each page closes its own wrapper, body and html. Call
+     with a string for owner-facing copy; the console default otherwise. */}}
 {{define "shell-foot.html"}}
 <footer class="mt-8 pt-4 border-t-2 border-ink text-xs text-muted">
-  guzva — stylised renders only. Raw frames live in RAM for one Process call (PLAN D1).
+  {{if eq (printf "%T" .) "string"}}{{.}}{{else}}guzva console — stylised renders only, raw frames never stored.{{end}}
 </footer>
-</div>
-</body>
-</html>{{end}}
+{{- end}}
 
 {{define "flash.html"}}{{if .}}<div class="card card--inset text-sm mb-4" role="alert">{{.}}</div>{{end}}{{end}}
 

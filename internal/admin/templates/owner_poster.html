@@ -1,0 +1,35 @@
+{{define "owner_poster.html"}}<!doctype html>
+<html lang="{{.Cat.Lang}}">
+<head>
+{{template "shell-head.html" .}}
+<title>{{.Venue.Name}} — {{.Cat.Get "tagline"}}</title>
+<script src="/admin/static/owner.js" defer></script>
+</head>
+<body class="bg-paper text-ink font-sans print:bg-white">
+{{/* The printable table/door poster. One page, black on white when printed;
+     the toolbar never prints. */}}
+<div class="mx-auto w-full max-w-[34rem] px-4 py-6 print:p-0 print:max-w-none">
+  <div class="flex flex-wrap gap-2 mb-6 print:hidden">
+    <a class="btn" href="/owner/#share">← {{.Cat.Get "poster.back"}}</a>
+    <button class="btn btn--primary" type="button" id="poster-print">{{.Cat.Get "poster.print"}}</button>
+    <p class="text-sm text-muted basis-full">{{.Cat.Get "poster.hint"}}</p>
+  </div>
+
+  <article class="border-4 border-ink bg-paper print:bg-white p-8 text-center grid gap-5 justify-items-center">
+    <div class="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em]">
+      <svg viewBox="0 0 16 16" width="20" height="20" shape-rendering="crispEdges" aria-hidden="true">
+        <rect width="16" height="16" class="fill-ink"/><rect x="2" y="2" width="12" height="11" class="fill-paper"/>
+        <rect x="3" y="9" width="2" height="3" class="fill-s1"/><rect x="7" y="7" width="2" height="5" class="fill-s1"/><rect x="11" y="5" width="2" height="7" class="fill-accent"/>
+      </svg>
+      guzva
+    </div>
+    <h1 class="text-4xl font-bold tracking-tight leading-tight">{{.Cat.Get "tagline"}}</h1>
+    <p class="text-2xl">{{.Venue.Name}}</p>
+    {{if .Share.QR}}<div class="w-64 h-64 [&_svg]:block [&_svg]:w-full [&_svg]:h-full">{{.Share.QR}}</div>{{end}}
+    <p class="text-xl font-bold">{{.Cat.Get "poster.cta"}}</p>
+    <p class="font-mono text-sm break-all">{{.Share.URL}}</p>
+    <p class="text-sm text-muted max-w-[24rem]">{{.Cat.Get "poster.note"}}</p>
+  </article>
+</div>
+</body>
+</html>{{end}}

@@ -969,11 +969,22 @@ func (s *Store) PruneVisits(ctx context.Context, cutoff time.Time) error {
 	return err
 }
 
-// FramesSince counts a venue's stored (status ok) frames received at or
-// after since — the camera-uptime numerator on the owner panel.
-func (s *Store) FramesSince(ctx context.Context, venueID int64, since time.Time) (int, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM frames
-		WHERE venue_id = ? AND status = 'ok' AND received_at >= ?`, venueID, ts(since)).Scan(&n)
-	return n, err
+// FrameTimes returns when a venue's stored (status ok) frames arrived at
+// or after since, oldest first — the camera-uptime input on the owner panel.
+func (s *Store) FrameTimes(ctx context.Context, venueID int64, since time.Time) ([]time.Time, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT received_at FROM frames
+		WHERE venue_id = ? AND status = 'ok' AND received_at >= ? ORDER BY received_at`, venueID, ts(since))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []time.Time
+	for rows.Next() {
+		var at int64
+		if err := rows.Scan(&at); err != nil {
+			return nil, err
+		}
+		out = append(out, fromTS(at))
+	}
+	return out, rows.Err()
 }

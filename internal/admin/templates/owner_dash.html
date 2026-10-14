@@ -2,59 +2,171 @@
 <html lang="{{.Cat.Lang}}">
 <head>
 {{template "shell-head.html" .}}
-<title>guzva — {{.Venue.Name}}</title>
+<title>{{.Venue.Name}} — guzva</title>
 <script src="/admin/static/htmx.min.js" defer></script>
+<script src="/admin/static/owner.js" defer></script>
 </head>
 <body class="bg-paper text-ink font-sans">
-<div class="mx-auto w-full max-w-[40rem] px-4 py-6 sm:px-6">
-{{template "page-head.html" dict "title" .Venue.Name "signOut" "/owner/logout"}}
+<div class="mx-auto w-full max-w-[48rem] px-4 py-6 sm:px-6">
+{{template "page-head.html" dict "title" .Venue.Name "signOut" "/owner/logout" "signOutText" (.Cat.Get "owner.signout")}}
 
-<div id="flash">{{if .Saved}}<div class="card card--inset text-sm" role="status">{{.Cat.Get "owner.saved"}}</div>{{end}}</div>
+<div id="flash">{{if .Saved}}<div class="card card--inset text-sm mb-5" role="status">{{.Cat.Get "owner.saved"}}</div>{{end}}</div>
 
-<section class="card card--raised mb-5">
-  <div class="flex flex-wrap items-center gap-2 mb-3">
-    {{template "chip.html" .State}}
-    <a class="text-sm underline" href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">{{.Cat.Get "owner.public"}} ↗</a>
+{{/* 1. Right now: the picture guests see, its state, who is watching. */}}
+<section class="card card--raised mb-6">
+  <div class="grid gap-4 sm:grid-cols-2 sm:items-center">
+    <a href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer" class="block border-2 border-ink bg-s3">
+      {{if .HasFrame}}<img src="/{{.Venue.Slug}}/latest.png" alt="" width="320" height="240" class="block w-full h-auto [image-rendering:pixelated]">
+      {{else}}<div class="tx-dither aspect-[4/3]" aria-hidden="true"></div>{{end}}
+    </a>
+    <div class="grid gap-3 content-start">
+      <div class="flex flex-wrap items-center gap-2">
+        {{template "chip.html" .State}}
+        {{if .Stats.Live}}<span class="chip"><span class="inline-block w-2.5 h-2.5 bg-fresh" aria-hidden="true"></span>{{.Cat.F "owner.live" .Stats.Live}}</span>{{end}}
+      </div>
+      <p class="text-sm">{{.Summary}}</p>
+      <a class="btn self-start" href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">{{.Cat.Get "owner.public"}} ↗</a>
+    </div>
   </div>
-  <p class="text-sm text-muted">{{.Summary}}</p>
 </section>
 
-<section class="card card--raised mb-5">
-  <h2 class="text-lg font-bold mb-3">{{.Cat.Get "owner.details"}}</h2>
+{{/* 2. What the page earned this week. */}}
+<section class="mb-6" aria-labelledby="kpi-h">
+  <h2 id="kpi-h" class="lbl mb-2">{{.Cat.Get "owner.kpi.window"}}</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    {{range .Stats.KPIs}}
+    <div class="card card--inset">
+      <div class="lbl">{{.Label}}</div>
+      <div class="text-3xl font-bold tnum mt-1">{{.Value}}</div>
+      {{if .Trend}}<div class="text-xs mt-1 {{if .Up}}text-fresh{{else if .Down}}text-accent{{else}}text-muted{{end}}">{{.Trend}}</div>{{end}}
+    </div>
+    {{end}}
+  </div>
+</section>
+
+{{/* 3. Trends. SVG with attribute geometry: the console CSP has no inline styles. */}}
+<div class="grid gap-6 md:grid-cols-2 mb-6">
+  <section class="card">
+    <h2 class="text-lg font-bold">{{.Cat.Get "owner.chart.days"}}</h2>
+    <p class="text-xs text-muted mb-3">{{.Cat.Get "owner.chart.days.note"}}</p>
+    <svg viewBox="0 0 280 100" class="w-full h-auto" role="img" aria-label="{{.Cat.Get "owner.chart.days"}}">
+      {{range .Stats.Days}}
+      <rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" class="{{if .Hi}}fill-accent{{else}}fill-s1{{end}}"><title>{{.Title}}</title></rect>
+      {{if .Label}}<text x="{{.X}}" dx="8" y="98" text-anchor="middle" font-size="8" class="fill-muted">{{.Label}}</text>{{end}}
+      {{end}}
+      <line x1="0" x2="280" y1="88.5" y2="88.5" stroke-width="1" class="stroke-ink"/>
+    </svg>
+  </section>
+  <section class="card">
+    <h2 class="text-lg font-bold">{{.Cat.Get "owner.chart.hours"}}</h2>
+    <p class="text-xs text-muted mb-3">{{.Cat.Get "owner.chart.hours.note"}}</p>
+    <svg viewBox="0 0 240 70" class="w-full h-auto" role="img" aria-label="{{.Cat.Get "owner.chart.hours"}}">
+      {{range .Stats.Hours}}
+      <rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" class="{{if .Hi}}fill-accent{{else}}fill-s1{{end}}"><title>{{.Title}}</title></rect>
+      {{if .Label}}<text x="{{.X}}" dx="4" y="68" text-anchor="middle" font-size="7" class="fill-muted">{{.Label}}</text>{{end}}
+      {{end}}
+      <line x1="0" x2="240" y1="58.5" y2="58.5" stroke-width="1" class="stroke-ink"/>
+    </svg>
+    {{if .Stats.Peak}}<p class="text-sm mt-2">{{.Stats.Peak}}</p>{{end}}
+  </section>
+</div>
+
+{{/* 4. What to do next. */}}
+<section class="card card--inset mb-6">
+  <h2 class="text-lg font-bold mb-2">{{.Cat.Get "owner.insights"}}</h2>
+  <ul class="grid gap-2 text-sm">
+    {{range .Stats.Insights}}<li class="flex gap-2"><span aria-hidden="true" class="text-accent font-bold">→</span><span>{{.}}</span></li>{{end}}
+  </ul>
+  <p class="text-xs text-muted mt-3">{{.Cat.Get "owner.privacy"}}</p>
+</section>
+
+{{/* 5. Share: the link and the QR that brings guests in. */}}
+<section class="card mb-6" id="share">
+  <h2 class="text-lg font-bold">{{.Cat.Get "owner.share"}}</h2>
+  <p class="text-sm text-muted mb-4">{{.Cat.Get "owner.share.note"}}</p>
+  <div class="grid gap-4 sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-center">
+    {{if .Share.QR}}<div class="w-40 h-40 border-2 border-ink [&_svg]:block [&_svg]:w-full [&_svg]:h-full">{{.Share.QR}}</div>{{end}}
+    <div class="grid gap-3 min-w-0">
+      <input class="inp font-mono text-sm" id="share-url" value="{{.Share.URL}}" readonly aria-label="{{.Cat.Get "owner.share"}}">
+      <div class="flex flex-wrap gap-2">
+        <button class="btn btn--primary" type="button" id="share-copy" data-done="{{.Cat.Get "owner.share.copied"}}">{{.Cat.Get "owner.share.copy"}}</button>
+        <a class="btn" href="/owner/poster">{{.Cat.Get "owner.share.poster"}}</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+{{/* 6. Camera health, in plain words. */}}
+<section class="card mb-6">
+  <h2 class="text-lg font-bold mb-2">{{.Cat.Get "owner.camera"}}</h2>
+  {{if .Devices}}
+  {{if ge .Stats.Uptime 0}}<p class="text-sm mb-3">{{.Cat.F "owner.uptime" .Stats.Uptime}}</p>{{end}}
+  <ul class="grid gap-1 text-sm">
+    {{range .Devices}}
+    <li class="flex flex-wrap gap-x-3 gap-y-1">
+      <span class="font-mono">{{.Serial}}</span>
+      {{if .Off}}<span class="text-muted">{{$.Cat.Get "owner.device.off"}}</span>{{else}}<span>{{.Last}}</span>{{end}}
+      {{if .Signal}}<span class="{{if .Weak}}text-accent{{else}}text-muted{{end}}">{{.Signal}}</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{if ne .State.Cls "fresh"}}
+  <div class="border-l-2 border-ink pl-3 mt-4">
+    <h3 class="font-semibold">{{.Cat.Get "owner.health.old"}}</h3>
+    <ol class="list-decimal list-inside text-sm text-muted mt-1">
+      <li>{{.Cat.Get "owner.step1"}}</li>
+      <li>{{.Cat.Get "owner.step2"}}</li>
+      <li>{{.Cat.Get "owner.step3"}}</li>
+    </ol>
+  </div>
+  {{end}}
+  {{else}}
+  <div class="tx-dither border-2 border-ink p-4 text-sm text-muted">{{.Cat.Get "owner.no_devices"}}</div>
+  {{end}}
+</section>
+
+{{/* 7. Settings: occasional, so folded. Opens after a save. */}}
+<details class="card"{{if .Saved}} open{{end}}>
+  <summary class="cursor-pointer">
+    <span class="text-lg font-bold">{{.Cat.Get "owner.settings"}}</span>
+    <span class="block text-sm text-muted">{{.Cat.Get "owner.settings.note"}}</span>
+  </summary>
   {{/* method+action carry the no-JS contract (DESIGN §8): htmx intercepts
        when present; without it this is a plain POST + 303. */}}
-  <form class="grid gap-3" method="post" action="/owner/venue"
+  <form class="grid gap-3 mt-4" method="post" action="/owner/venue"
         hx-post="/owner/venue" hx-target="#flash" hx-swap="innerHTML">
     <div class="fieldset">
       <label class="lbl" for="v-name">{{.Cat.Get "owner.name"}}</label>
       <input class="inp" id="v-name" name="name" value="{{.Venue.Name}}" required>
-    </div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <div class="fieldset">
-      <label class="lbl" for="v-tz">{{.Cat.Get "owner.tz"}}</label>
-        <input class="inp" id="v-tz" name="tz" value="{{.Venue.TZ}}">
-      </div>
-      <div class="fieldset">
-      <label class="lbl" for="v-style">{{.Cat.Get "owner.style"}}</label>
-        <select class="inp" id="v-style" name="style">
-          <option value="poster"{{if eq .Venue.Style "poster"}} selected{{end}}>Tisak (4 nivoa)</option>
-          <option value="mono"{{if eq .Venue.Style "mono"}} selected{{end}}>Šablon (2 nivoa)</option>
-        </select>
-      </div>
     </div>
     <div class="fieldset">
       <label class="lbl" for="v-desc">{{.Cat.Get "owner.about"}}</label>
       <input class="inp" id="v-desc" name="description" value="{{.Venue.Description}}" maxlength="200"
              placeholder="{{.Cat.Get "owner.about.placeholder"}}">
     </div>
-    <div class="fieldset">
-      <label class="lbl" for="v-phone">{{.Cat.Get "owner.phone"}}</label>
-      <input class="inp tnum" id="v-phone" name="phone" value="{{.Venue.Phone}}" maxlength="20"
-             inputmode="tel" placeholder="+387 61 000 000">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div class="fieldset">
+        <label class="lbl" for="v-phone">{{.Cat.Get "owner.phone"}}</label>
+        <input class="inp tnum" id="v-phone" name="phone" value="{{.Venue.Phone}}" maxlength="20"
+               inputmode="tel" placeholder="+387 61 000 000">
+      </div>
+      <div class="fieldset">
+        <label class="lbl" for="v-loc">{{.Cat.Get "owner.location"}}</label>
+        <input class="inp" id="v-loc" name="location" value="{{.Venue.Location}}" maxlength="160">
+      </div>
     </div>
-    <div class="fieldset">
-      <label class="lbl" for="v-loc">{{.Cat.Get "owner.location"}}</label>
-      <input class="inp" id="v-loc" name="location" value="{{.Venue.Location}}" maxlength="160">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div class="fieldset">
+        <label class="lbl" for="v-style">{{.Cat.Get "owner.style"}}</label>
+        <select class="inp" id="v-style" name="style">
+          <option value="poster"{{if eq .Venue.Style "poster"}} selected{{end}}>Tisak (4 nivoa)</option>
+          <option value="mono"{{if eq .Venue.Style "mono"}} selected{{end}}>Šablon (2 nivoa)</option>
+        </select>
+      </div>
+      <div class="fieldset">
+        <label class="lbl" for="v-tz">{{.Cat.Get "owner.tz"}}</label>
+        <input class="inp" id="v-tz" name="tz" value="{{.Venue.TZ}}">
+      </div>
     </div>
     <div class="fieldset">
       <span class="lbl mb-2">{{.Cat.Get "hours.title"}}</span>
@@ -64,41 +176,9 @@
     </div>
     <button class="btn btn--primary" type="submit">{{.Cat.Get "owner.save"}}</button>
   </form>
-</section>
+</details>
 
-<section class="card card--raised">
-  <h2 class="text-lg font-bold mb-3">{{.Cat.Get "owner.health"}}</h2>
-  {{if .Devices}}
-  <div class="overflow-x-auto">
-  <table class="tbl tbl--bare">
-    <thead><tr> <th>{{.Cat.Get "owner.serial"}}</th> <th>{{.Cat.Get "owner.state"}}</th> <th>{{.Cat.Get "owner.last"}}</th> <th>{{.Cat.Get "owner.signal"}}</th>
-    </tr></thead>
-    <tbody>
-      {{range .Devices}}
-      <tr>
-        <td class="font-mono">{{.Serial}}</td>
-        <td class="{{if eq .Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Status}}</td>
-        <td>{{.SeenAge}}</td>
-        <td class="tnum{{if .Weak}} text-accent{{end}}">{{.RSSIText}}</td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-  </div>
-  <div class="border-l-2 border-ink pl-3 mt-4">
-    <h3 class="font-semibold">{{.Cat.Get "owner.health.old"}}</h3>
-    <ol class="list-decimal list-inside text-sm text-muted mt-1">
-      <li>{{.Cat.Get "owner.step1"}}</li>
-      <li>{{.Cat.Get "owner.step2"}}</li>
-      <li>{{.Cat.Get "owner.step3"}}</li>
-    </ol>
-  </div>
-  {{else}}
-  <div class="tx-dither border-2 border-ink p-4 text-sm text-muted">{{.Cat.Get "owner.no_devices"}}</div>
-  {{end}}
-</section>
-
-{{template "shell-foot.html" .}}
+{{template "shell-foot.html" (.Cat.Get "owner.footer")}}
 </div>
 </body>
 </html>{{end}}

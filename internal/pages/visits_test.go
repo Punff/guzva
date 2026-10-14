@@ -2,9 +2,9 @@ package pages
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"net/http/httptest"
 	"testing"
 	"time"
 
