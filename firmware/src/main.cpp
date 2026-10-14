@@ -122,6 +122,9 @@ static const uint32_t CAM_BACKOFF_MIN_S   = 10;      // camera probe backoff
 static const uint32_t CAM_BACKOFF_MAX_S   = 1800;
 static const uint8_t  CAM_FAIL_LIMIT      = 5;       // degraded after 5
 static const uint8_t  FRAMESIZE_MAX_OV2640 = 10;     // FRAMESIZE_UXGA
+static const uint8_t  WARM_DISCARD_COUNT  = 2;       // frames discarded after boot / config apply (ov2640 needs ~2 frames to converge exposure)
+// Tracks consecutive dark rejects from the server; reset on any 201/409.
+static uint8_t warmConsecutiveDark = 0;
 // Task-watchdog backstop (W4/F1). Every blocking path in this firmware has
 // its own deadline, but before W4 nothing recovered an UNEXPECTED stall: a
 // driver edge or a logic deadlock hung the board forever with the LED dark.
@@ -237,6 +240,12 @@ int      lastHttp        = 0;
 uint32_t ledOkFlashUntil = 0;
 uint32_t pendingFactoryAt = 0;
 uint32_t wifiLastAttempt = 0;
+ 
+// Warm-up gate: frames discarded after boot / config apply until ov2640
+// auto-exposure converges. After WARM_DISCARD_COUNT captures normal posting
+// resumes. Discarded frames are never POSTed and do not touch dark/post_fail/tls
+// counters; nextTickAt advances by the normal interval (no health-only beat).
+uint8_t  warmDiscards    = 0;
 uint32_t wifiRetryMs     = WIFI_RETRY_MIN_MS;
 bool     wifiWasDown     = true;
 
@@ -336,7 +345,12 @@ static void applySensorCfg() {
   if (s->set_exposure_ctrl) s->set_exposure_ctrl(s, sc.aec);
   if (s->set_gain_ctrl)   s->set_gain_ctrl(s, sc.agc);
   if (s->set_ae_level)    s->set_ae_level(s, sc.ae_level);
-  if (s->set_agc_gain)    s->set_agc_gain(s, sc.agc_gain);
+  if (s->set_agc_gain) {
+    s->set_agc_gain(s, sc.agc_gain);
+    if (sc.agc && sc.agc_gain == 0) {
+      Serial.println("[SENS] gain ctrl on but agc_gain=0: auto-gain is pinned to minimum, frames will read dark");
+    }
+  }
   if (s->set_hmirror)     s->set_hmirror(s, sc.hmirror);
   if (s->set_vflip)       s->set_vflip(s, sc.vflip);
   if (s->set_dcw)         s->set_dcw(s, sc.dcw);
@@ -976,6 +990,7 @@ static void applyCfgFromBody() {
   if (sensorChanged) {
     saveSensorCfg();
     applySensorCfg();
+    warmDiscards = 0;  // warm-up window resets after exposure-affecting config apply
   }
   if (any)
     Serial.printf("[CFG ] applied ver=%lu interval_s=%lu quality=%u fs=%u "
@@ -1066,8 +1081,18 @@ static void runTick() {
           camBackoffS = 0;
           Serial.println("[CAM] recovered -> normal cadence");
         }
-        Serial.printf("[CAP ] ok: %u bytes in %lu ms\n", (unsigned)frameLen,
-                      (unsigned long)((micros() - tc) / 1000UL));
+        // Warm-up gate: discard the first WARM_DISCARD_COUNT captures after boot
+        // or after any config apply that changes exposure-affecting keys, so the
+        // OV2640 auto-exposure can converge. These frames are never POSTed.
+        if (warmDiscards < WARM_DISCARD_COUNT) {
+          warmDiscards++;
+          Serial.printf("[WARM] exposure settling, capture %u/%u discarded\n",
+                        (unsigned)warmDiscards, (unsigned)WARM_DISCARD_COUNT);
+          haveFrame = false;  // force health-only beat below; nextTickAt still advances
+        } else {
+          Serial.printf("[CAP ] ok: %u bytes in %lu ms\n", (unsigned)frameLen,
+                        (unsigned long)((micros() - tc) / 1000UL));
+        }
       } else {
         captureFail++;
         camFailStreak++;
