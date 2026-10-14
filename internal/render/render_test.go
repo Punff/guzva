@@ -327,6 +327,46 @@ func TestRejects(t *testing.T) {
 	}
 }
 
+// Q-01: dark/dead rejects carry the measured mean luma; every other
+// reject carries 0 ("unmeasured"). The journal logs mean_luma only for
+// dark/dead, so the key's presence proves a frame was measured.
+func TestRejectMean(t *testing.T) {
+	e := testEngine()
+	// dark: uniform black → measured below the threshold.
+	_, err := process(t, e, uniformFrame(t, 320, 240, color.RGBA{A: 255}), "poster")
+	reason, ok := IsReject(err)
+	if !ok || reason != proto.ReasonDark {
+		t.Fatalf("err = %v, want dark reject", err)
+	}
+	if m := RejectMean(err); m >= DarkMeanLuma {
+		t.Errorf("dark Mean = %v, want < %v", m, DarkMeanLuma)
+	}
+	// dead: uniform mid-gray → measured ≈ 128 (a real number flows,
+	// not a constant).
+	_, err = process(t, e, uniformFrame(t, 320, 240, color.RGBA{R: 128, G: 128, B: 128, A: 255}), "poster")
+	reason, ok = IsReject(err)
+	if !ok || reason != proto.ReasonDead {
+		t.Fatalf("err = %v, want dead reject", err)
+	}
+	if m := RejectMean(err); m < 100 || m > 156 {
+		t.Errorf("dead Mean = %v, want ≈128", m)
+	}
+	// Unmeasured rejects carry 0.
+	unmeasured := map[string][]byte{
+		"bad_magic": {0x00, 0x01},
+		"dims":      uniformFrame(t, 64, 64, color.RGBA{R: 90, G: 140, B: 200, A: 255}),
+	}
+	for name, raw := range unmeasured {
+		_, err := process(t, e, raw, "poster")
+		if _, ok := IsReject(err); !ok {
+			t.Fatalf("%s: err = %v, want reject", name, err)
+		}
+		if m := RejectMean(err); m != 0 {
+			t.Errorf("%s: Mean = %v, want 0 (unmeasured)", name, m)
+		}
+	}
+}
+
 // §7: no raw preset exists — the registry cannot publish an unstyled frame.
 func TestNoRawPreset(t *testing.T) {
 	e := testEngine()

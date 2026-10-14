@@ -114,8 +114,8 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// body. All of these statuses carry desired_cfg (§4). The reject reason
 	// goes into the journal too — a 422 that only lives in quarantine.jsonl
 	// is invisible to whoever is on support.
-	respond := func(status int, reason string) {
-		s.logOutcome(status, dev, meta, r.TLS, renderMS, reason)
+	respond := func(status int, reason string, meanLuma float64) {
+		s.logOutcome(status, dev, meta, r.TLS, renderMS, reason, meanLuma)
 		s.writeResp(w, status, s.response(dev, reason))
 	}
 
@@ -142,7 +142,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// Per-device token bucket (§6.1 step 2).
 	if !s.lim.AllowDevice(dev.ID) {
 		s.m.add("ratelimited")
-		s.logOutcome(proto.StatusRateLimit, dev, meta, r.TLS, 0, "")
+		s.logOutcome(proto.StatusRateLimit, dev, meta, r.TLS, 0, "", 0)
 		s.write429(w)
 		return
 	}
@@ -154,7 +154,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	if pct, err := s.diskFree(s.dataDir); err == nil && pct < MinFreePct {
 		s.m.add("disk_full")
 		s.log.Error("disk degraded", "free_pct", pct)
-		s.logOutcome(proto.StatusDiskFull, dev, meta, r.TLS, 0, "")
+		s.logOutcome(proto.StatusDiskFull, dev, meta, r.TLS, 0, "", 0)
 		s.writeErr(w, proto.StatusDiskFull, "disk_degraded")
 		return
 	}
@@ -166,7 +166,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &re) {
 			if re.status == proto.StatusTooLarge {
 				s.m.add("too_large")
-				s.logOutcome(proto.StatusTooLarge, dev, meta, r.TLS, 0, "")
+				s.logOutcome(proto.StatusTooLarge, dev, meta, r.TLS, 0, "", 0)
 				s.writeErr(w, proto.StatusTooLarge, "too_large")
 				return
 			}
@@ -201,7 +201,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 				// general pre-check, so it carries its own.
 				if exists, xerr := s.st.FrameExists(ctx, dev.VenueID, meta.CaptureID); xerr == nil && exists {
 					s.m.add("duplicate")
-					respond(proto.StatusDuplicate, "")
+					respond(proto.StatusDuplicate, "", 0)
 					return
 				}
 				if _, qerr := s.st.InsertFrame(ctx, store.Frame{
@@ -214,19 +214,19 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			s.m.add("quarantined")
-			respond(proto.StatusRejected, reason)
+			respond(proto.StatusRejected, reason, 0)
 			return
 		}
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) || errors.Is(err, errTooLarge) {
 			s.m.add("too_large")
-			s.logOutcome(proto.StatusTooLarge, dev, meta, r.TLS, 0, "")
+			s.logOutcome(proto.StatusTooLarge, dev, meta, r.TLS, 0, "", 0)
 			s.writeErr(w, proto.StatusTooLarge, "too_large")
 			return
 		}
 		s.m.add("bad_meta")
 		s.quarantine(ctx, dev, meta.CaptureID, proto.ReasonBadMeta, len(frameRaw), "", meta)
-		respond(proto.StatusRejected, proto.ReasonBadMeta)
+		respond(proto.StatusRejected, proto.ReasonBadMeta, 0)
 		return
 	}
 
@@ -254,7 +254,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 			s.log.Error("beat update failed", "err", err.Error())
 		}
 		s.m.add("duplicate")
-		respond(proto.StatusDuplicate, "")
+		respond(proto.StatusDuplicate, "", 0)
 		return
 	}
 
@@ -270,7 +270,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.m.add("health")
-		respond(proto.StatusStored, "")
+		respond(proto.StatusStored, "", 0)
 		return
 	}
 
@@ -309,7 +309,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 				}
 				// Already seen: idempotent 409.
 				s.m.add("duplicate")
-				respond(proto.StatusDuplicate, "")
+				respond(proto.StatusDuplicate, "", 0)
 				return
 			}
 			if err := s.st.UpdateDeviceBeat(ctx, dev.ID, beat); err != nil {
@@ -318,7 +318,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 			s.m.add("quarantined")
 			s.log.Warn("frame quarantined",
 				"venue", dev.VenueID, "capture_id", meta.CaptureID, "reason", reason)
-			respond(proto.StatusRejected, reason)
+			respond(proto.StatusRejected, reason, render.RejectMean(perr))
 			return
 		}
 		s.internal(w, "render", perr)
@@ -347,7 +347,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		os.Remove(tmp)
 		if errors.Is(ferr, store.ErrDuplicate) {
 			s.m.add("duplicate")
-			respond(proto.StatusDuplicate, "")
+			respond(proto.StatusDuplicate, "", 0)
 			return
 		}
 		s.internal(w, "insert frame", ferr)
@@ -369,7 +369,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		s.OnStored(ctx, dev.VenueID)
 	}
 	s.m.add("stored")
-	respond(proto.StatusStored, "")
+	respond(proto.StatusStored, "", 0)
 }
 
 // logOutcome is the per-ingest journal line: one line for every response
@@ -378,7 +378,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 // mbedtls is picky and the cipher tells us which side of the wire to look
 // at when a response goes missing. Info for accepted outcomes (201/409),
 // Warn for rejects (422/429/507). Bodies and tokens are never logged (§1).
-func (s *Server) logOutcome(status int, dev *store.Device, meta proto.Meta, tlsState *tls.ConnectionState, renderMS float64, rejectReason string) {
+func (s *Server) logOutcome(status int, dev *store.Device, meta proto.Meta, tlsState *tls.ConnectionState, renderMS float64, rejectReason string, meanLuma float64) {
 	serial, venue := "?", int64(0)
 	if dev != nil {
 		serial, venue = dev.Serial, dev.VenueID
@@ -409,6 +409,16 @@ func (s *Server) logOutcome(status int, dev *store.Device, meta proto.Meta, tlsS
 	// device's provision-diag field, which is something else entirely.
 	if rejectReason != "" {
 		attrs = append(attrs, "reject", rejectReason)
+		// Measured mean luma, dark/dead only: "covered lens" (mean ≈ 0)
+		// vs "gain clamp" (mean low but nonzero) must be distinguishable
+		// from the journal alone, without raw-image access (§1). The key
+		// is spelled mean_luma — the one place it ever appears. Only
+		// dark/dead carry a measurement (RejectWithMean), so the key's
+		// presence IS the proof a frame was measured; every other caller
+		// passes 0 and never logs the key, where 0 means "unmeasured".
+		if rejectReason == proto.ReasonDark || rejectReason == proto.ReasonDead {
+			attrs = append(attrs, "mean_luma", math.Round(meanLuma*10)/10)
+		}
 	}
 	if meta.Reason != "" {
 		attrs = append(attrs, "reason", meta.Reason)

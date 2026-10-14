@@ -117,6 +117,24 @@ func blackFrame(t *testing.T, w, h int) []byte {
 	return buf.Bytes()
 }
 
+// grayFrame is a uniform mid-gray JPEG (the "dead sensor" shape): it
+// decodes to a near-uniform grid with mean ≈ 128 — a real measured
+// number, proving the journal value flows rather than defaults.
+func grayFrame(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: 128, G: 128, B: 128, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 80}); err != nil {
+		t.Fatalf("encode gray: %v", err)
+	}
+	return buf.Bytes()
+}
+
 func clamp(v int) int {
 	if v < 0 {
 		return 0
@@ -843,5 +861,42 @@ func TestLogOutcomeCarriesRejectReason(t *testing.T) {
 	lh := f.logs.String()
 	if !strings.Contains(lh, "reject=dark") {
 		t.Fatalf("dark frame 422 missing reject reason:\n%s", lh)
+	}
+}
+
+// Q-01: dark/dead rejects carry mean_luma on the journal line — covered
+// lens (mean ≈ 0) vs dead sensor (mean ≈ 128) distinguishable without
+// raw-image access (§1). Every other reject never logs the key, so its
+// presence proves a frame was measured.
+func TestLogOutcomeCarriesMeanLuma(t *testing.T) {
+	f := newFixture(t, 4)
+	// dark: uniform black → measured ≈ 0.
+	if w := f.postFrame(t, "C1-1-aaaa", blackFrame(t, 640, 480)); w.Code != proto.StatusRejected {
+		t.Fatalf("dark = %d", w.Code)
+	}
+	tail := f.logs.String()
+	if !strings.Contains(tail, "reject=dark") || !strings.Contains(tail, "mean_luma=0") {
+		t.Errorf("dark 422 missing mean_luma=0:\n%s", tail)
+	}
+	// dead: uniform mid-gray → a real nonzero number flows, not a default.
+	mark := len(f.logs.String())
+	if w := f.postFrame(t, "C1-2-bbbb", grayFrame(t, 320, 240)); w.Code != proto.StatusRejected {
+		t.Fatalf("dead = %d", w.Code)
+	}
+	tail = f.logs.String()[mark:]
+	if !strings.Contains(tail, "reject=dead") || !strings.Contains(tail, "mean_luma=1") {
+		t.Errorf("dead 422 missing mean_luma≈128:\n%s", tail)
+	}
+	// dims: decoded but unmeasured → the key must be absent.
+	mark = len(f.logs.String())
+	if w := f.postFrame(t, "C1-3-cccc", syntheticFrame(t, 64, 64, 3)); w.Code != proto.StatusRejected {
+		t.Fatalf("dims = %d", w.Code)
+	}
+	tail = f.logs.String()[mark:]
+	if !strings.Contains(tail, "reject=dims") {
+		t.Errorf("dims 422 missing reason:\n%s", tail)
+	}
+	if strings.Contains(tail, "mean_luma=") {
+		t.Errorf("unmeasured dims reject logged mean_luma:\n%s", tail)
 	}
 }

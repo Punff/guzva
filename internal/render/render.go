@@ -75,6 +75,11 @@ type Output struct {
 // proto reason constants; nothing is ever stored for it.
 type RejectError struct {
 	Reason string
+	// Mean is the measured mean luma (0-255) for rejects that measured
+	// one — dark and dead only. Every other reject leaves it 0, which
+	// means "unmeasured", never "black": only dark/dead call sites use
+	// RejectWithMean, so a dark/dead Mean is always a real measurement.
+	Mean float64
 }
 
 func (e *RejectError) Error() string { return "frame rejected: " + e.Reason }
@@ -82,12 +87,29 @@ func (e *RejectError) Error() string { return "frame rejected: " + e.Reason }
 // Reject builds a *RejectError.
 func Reject(reason string) error { return &RejectError{Reason: reason} }
 
+// RejectWithMean builds a *RejectError carrying the measured mean luma.
+// Use it at the dark/dead sites so operators can tell "covered lens"
+// (mean ≈ 0) from "gain clamp" (mean low but nonzero) from the journal
+// alone, without raw-image access (§1).
+func RejectWithMean(reason string, mean float64) error {
+	return &RejectError{Reason: reason, Mean: mean}
+}
+
 // IsReject reports whether err is a *RejectError and returns its reason.
 func IsReject(err error) (string, bool) {
 	if r, ok := err.(*RejectError); ok {
 		return r.Reason, true
 	}
 	return "", false
+}
+
+// RejectMean returns the measured mean luma carried by a dark/dead reject
+// (0 when the error carries no measurement — only dark/dead do).
+func RejectMean(err error) float64 {
+	if r, ok := err.(*RejectError); ok {
+		return r.Mean
+	}
+	return 0
 }
 
 // Engine runs the pipeline. A single global semaphore bounds concurrent
@@ -185,9 +207,9 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 		return Output{}, err
 	}
 	if mean, uniform := gridStats(g); mean < DarkMeanLuma {
-		return Output{}, Reject(proto.ReasonDark)
+		return Output{}, RejectWithMean(proto.ReasonDark, mean)
 	} else if uniform {
-		return Output{}, Reject(proto.ReasonDead)
+		return Output{}, RejectWithMean(proto.ReasonDead, mean)
 	}
 
 	// --- the print: masks → blur → quantise → mode → masks → PNG.
