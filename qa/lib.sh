@@ -89,12 +89,59 @@ qa_summary() {
 
 # ------------------------------------------------------------ server control
 
-# qa_build compiles the binary ONCE per run from the working tree (not a
-# tag, not prod). `go build` not `make build`, so the css staleness gate
-# cannot fail a test run for a reason unrelated to the test.
+# QA_BUILD_FROM — which tree the binary comes from:
+#   work    (default) the live working tree, so a test run sees other
+#           sessions' in-flight work
+#   HEAD    a pristine export of the last commit, for when the working tree
+#           does not compile because someone is mid-write
 qa_build() {
   mkdir -p "$GUZVA_QA_DIR"
-  ( cd "$REPO_ROOT" && CGO_ENABLED=0 go build -o "$QA_BIN" ./cmd/guzva ) || return 1
+  case "${QA_BUILD_FROM:-work}" in
+    HEAD) qa_build_from_head ;;
+    *)    qa_build_from_work ;;
+  esac
+}
+
+qa_build_from_work() {
+  ( cd "$REPO_ROOT" && CGO_ENABLED=0 go build -o "$QA_BIN" ./cmd/guzva )
+}
+
+# qa_build_from_head exports HEAD into a scratch dir with `git archive` and
+# builds there. This exists because another session is sometimes mid-write:
+# at 14:5x on 2026-10-14, internal/pages/static.go and stale_test.go carried
+# a few hundred NUL bytes each (an editor that preallocated a buffer), which
+# made `go build ./cmd/guzva` fail and `make test` red for the whole repo.
+#
+# `git archive` rather than `git worktree add`: it touches nothing under
+# .git, creates no branch, and cannot disturb the other session's checkout —
+# which is the constraint that rules out git stash (AGENTS.md: never stash,
+# another session's uncommitted work shares this tree).
+qa_build_from_head() {
+  local src="$GUZVA_QA_DIR/src-head"
+  if [[ ! -d "$src" ]]; then
+    mkdir -p "$src"
+    ( cd "$REPO_ROOT" && git archive HEAD ) | tar -x -C "$src" || return 1
+  fi
+  # qa/ is not in an old HEAD export; copy the fixture generator in so
+  # qa_fixtures keeps working against the same module.
+  mkdir -p "$src/qa"
+  cp "$REPO_ROOT"/qa/fixtures/main.go "$src/qa/fixtures_main.go" 2>/dev/null
+  mkdir -p "$src/qa/fixtures"
+  mv -f "$src/qa/fixtures_main.go" "$src/qa/fixtures/main.go" 2>/dev/null
+  ( cd "$src" && CGO_ENABLED=0 go build -o "$QA_BIN" ./cmd/guzva )
+}
+
+# qa_tree_status prints what the working tree looks like, so a test run's
+# results can be attributed to a known state of the repo.
+qa_tree_status() {
+  printf '  tree: %s | HEAD %s | modified: %s\n' \
+    "$(cd "$REPO_ROOT" && git rev-parse --abbrev-ref HEAD)" \
+    "$(cd "$REPO_ROOT" && git rev-parse --short HEAD)" \
+    "$(cd "$REPO_ROOT" && git status --porcelain -- ':!qa' ':!docs/qa-findings.md' | wc -l | tr -d ' ')"
+  local dirty
+  dirty="$(cd "$REPO_ROOT" && git status --porcelain -- ':!qa' ':!docs/qa-findings.md' | awk '{print $2}' | tr '\n' ' ')"
+  [[ -n "$dirty" ]] && printf '  dirty paths: %s\n' "$dirty"
+  return 0
 }
 
 # qa_fixtures generates the JPEG corpus.
@@ -260,3 +307,19 @@ qa_body()   { printf '%s' "${1#*$'\t'}"; }
 # qa_post_raw <args...> — escape hatch for headers/methods qa_post does not
 # cover (bad token, explicit If-Modified-Since, oversized bodies).
 qa_post_raw() { curl -sS -o /dev/null -w '%{http_code}' "$@"; }
+
+# qa_hasf <label> <haystack> <needle> — FIXED-string substring.
+#
+# qa_has uses bash pattern matching, where `.` is literal but `[2.25rem]` is a
+# character class and `2\.25rem` is a literal backslash. Every Tailwind
+# arbitrary-value assertion (text-[2.25rem], sm:text-[3rem]) therefore has to
+# go through this one instead.
+qa_hasf() {
+  if [[ -n "$3" && "$2" == *"$3"* ]]; then qa_ok "$1"; else qa_bad "$1: fixed '$3' not found"; fi
+}
+
+# qa_hasf_file <label> <file> <fixed needle> — same, reading a file so the
+# needle can span the lines of one HTML element.
+qa_hasf_file() {
+  if [[ -n "$3" ]] && grep -qF -- "$3" "$2"; then qa_ok "$1"; else qa_bad "$1: fixed '$3' not found in $2"; fi
+}

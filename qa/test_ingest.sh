@@ -21,6 +21,7 @@ set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 echo "== ingest contract matrix =="
+qa_tree_status
 qa_build     || { echo "build failed" >&2; exit 1; }
 qa_fixtures  || { echo "fixtures failed" >&2; exit 1; }
 qa_server_start || exit 1

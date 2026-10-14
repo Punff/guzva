@@ -346,3 +346,50 @@ Two bugs cost most of the round's wall clock and are worth not repeating:
    replenished, and the deficit compounds until *everything* is refused. The
    harness posts every 0.7 s across 24 devices; the 429 row deliberately uses
    one reserved device instead.
+
+---
+
+### Q-02 / Q-06 · RESOLVED by `83b707d` — conditional GET verified, test now enforced
+
+`83b707d pages: conditional GET — settings edits reach open pages (hours-edit
+report)` landed 2026-10-14 15:32 and `qa/test_pagecache.sh` was flipped from
+skip-marked to **enforced** in the same session.
+
+**Result: 22 passed, 1 failing.** The one failure is Q-04, which B did not
+touch. Verified working:
+
+- `GET /<slug>/` → 200 with `Last-Modified` (mtime, truncated to the second —
+  HTTP dates carry no finer resolution).
+- `If-Modified-Since` in the future → **304, zero-byte body**.
+- `If-Modified-Since` in the past → 200 with the full body.
+- The still is untouched and still conditional (`ServeContent`).
+- The web root still holds exactly two files after all of it.
+- The unconditional headers survive on the 304: `Cache-Control: no-cache`,
+  `nosniff`, `DENY`, `noindex`, `Referrer-Policy`, `CORP`,
+  `Permissions-Policy`.
+
+**One test assertion of mine was wrong and was corrected rather than "fixed"
+in the code.** I had asserted that `Content-Security-Policy` must appear on
+the 304. It does not, deliberately — the commit message says "CSP/Content-Type
+are 200-only", and that is correct: RFC 9111 §4.3.4 makes a 304 *update* the
+stored entry's headers, so the CSP from the 200 that populated the cache is
+still in force. Sending a CSP on a bodyless 304 that nothing renders would be
+cargo cult. The test now asserts the headers that genuinely must survive
+(the caching/framing set) and records why the CSP is exempt.
+
+**Q-01 status note.** Backend's item-C WIP (`mean_lua` + a hardcoded `0`) is
+**no longer in the tree** — `logOutcome` is back to six parameters and no
+luma value is logged at all. So Q-01 is not "fixed but wrong", it is
+"not implemented": there is currently no mean-luma instrumentation anywhere.
+The finding stands as the spec for that work, and the typo note matters
+whenever it is written.
+
+### Q-04 · still open after B
+
+`Vary: Accept-Encoding` is still set only inside the gzip branch of
+`pageCache.serve`, so a client that does not advertise gzip receives a 200
+with no `Vary`. Confirmed again against `83b707d`. Moving the single
+`w.Header().Set("Vary", …)` above the `if !acceptsGzip(r)` branch fixes it;
+it is a one-line move in a file backend owns. P2, because both the page and
+the still are `no-cache`, so no conforming shared cache should be storing
+either — the defect only bites a misconfigured intermediary.
