@@ -177,7 +177,8 @@ var hr = &Catalog{
 		"owner.login.venue":        "Objekat",
 		"owner.login.password":     "Lozinka",
 		"owner.login.submit":       "Prijava",
-		"owner.login.note":         "Pristup izdaje administrator. Tokeni uređaja i postavke kamere ostaju kod njega — ovaj panel pokriva podatke o objektu i stanje.",
+		"owner.login.note":         "Pristup daje administrator. Ovdje vidiš koliko gostiju gleda tvoju stranicu, dijeliš link i QR kod i uređuješ podatke i radno vrijeme.",
+		"owner.login.venue.hint":   "Adresa tvoje stranice — npr. jadro za /jadro/",
 		"owner.login.err.throttle": "Previše pokušaja — pričekajte minutu.",
 		"owner.login.err.badcreds": "Prijava nije uspjela.",
 
@@ -323,7 +324,8 @@ var en = &Catalog{
 		"owner.login.venue":        "Venue",
 		"owner.login.password":     "Password",
 		"owner.login.submit":       "Sign in",
-		"owner.login.note":         "Access is issued by the administrator. Device tokens and camera settings stay with them — this panel covers venue details and status.",
+		"owner.login.note":         "Access comes from your administrator. Here you see how many guests view your page, share the link and QR code, and edit your details and hours.",
+		"owner.login.venue.hint":   "Your page address — e.g. jadro for /jadro/",
 		"owner.login.err.throttle": "Too many attempts — wait a minute.",
 		"owner.login.err.badcreds": "Sign-in failed.",
 

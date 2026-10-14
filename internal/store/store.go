@@ -959,6 +959,26 @@ func (s *Store) VisitDays(ctx context.Context, venueID int64, sinceDay string) (
 	return out, rows.Err()
 }
 
+// VisitViewsSince sums each venue's page views at or after since (the
+// fleet board's "views / 7 d" column).
+func (s *Store) VisitViewsSince(ctx context.Context, since time.Time) (map[int64]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT venue_id, SUM(views) FROM visits_hourly
+		WHERE hour >= ? GROUP BY venue_id`, ts(since))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]int64{}
+	for rows.Next() {
+		var id, n int64
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
 // PruneVisits drops visit counts older than cutoff (a year is plenty for
 // "how is my page doing" and keeps the table bounded).
 func (s *Store) PruneVisits(ctx context.Context, cutoff time.Time) error {

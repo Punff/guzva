@@ -19,8 +19,9 @@
     <a class="text-lg font-bold tracking-tight hover:underline" href="/{{.Slug}}/" target="_blank" rel="noreferrer">{{.Name}}</a>
     <code class="text-sm text-muted font-mono">/{{.Slug}}/</code>
     {{template "chip.html" .Fresh}}
+    <span class="text-sm text-muted tnum" title="Public page views in the last 7 days{{if .Live}}; people with the page open now{{end}}">{{.Views7}} views / 7 d{{if .Live}} · <span class="text-fresh">{{.Live}} watching</span>{{end}}</span>
     <span class="push flex items-center gap-x-3">
-      <span class="text-sm text-muted">{{.LastAge}}</span>
+      <span class="text-sm text-muted" title="Last frame">{{.LastAge}}</span>
       <a class="btn btn--quiet" href="/admin/venues/{{.ID}}">Edit</a>
     </span>
   </div>

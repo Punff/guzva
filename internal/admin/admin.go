@@ -297,6 +297,8 @@ type venueView struct {
 	Name    string
 	Fresh   chip // shape + colour + sentence for the status chip
 	LastAge string
+	Views7  int64 // public page views, last 7 days
+	Live    int   // visitors with the page open right now
 	Devices []deviceView
 	// attention is the fleet sort key (design-pass2 §6): lower = reads
 	// first. Never rendered.
@@ -331,6 +333,11 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.now().UTC()
+	views, err := s.st.VisitViewsSince(r.Context(), now.AddDate(0, 0, -7))
+	if err != nil {
+		s.internal(w, "visit totals", err)
+		return
+	}
 	byVenue := map[int64][]deviceView{}
 	for _, d := range devices {
 		byVenue[d.VenueID] = append(byVenue[d.VenueID], newDeviceView(d, now))
@@ -348,8 +355,11 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 	for _, v := range venues {
 		vv := venueView{
 			ID: v.ID, Slug: v.Slug, Name: v.Name,
-			LastAge: age(now, v.LastFrameAt), Devices: byVenue[v.ID],
+			LastAge: age(now, v.LastFrameAt), Devices: byVenue[v.ID], Views7: views[v.ID],
 			attention: attention[venue.Classify(v.LastFrameAt, now)],
+		}
+		if s.Stats != nil {
+			vv.Live = s.Stats.Live(v.Slug)
 		}
 		switch venue.Classify(v.LastFrameAt, now) {
 		case venue.Fresh:

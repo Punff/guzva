@@ -13,7 +13,8 @@
     <form method="post" action="/owner/login" class="border-2 border-ink bg-paper shadow-step p-4 grid gap-3">
       <div class="fieldset">
       <label class="lbl" for="slug">{{.Cat.Get "owner.login.venue"}}</label>
-        <input class="inp" id="slug" name="slug" placeholder="jadro" autofocus autocomplete="username">
+        <input class="inp" id="slug" name="slug" placeholder="jadro" autofocus autocomplete="username" aria-describedby="slug-hint">
+        <span class="text-xs text-muted" id="slug-hint">{{.Cat.Get "owner.login.venue.hint"}}</span>
       </div>
       <div class="fieldset">
       <label class="lbl" for="password">{{.Cat.Get "owner.login.password"}}</label>
