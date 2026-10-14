@@ -1165,6 +1165,29 @@ static void runTick() {
       // always printed as "?".
       jsonStr(respBody, "\"reason\":\"", why, sizeof why);
       sleepS = respNextS();
+      // Track consecutive dark rejects — dims rejects are an operator config
+      // error and must NOT escalate (handled server-side by backend validation).
+      if (strcmp(why, "dark") == 0) {
+        warmConsecutiveDark++;
+        Serial.printf("[HTTP] %d rejected (dark) -> consecutive %u\n",
+                      status, (unsigned)warmConsecutiveDark);
+        if (warmConsecutiveDark >= 4) {
+          // Escalate: 4 consecutive dark rejects — likely lens covered,
+          // mis-aimed, or lighting changed; switch to health-only beats.
+          Serial.println("[CAM] 4 consecutive dark rejects — "
+                         "lens covered/mis-aimed/lighting changed; "
+                         "health-only beats until a frame passes");
+          warmConsecutiveDark = 0;  // reset after escalation; next 201 clears
+          sleepS = intervalS;
+          haveFrame = false;  // force health-only beat on next tick
+        } else {
+          sleepS = respNextS();
+        }
+      } else {
+        // Non-dark reject (e.g. dims): reset dark counter, keep normal sleep
+        warmConsecutiveDark = 0;
+        sleepS = respNextS();
+      }
       Serial.printf("[HTTP] %d rejected (%s) -> not fatal, sleep %lu s\n",
                     status, why[0] ? why : "?", (unsigned long)sleepS);
     } else {                           // 507 / 5xx: retry next tick
