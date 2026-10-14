@@ -1120,3 +1120,20 @@ firmware. Commits `5c67796..` on master, CI green on each push.
   Lesson: diagnose the link from the server journal, never by attaching
   serial to a board that is mid-recovery.
 - Still owed: 48 h soak on p1; real-corpus tuning of the v4 constants.
+
+### Solo pass — owner statistics + UI polish (2026-10-14, not deployed)
+
+Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
+(a deploy restarts the server; not done mid-test without asking).
+
+- `13d5a77` visit counting (D10), schema v10. `f0bc521` stdlib QR encoder,
+  all versions 1–10 round-tripped through zbarimg (CI installs zbar).
+- `705b2b9` owner dashboard: 7-day KPIs with trends, 14-day + hour-of-day
+  SVG charts, tips, share card with QR + copy, printable poster, camera
+  uptime, settings folded. `2f1a69a` fleet views column, owner-login copy,
+  public print exactly 2× on desktop.
+- **CI was red for two commits (`13d5a77`, `f0bc521`)**: visits_test.go
+  imports unsorted. `make test` had failed locally, but I filtered its
+  output and missed the gofmt line. Fixed in `705b2b9`; I now gate on the
+  exit code of `make test`, not on grepped output.
+

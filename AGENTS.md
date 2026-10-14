@@ -57,10 +57,9 @@ proven setup. History of the team mode lives in docs/ops-log.md.)
 
 ## Open queue (docs/qa-findings.md is the tracker)
 
-- **Print v4 rollout** (docs/print-v4.md): S2 render + S4 server cleanup and
-  S3 firmware are in the tree (not deployed, not flashed). Next:
-  `make tag/deploy` the server (old firmware keeps working — no
-  desired_cfg is apply-if-found), then flash Profile v1 and soak 48 h.
+- **Deploy v0.8.0** (owner statistics, QR/poster, UI polish; schema v10,
+  additive) once the user's Profile v1 soak allows a server restart.
+- **Profile v1 soak** (48 h) on the bench board, v0.7.0 server — running.
 - **S0/S1 real corpus:** v4 constants were picked on the synthetic hard
   scene. Capture 30–40 local raw frames (never committed, `corpus/`), run
   `go run ./tools/styleproof -sweep -out /tmp/sheet corpus/*.jpg`, re-freeze

@@ -78,6 +78,7 @@ ssh info: root@guzva
 | D7 | **Croatian (`hr`) is the product locale**, English fallback | Public and vendor surfaces are Croatian (Latin script); admin/internal may stay English. One message catalog (`internal/i18n`); formats are `dd.mm.yyyy`, 24 h, `Europe/Sarajevo`. bs/sr are near-identical and can be added as extra catalogs. |
 | D8 | Vendor lifecycle in scope; **billing/invoicing deferred** | Onboarding checklist, invite/activate, per-venue settings, health/overview, offboarding are product features (§10). Billing (BAM, PDV 17 %) is a §14 trigger with the shape recorded. |
 | D9 | **No biometrics, ever** | No face/plate/people detection; it is a privacy commitment and a Bosnian/EU legal simplification (§13). Recorded here so no future feature quietly adds it. |
+| D10 | **Visit counts, never visitors** (owner statistics, 14 Oct 2026) | The public handler counts page views, still polls (watch time), `?src=qr` scans and "watching now" in memory (`internal/stats`); a sched job flushes counts to SQLite once a minute, so public requests still never touch the DB (D5). A visitor is sha256(daily random salt ‖ IP ‖ UA) held in RAM for the current UTC day only; the salt is never written and is replaced at midnight. No cookies, no IPs, no ids at rest — tested by a byte scan of the DB files. |
 
 ---
 
