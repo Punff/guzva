@@ -466,3 +466,73 @@ func TestTodayIdxFlipsStateKeyAtMidnight(t *testing.T) {
 			"rewritten on every tick")
 	}
 }
+
+// The hours-edit report: a settings edit must reach an ALREADY-OPEN page.
+// The 60 s poller keys off Last-Modified alone (venue.html: a moved value
+// means flip/edit/deploy → reload), so index.html must send the header and
+// honor conditional GET with 304 — otherwise document.lastModified stays
+// empty and no open page ever flips.
+func TestIndexHtmlConditionalGet(t *testing.T) {
+	f := newFixture(t)
+	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {
+		t.Fatal(err)
+	}
+	h := Static(f.w.Root())
+	get := func(target, ims string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, target, nil)
+		if ims != "" {
+			r.Header.Set("If-Modified-Since", ims)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+
+	w := get("/jadro/index.html", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET = %d, want 200", w.Code)
+	}
+	lm := w.Header().Get("Last-Modified")
+	if lm == "" {
+		t.Fatal("index.html sends no Last-Modified — the 60 s flip detector can never fire")
+	}
+	if _, err := time.Parse(http.TimeFormat, lm); err != nil {
+		t.Fatalf("Last-Modified %q does not parse as an HTTP date: %v", lm, err)
+	}
+	if w.Body.Len() == 0 {
+		t.Fatal("200 with an empty body")
+	}
+
+	// The same timestamp the server just sent → 304, empty body.
+	w304 := get("/jadro/index.html", lm)
+	if w304.Code != http.StatusNotModified {
+		t.Fatalf("conditional GET = %d, want 304", w304.Code)
+	}
+	if w304.Body.Len() != 0 {
+		t.Errorf("304 with a %d-byte body, want empty", w304.Body.Len())
+	}
+	// Security headers survive the 304: the cached page must stay protected.
+	for _, k := range []string{"Cache-Control", "X-Content-Type-Options", "X-Frame-Options"} {
+		if w304.Header().Get(k) == "" {
+			t.Errorf("304 dropped %s", k)
+		}
+	}
+
+	// A future timestamp → 304 as well (the QA curl proof).
+	future := time.Now().Add(time.Hour).UTC().Format(http.TimeFormat)
+	if w := get("/jadro/index.html", future); w.Code != http.StatusNotModified {
+		t.Errorf("future If-Modified-Since GET = %d, want 304", w.Code)
+	}
+
+	// A stale timestamp → full 200 again.
+	past := time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat)
+	if w := get("/jadro/index.html", past); w.Code != http.StatusOK || w.Body.Len() == 0 {
+		t.Errorf("stale If-Modified-Since GET = %d with %d-byte body, want 200 with body",
+			w.Code, w.Body.Len())
+	}
+
+	// The directory form serves the same file and the same contract.
+	if w := get("/jadro/", lm); w.Code != http.StatusNotModified {
+		t.Errorf("directory-form conditional GET = %d, want 304", w.Code)
+	}
+}

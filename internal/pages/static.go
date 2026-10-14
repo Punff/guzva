@@ -169,6 +169,19 @@ func (c *pageCache) get(key string, mtime time.Time, body []byte) (gz []byte, cs
 
 func (c *pageCache) serve(w http.ResponseWriter, r *http.Request, dir string, mtime time.Time, body []byte) {
 	gz, csp := c.get(filepath.Join(dir, "index.html"), mtime, body)
+	// The 60 s flip detector (DESIGN.md §7.3, venue.html poller) keys off
+	// this header alone: a moved Last-Modified means a flip, a settings
+	// edit, or a deploy → reload. Without it document.lastModified is empty
+	// and no already-open page ever flips (the hours-edit report). Truncated
+	// to the second: HTTP dates carry no finer resolution.
+	mt := mtime.UTC().Truncate(time.Second)
+	w.Header().Set("Last-Modified", mt.Format(http.TimeFormat))
+	if ims := r.Header.Get("If-Modified-Since"); ims != "" {
+		if t, err := time.Parse(http.TimeFormat, ims); err == nil && !mt.After(t) {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
 	w.Header().Set("Content-Security-Policy", csp)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if !acceptsGzip(r) {
