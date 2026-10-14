@@ -5,15 +5,14 @@
  *  https://github.com/espressif/esp32-camera
  * ----------------------------------------------------------------------------
  *  Does:
- *    - capture a JPEG on a timer (cadence driven by server desired_cfg)
+ *    - capture a JPEG on a timer (60 s; the server's next_s is a one-shot hint)
  *    - hand-built multipart POST to https://<INGEST_HOST>/v1/ingest
  *      (part "meta" JSON + optional part "frame", per proto-v1)
- *    - apply desired_cfg with read-back echo (cfg_ver_applied on every POST):
- *      cadence (interval_s) + the FULL OV2640 feature set — framesize,
- *      JPEG quality, brightness, contrast, saturation, sharpness, denoise,
- *      special effects, white-balance mode/AWB, exposure (AEC/ae_level),
- *      gain (AGC/agc_gain), hmirror, vflip, dcw, lens correction, colorbar
- *      test pattern and the flash LED PWM — any subset, server-driven
+ *    - camera Profile v1 (docs/print-v4.md §3): every sensor setting is a
+ *      compile-time constant — auto exposure/gain/white balance, QVGA, q14.
+ *      No remote camera config; changing the profile is a new build. The
+ *      profile id rides every POST so the server knows what made a frame.
+ *      Mounting orientation is the PROFILE_FLIP build flag.
  *    - no frame queue: upload failure = drop frame, post_fail++, fresh
  *      capture on the next tick
  *    - TLS: WiFiClientSecure + embedded CA (setCACert); keep-alive reuse of
@@ -23,7 +22,7 @@
  *      loop(); capture never waits for WiFi, there is no NTP in v1)
  *    - camera failure => exponential backoff + health-only beats, never a
  *      hot-reboot loop; XCLK 20 MHz → 16 MHz fallback
- *    - NVS identity in "prov", sensor/device config in "cam", factory reset
+ *    - NVS identity in "prov" (no config in NVS), factory reset
  *      over USB serial ("reset") and the caged LAN endpoint
  *    - LAN cage on port 80: GET /api/status, GET /jpg (1 per 3 s),
  *      GET /ping, POST /api/factory-reset?confirm=1 — nothing else
@@ -94,9 +93,6 @@
 
 #define FLASH_GPIO_NUM     4        // white flash LED (PWM via LEDC ch 1)
 #define INDICATOR_LED_PIN  33       // status LED, active LOW
-#define FLASH_LEDC_CH      1        // ch 0 / timer 0 = camera XCLK
-#define FLASH_LEDC_FREQ    5000
-#define FLASH_LEDC_BITS    8
 
 // ============================ LIMITS & TUNABLES ============================
 static const uint32_t WIFI_RETRY_MIN_MS   = 10000;   // join backoff 10 s .. 60 s
@@ -114,15 +110,14 @@ static const uint32_t POST_RETRY_GAP_MS   = 6000;    // decorrelate bursts
 static const uint32_t KEEPALIVE_IDLE_MS   = 45000;   // reuse well under 60 s idle
 static const uint32_t JPG_RATE_MS         = 3000;    // /jpg: 1 per 3 s
 static const size_t   UPLOAD_CHUNK        = 6144;    // 6 KiB chunks (spec 4-8 KiB)
-static const uint32_t INTERVAL_MIN_S      = 30;      // proto-v1 range
-static const uint32_t INTERVAL_MAX_S      = 300;
+static const uint32_t CAPTURE_INTERVAL_S  = 60;      // proto IntervalS
+static const uint32_t DARK_BACKOFF_S      = 300;     // after 4 dark rejects in a row
 static const uint32_t REVOKED_BACKOFF_MIN = 60;      // 401: 60 -> 600 s (proto)
 static const uint32_t REVOKED_BACKOFF_MAX = 600;
 static const uint32_t CAM_BACKOFF_MIN_S   = 10;      // camera probe backoff
 static const uint32_t CAM_BACKOFF_MAX_S   = 1800;
 static const uint8_t  CAM_FAIL_LIMIT      = 5;       // degraded after 5
-static const uint8_t  FRAMESIZE_MAX_OV2640 = 10;     // FRAMESIZE_UXGA
-static const uint8_t  WARM_DISCARD_COUNT  = 2;       // frames discarded after boot / config apply (ov2640 needs ~2 frames to converge exposure)
+static const uint8_t  WARM_DISCARD_COUNT  = 2;       // frames discarded after boot (ov2640 needs ~2 frames to converge exposure)
 // Tracks consecutive dark rejects from the server; reset on any 201/409.
 static uint8_t warmConsecutiveDark = 0;
 // Task-watchdog backstop (W4/F1). Every blocking path in this firmware has
@@ -147,63 +142,28 @@ static const char PART_FRAME_HDR[] =
     "Content-Type: image/jpeg\r\n\r\n";
 static const char PART_TAIL[] = "--" MP_BOUNDARY "--\r\n";
 
-// ============================ SENSOR CONFIG (OV2640) =======================
-// The full device feature set (esp32-camera sensor_t). Any subset arrives in
-// desired_cfg, gets applied to the sensor, persisted in NVS and echoed via
-// cfg_ver_applied. Values are clamped to what the OV2640 accepts.
-struct SensorCfg {
-  uint8_t framesize;    // FRAMESIZE_* (0..UXGA)  — OV2640 max 10
-  uint8_t quality;      // JPEG 4..63, lower = better
-  int8_t  brightness;   // -2..2
-  int8_t  contrast;     // -2..2
-  int8_t  saturation;   // -2..2
-  int8_t  sharpness;    // -2..2 (NULL-guarded: not on all sensors)
-  uint8_t denoise;      // 0/1
-  uint8_t special_fx;   // 0 normal .. 6 sepia
-  uint8_t wb_mode;      // 0 auto .. 4 home
-  uint8_t awb;          // 0/1 white balance
-  uint8_t aec;          // 0/1 exposure control
-  uint8_t agc;          // 0/1 gain control
-  int8_t  ae_level;     // -2..2
-  uint8_t agc_gain;     // 0..30
-  uint8_t hmirror;      // 0/1
-  uint8_t vflip;        // 0/1
-  uint8_t dcw;          // 0/1 downsize
-  uint8_t lenc;         // 0/1 lens correction
-  uint8_t colorbar;     // 0/1 test pattern
-  uint8_t led_pwm;      // 0..255 flash LED
-};
-static SensorCfg scDefault = {
-  /* framesize  */ 5,       // FRAMESIZE_QVGA (320x240): the render grid is
-                             // 160x120, so anything above QVGA only costs
-                             // upload bytes on a weak link (DESIGN.md ⚑10).
-                             // NOTE: 4 is 240x240 (square, non-4:3) — the old
-                             // default here was mislabelled VGA and its frames
-                             // are dims-rejected server-side.
-  /* quality    */ 14,
-  /* brightness */ 0, /* contrast */ 0, /* saturation */ 0, /* sharpness */ 0,
-  /* denoise    */ 0,
-  /* special_fx */ 0, /* wb_mode */ 0,
-  /* awb        */ 1, /* aec */ 1, /* agc */ 1,
-  /* ae_level   */ 0, /* agc_gain */ 0,
-  /* hmirror    */ 0, /* vflip */ 0, /* dcw */ 1,
-  /* lenc       */ 1, /* colorbar */ 0,
-  /* led_pwm    */ 0,
-};
-static SensorCfg sc = scDefault;
+// ============================ CAMERA PROFILE v1 ============================
+// Frozen (docs/print-v4.md §3). The server render normalises lighting
+// itself, so the sensor runs fully automatic and nothing here is tunable at
+// runtime: each knob was another way to break the picture remotely. A new
+// profile = a new PROFILE_ID and a new build.
+#define PROFILE_ID "p1"
+#ifndef PROFILE_FLIP
+#define PROFILE_FLIP 0          // 1 = camera mounted upside down
+#endif
+static const framesize_t PROFILE_FRAMESIZE = FRAMESIZE_QVGA;  // 320x240, the render grid
+static const int         PROFILE_QUALITY   = 14;              // JPEG, lower = better
 
 // ============================ STATE ========================================
 // --- NVS-backed -------------------------------------------------------------
-//   namespace "prov": boot, brownout, capture (id counter), cfgver, token
-//   namespace "cam" : interval (s), scfg (SensorCfg blob)
-Preferences provPrefs, camPrefs;
+//   namespace "prov": boot, brownout, capture (id counter), token
+//   (namespace "cam" held the pre-Profile-v1 remote config; cleared on boot)
+Preferences provPrefs;
 
 uint32_t bootCount      = 0;
 uint32_t brownoutCount  = 0;
 uint32_t captureSeq     = 0;
-uint32_t cfgVerApplied  = 0;
 char     deviceToken[80] = {0};
-uint32_t intervalS      = 60; // server default; 45-90 s recommended (DESIGN.md ⚑10)
 
 // --- RAM counters (reset on boot) -------------------------------------------
 uint32_t joinFail = 0, postFail = 0, tlsFail = 0, captureFail = 0;
@@ -215,7 +175,7 @@ char     captureId[40]   = {0};
 char     metaBuf[1024]   = {0};
 char     reqHead[640]    = {0};
 char     respHdr[1024]   = {0};
-char     respBody[2048]  = {0};   // room for a full sensor desired_cfg
+char     respBody[1024]  = {0};   // next_s/server_time/reason; room for an old server's desired_cfg
 // Bytes read past the end of the header block (the body often arrives in the
 // same TLS record); the body read consumes these before touching the socket.
 char     respCarry[512]  = {0};
@@ -242,7 +202,7 @@ uint32_t ledOkFlashUntil = 0;
 uint32_t pendingFactoryAt = 0;
 uint32_t wifiLastAttempt = 0;
  
-// Warm-up gate: frames discarded after boot / config apply until ov2640
+// Warm-up gate: frames discarded after boot until ov2640
 // auto-exposure converges. After WARM_DISCARD_COUNT captures normal posting
 // resumes. Discarded frames are never POSTed and do not touch dark/post_fail/tls
 // counters; nextTickAt advances by the normal interval (no health-only beat).
@@ -253,9 +213,6 @@ bool     wifiWasDown     = true;
 // ============================ SMALL HELPERS ================================
 static bool due(uint32_t at) { return (int32_t)(millis() - at) >= 0; }
 
-static int32_t clampi(int32_t v, int32_t lo, int32_t hi) {
-  return v < lo ? lo : (v > hi ? hi : v);
-}
 static uint32_t clampu(uint32_t v, uint32_t lo, uint32_t hi) {
   return v < lo ? lo : (v > hi ? hi : v);
 }
@@ -271,22 +228,6 @@ static bool jsonU32(const char *body, const char *key, uint32_t *out) {
   unsigned long v = strtoul(p, &end, 10);
   if (end == p) return false;
   *out = (uint32_t)v;
-  return true;
-}
-
-// Signed variant for the -2..2 sensor fields.
-static bool jsonS32(const char *body, const char *key, int32_t *out) {
-  const char *p = strstr(body, key);
-  if (!p) return false;
-  p += strlen(key);
-  while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
-  bool neg = (*p == '-');
-  if (neg) p++;
-  if (*p < '0' || *p > '9') return false;
-  char *end = nullptr;
-  long v = strtol(p, &end, 10);
-  if (end == p) return false;
-  *out = neg ? -(int32_t)v : (int32_t)v;
   return true;
 }
 
@@ -326,45 +267,32 @@ static void ledService() {
 }
 
 // ============================ SENSOR APPLY =================================
-// Apply the whole SensorCfg to the running sensor (called after init and
-// whenever desired_cfg changes something). Function-pointer guarded: the
-// OV2640 driver does not implement every sensor_t hook.
-static void applySensorCfg() {
-  ledcWrite(FLASH_LEDC_CH, sc.led_pwm);
+// Apply Profile v1 to the running sensor (after every init). Function-
+// pointer guarded: the OV2640 driver does not implement every hook. The
+// rest (brightness, contrast, saturation, sharpness, denoise, effects,
+// colorbar) stays at the driver's neutral defaults.
+static void applyProfile() {
   sensor_t *s = esp_camera_sensor_get();
   if (!s) return;
-  s->set_framesize(s, (framesize_t)sc.framesize);
-  s->set_quality(s, sc.quality);
-  if (s->set_brightness)  s->set_brightness(s, sc.brightness);
-  if (s->set_contrast)    s->set_contrast(s, sc.contrast);
-  if (s->set_saturation)  s->set_saturation(s, sc.saturation);
-  if (s->set_sharpness)   s->set_sharpness(s, sc.sharpness);
-  if (s->set_denoise)     s->set_denoise(s, sc.denoise);
-  if (s->set_special_effect) s->set_special_effect(s, sc.special_fx);
-  if (s->set_wb_mode)     s->set_wb_mode(s, sc.wb_mode);
-  if (s->set_whitebal)    s->set_whitebal(s, sc.awb);
-  if (s->set_exposure_ctrl) s->set_exposure_ctrl(s, sc.aec);
-  if (s->set_gain_ctrl)   s->set_gain_ctrl(s, sc.agc);
-  if (s->set_ae_level)    s->set_ae_level(s, sc.ae_level);
-  if (s->set_agc_gain) {
-    s->set_agc_gain(s, sc.agc_gain);
-    if (sc.agc && sc.agc_gain == 0) {
-      Serial.println("[SENS] gain ctrl on but agc_gain=0: auto-gain is pinned to minimum, frames will read dark");
-    }
-  }
-  if (s->set_hmirror)     s->set_hmirror(s, sc.hmirror);
-  if (s->set_vflip)       s->set_vflip(s, sc.vflip);
-  if (s->set_dcw)         s->set_dcw(s, sc.dcw);
-  if (s->set_lenc)        s->set_lenc(s, sc.lenc);
-  if (s->set_colorbar)    s->set_colorbar(s, sc.colorbar);
+  s->set_framesize(s, PROFILE_FRAMESIZE);
+  s->set_quality(s, PROFILE_QUALITY);
+  if (s->set_whitebal)      s->set_whitebal(s, 1);
+  if (s->set_exposure_ctrl) s->set_exposure_ctrl(s, 1);
+  if (s->set_gain_ctrl)     s->set_gain_ctrl(s, 1);
+  if (s->set_ae_level)      s->set_ae_level(s, 0);
+  if (s->set_dcw)           s->set_dcw(s, 1);
+  if (s->set_lenc)          s->set_lenc(s, 1);
+  if (s->set_hmirror)       s->set_hmirror(s, PROFILE_FLIP);
+  if (s->set_vflip)         s->set_vflip(s, PROFILE_FLIP);
 }
-
-static void saveSensorCfg() { camPrefs.putBytes("scfg", &sc, sizeof sc); }
 
 // ============================ NVS / IDENTITY ===============================
 static void loadNvs() {
   provPrefs.begin("prov", false);
-  camPrefs.begin("cam", false);
+  // Pre-Profile-v1 firmware kept a remote sensor config in "cam"; drop it
+  // so a reflashed board cannot carry stale settings around in flash.
+  Preferences legacy;
+  if (legacy.begin("cam", false)) { legacy.clear(); legacy.end(); }
 
   bootCount = provPrefs.getULong("boot", 0) + 1;
   provPrefs.putULong("boot", bootCount);
@@ -377,22 +305,13 @@ static void loadNvs() {
   }
 
   captureSeq    = provPrefs.getULong("capture", 0);
-  cfgVerApplied = provPrefs.getULong("cfgver", 0);
   String tok = provPrefs.getString("token", DEVICE_TOKEN);
   snprintf(deviceToken, sizeof deviceToken, "%s", tok.c_str());
-
-  uint32_t iv = camPrefs.getULong("interval", 60);
-  intervalS = (uint32_t)clampu(iv, INTERVAL_MIN_S, INTERVAL_MAX_S);
-
-  sc = scDefault;
-  size_t n = camPrefs.getBytes("scfg", &sc, sizeof sc);
-  if (n != sizeof sc) sc = scDefault;   // first boot or schema change
 }
 
 static void factoryReset() {
-  Serial.println("[NVS] factory reset: clearing 'prov' + 'cam'");
+  Serial.println("[NVS] factory reset: clearing 'prov'");
   provPrefs.clear();
-  camPrefs.clear();
   Serial.println("[NVS] cleared, restarting");
   delay(100);
   ESP.restart();
@@ -433,8 +352,8 @@ static bool cameraTryInit(uint32_t xclkHz) {
   c.pin_reset    = RESET_GPIO_NUM;
   c.xclk_freq_hz = xclkHz;
   c.pixel_format = PIXFORMAT_JPEG;
-  c.frame_size   = psramFound() ? (framesize_t)sc.framesize : FRAMESIZE_QVGA;
-  c.jpeg_quality = sc.quality;
+  c.frame_size   = PROFILE_FRAMESIZE;
+  c.jpeg_quality = PROFILE_QUALITY;
   c.fb_location  = psramFound() ? CAMERA_FB_IN_PSRAM : CAMERA_FB_IN_DRAM;
   c.grab_mode    = CAMERA_GRAB_LATEST;
   c.fb_count     = psramFound() ? 2 : 1;
@@ -445,7 +364,7 @@ static bool cameraTryInit(uint32_t xclkHz) {
                   (unsigned long)(xclkHz / 1000000UL));
     return false;
   }
-  applySensorCfg();     // NVS sensor config (not just the boot defaults)
+  applyProfile();
   return true;
 }
 
@@ -800,13 +719,13 @@ static const char *metaReason() {
 static void buildMeta() {
   snprintf(metaBuf, sizeof metaBuf,
            "{\"capture_id\":\"%s\",\"fw\":\"%s\",\"rssi\":%d,"
-           "\"free_heap\":%u,\"cfg_ver_applied\":%lu,"
+           "\"free_heap\":%u,\"profile\":\"" PROFILE_ID "\","
            "\"counters\":{\"boot\":%lu,\"brownout\":%lu,\"join_fail\":%lu,"
            "\"post_fail\":%lu,\"tls_fail\":%lu,\"capture_fail\":%lu},"
            "\"reason\":\"%s\"}",
            captureId, FW_VERSION,
            WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : -127,
-           (unsigned)ESP.getFreeHeap(), (unsigned long)cfgVerApplied,
+           (unsigned)ESP.getFreeHeap(),
            (unsigned long)bootCount, (unsigned long)brownoutCount,
            (unsigned long)joinFail, (unsigned long)postFail,
            (unsigned long)tlsFail, (unsigned long)captureFail,
@@ -918,95 +837,14 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
 }
 
 // ============================ RESPONSE HANDLING ============================
-// Apply desired_cfg (apply-if-found: 201/409/422/429 carry it). Cadence keys
-// live in "cam"/interval, sensor keys in the scfg blob. Ver is echoed as
-// cfg_ver_applied on the next POST (read-back contract).
-//
-// Sensor keys are table-driven: one row per key carrying its clamp range, so
-// parse/compare/persist is written once and a new key is a one-line addition.
-struct CfgU8Row { const char *key; uint8_t SensorCfg::*m; uint32_t lo, hi; };
-struct CfgI8Row { const char *key; int8_t  SensorCfg::*m; int32_t lo, hi; };
-
-static const CfgU8Row CFG_U8[] = {
-  { "\"quality\":",    &SensorCfg::quality,    4, 63 },   // JPEG 4..63
-  { "\"framesize\":",  &SensorCfg::framesize,  0, FRAMESIZE_MAX_OV2640 },
-  { "\"denoise\":",    &SensorCfg::denoise,    0, 1 },
-  { "\"special_fx\":", &SensorCfg::special_fx, 0, 6 },
-  { "\"wb_mode\":",    &SensorCfg::wb_mode,    0, 4 },
-  { "\"awb\":",        &SensorCfg::awb,        0, 1 },
-  { "\"aec\":",        &SensorCfg::aec,        0, 1 },
-  { "\"agc\":",        &SensorCfg::agc,        0, 1 },
-  { "\"agc_gain\":",   &SensorCfg::agc_gain,   0, 30 },
-  { "\"hmirror\":",    &SensorCfg::hmirror,    0, 1 },
-  { "\"vflip\":",      &SensorCfg::vflip,      0, 1 },
-  { "\"dcw\":",        &SensorCfg::dcw,        0, 1 },
-  { "\"lenc\":",       &SensorCfg::lenc,       0, 1 },
-  { "\"colorbar\":",   &SensorCfg::colorbar,   0, 1 },
-  { "\"led_pwm\":",    &SensorCfg::led_pwm,    0, 255 },
-};
-static const CfgI8Row CFG_I8[] = {
-  { "\"brightness\":", &SensorCfg::brightness, -2, 2 },
-  { "\"contrast\":",   &SensorCfg::contrast,   -2, 2 },
-  { "\"saturation\":", &SensorCfg::saturation, -2, 2 },
-  { "\"sharpness\":",  &SensorCfg::sharpness,  -2, 2 },
-  { "\"ae_level\":",   &SensorCfg::ae_level,   -2, 2 },
-};
-
-static void applyCfgFromBody() {
-  bool any = false;
-  bool sensorChanged = false;
-  uint32_t uv;
-  int32_t sv;
-
-  if (jsonU32(respBody, "\"interval_s\":", &uv)) {
-    uv = clampu(uv, INTERVAL_MIN_S, INTERVAL_MAX_S);
-    if (uv != intervalS) {
-      intervalS = uv;
-      camPrefs.putULong("interval", uv);
-    }
-    any = true;
-  }
-  if (jsonU32(respBody, "\"ver\":", &uv)) {
-    if (uv != cfgVerApplied) {
-      cfgVerApplied = uv;
-      provPrefs.putULong("cfgver", uv);
-    }
-    any = true;
-  }
-
-  // --- sensor plane: any subset of the OV2640 feature set -------------------
-  for (const CfgU8Row &r : CFG_U8) {
-    if (!jsonU32(respBody, r.key, &uv)) continue;
-    uv = clampu(uv, r.lo, r.hi);
-    any = true;
-    if (uv != sc.*(r.m)) { sc.*(r.m) = (uint8_t)uv; sensorChanged = true; }
-  }
-  for (const CfgI8Row &r : CFG_I8) {
-    if (!jsonS32(respBody, r.key, &sv)) continue;
-    sv = clampi(sv, r.lo, r.hi);
-    any = true;
-    if (sv != sc.*(r.m)) { sc.*(r.m) = (int8_t)sv; sensorChanged = true; }
-  }
-
-  if (sensorChanged) {
-    saveSensorCfg();
-    applySensorCfg();
-    warmDiscards = 0;  // warm-up window resets after exposure-affecting config apply
-  }
-  if (any)
-    Serial.printf("[CFG ] applied ver=%lu interval_s=%lu quality=%u fs=%u "
-                  "br=%d ct=%d sat=%d fx=%u wb=%u hm=%u vf=%u led=%u\n",
-                  (unsigned long)cfgVerApplied, (unsigned long)intervalS,
-                  sc.quality, sc.framesize, sc.brightness, sc.contrast,
-                  sc.saturation, sc.special_fx, sc.wb_mode, sc.hmirror,
-                  sc.vflip, sc.led_pwm);
-}
-
+// The response carries only next_s / server_time / reason. An older server
+// may still send desired_cfg: it is ignored (Profile v1 has no runtime
+// camera settings). next_s is a one-shot hint, never persisted.
 static uint32_t respNextS() {
   uint32_t v;
   if (jsonU32(respBody, "\"next_s\":", &v) && v > 0)
     return clampu(v, 5, 3600);
-  return intervalS;
+  return CAPTURE_INTERVAL_S;
 }
 
 static uint32_t retryAfterS() {
@@ -1123,7 +961,7 @@ static void runTick() {
   if (frameCopy) free(frameCopy);
 
   // --- response contract (proto-v1) ----------------------------------------
-  uint32_t sleepS = intervalS;
+  uint32_t sleepS = CAPTURE_INTERVAL_S;
   if (status == 0) {
     lastHttp = 0;
     // Escalating backoff for consecutive transport failures (TLS connect/full-post
@@ -1141,13 +979,12 @@ static void runTick() {
                     POST_ATTEMPTS, (unsigned)backoffS,
                     (unsigned)tlsConsecutiveFailures);
     } else {
-      sleepS = intervalS;
+      sleepS = CAPTURE_INTERVAL_S;
       Serial.printf("[HTTP] transport failure after %u attempts -> frame dropped "
                     "(post_fail=%lu)\n", POST_ATTEMPTS, (unsigned long)postFail);
     }
   } else {
     lastHttp = status;
-    applyCfgFromBody();
     if (status == 201 || status == 409) {
       if (revoked401) {
         revoked401 = false;
@@ -1191,14 +1028,16 @@ static void runTick() {
         Serial.printf("[HTTP] %d rejected (dark) -> consecutive %u\n",
                       status, (unsigned)warmConsecutiveDark);
         if (warmConsecutiveDark >= 4) {
-          // Escalate: 4 consecutive dark rejects — likely lens covered,
-          // mis-aimed, or lighting changed; switch to health-only beats.
-          Serial.println("[CAM] 4 consecutive dark rejects — "
-                         "lens covered/mis-aimed/lighting changed; "
-                         "health-only beats until a frame passes");
-          warmConsecutiveDark = 0;  // reset after escalation; next 201 clears
-          sleepS = intervalS;
-          haveFrame = false;  // force health-only beat on next tick
+          // Escalate: 4 dark rejects in a row — lights off (venue closed),
+          // lens covered or mis-aimed. Capturing every minute only burns
+          // the link, so slow to DARK_BACKOFF_S until a frame passes.
+          // (The old "haveFrame = false" here cleared a local after the
+          // frame was already sent — the escalation never did anything.)
+          Serial.printf("[CAM] %u consecutive dark rejects -> slow cadence "
+                        "%lu s until a frame passes\n",
+                        (unsigned)warmConsecutiveDark,
+                        (unsigned long)DARK_BACKOFF_S);
+          sleepS = DARK_BACKOFF_S;
         } else {
           sleepS = respNextS();
         }
@@ -1213,7 +1052,7 @@ static void runTick() {
       postFail++;
       // Honor Retry-After when the server sends one (a full disk wants us
       // slow, not hammering); otherwise the configured cadence.
-      sleepS = strstr(respHdr, "Retry-After:") ? retryAfterS() : intervalS;
+      sleepS = strstr(respHdr, "Retry-After:") ? retryAfterS() : CAPTURE_INTERVAL_S;
       Serial.printf("[HTTP] %d server-side failure -> retry in %lu s "
                     "(post_fail=%lu)\n", status, (unsigned long)sleepS,
                     (unsigned long)postFail);
@@ -1221,9 +1060,8 @@ static void runTick() {
   }
 
   nextTickAt = millis() + sleepS * 1000UL;
-  Serial.printf("[TICK] next in %lu s (interval_s=%lu, cfg_ver=%lu, heap=%u)\n",
-                (unsigned long)sleepS, (unsigned long)intervalS,
-                (unsigned long)cfgVerApplied, (unsigned)ESP.getFreeHeap());
+  Serial.printf("[TICK] next in %lu s (profile=" PROFILE_ID ", heap=%u)\n",
+                (unsigned long)sleepS, (unsigned)ESP.getFreeHeap());
 }
 
 // Gate: run a tick only when due AND the link is up (never capture into void).
@@ -1246,15 +1084,9 @@ static void buildStatusJson(char *j, size_t cap) {
            "\"fw\":\"%s\",\"serial\":\"%s\","
            "\"boot\":%lu,\"brownout\":%lu,\"join_fail\":%lu,\"post_fail\":%lu,"
            "\"tls_fail\":%lu,\"capture_fail\":%lu,\"capture_seq\":%lu,"
-           "\"cfg_ver_applied\":%lu,\"interval_s\":%lu,"
+           "\"profile\":\"" PROFILE_ID "\","
            "\"next_tick_in_s\":%lu,\"camera\":\"%s\",\"mode\":\"%s\","
-           "\"last_http\":%d,"
-           "\"cfg\":{\"quality\":%u,\"framesize\":%u,\"brightness\":%d,"
-           "\"contrast\":%d,\"saturation\":%d,\"sharpness\":%d,"
-           "\"denoise\":%u,\"special_fx\":%u,\"wb_mode\":%u,\"awb\":%u,"
-           "\"aec\":%u,\"agc\":%u,\"ae_level\":%d,\"agc_gain\":%u,"
-           "\"hmirror\":%u,\"vflip\":%u,\"dcw\":%u,\"lenc\":%u,"
-           "\"colorbar\":%u,\"led_pwm\":%u}}",
+           "\"last_http\":%d}",
            mdnsName, WiFi.localIP().toString().c_str(), WiFi.RSSI(),
            WiFi.status() == WL_CONNECTED ? "true" : "false",
            (unsigned)ESP.getFreeHeap(),
@@ -1263,13 +1095,8 @@ static void buildStatusJson(char *j, size_t cap) {
            (unsigned long)bootCount, (unsigned long)brownoutCount,
            (unsigned long)joinFail, (unsigned long)postFail,
            (unsigned long)tlsFail, (unsigned long)captureFail,
-           (unsigned long)captureSeq, (unsigned long)cfgVerApplied,
-           (unsigned long)intervalS, (unsigned long)nextIn,
-           camState, revoked401 ? "revoked-401" : "normal", lastHttp,
-           sc.quality, sc.framesize, sc.brightness, sc.contrast,
-           sc.saturation, sc.sharpness, sc.denoise, sc.special_fx,
-           sc.wb_mode, sc.awb, sc.aec, sc.agc, sc.ae_level, sc.agc_gain,
-           sc.hmirror, sc.vflip, sc.dcw, sc.lenc, sc.colorbar, sc.led_pwm);
+           (unsigned long)captureSeq, (unsigned long)nextIn,
+           camState, revoked401 ? "revoked-401" : "normal", lastHttp);
 }
 
 static void handleStatus() {
@@ -1381,20 +1208,8 @@ static void handleSerialCmd(char *cmd) {
     static char j[2048];
     buildStatusJson(j, sizeof j);
     Serial.println(j);
-  } else if (strcmp(cmd, "cfg") == 0) {
-    Serial.printf("[CFG ] ver=%lu interval_s=%lu quality=%u framesize=%u "
-                  "brightness=%d contrast=%d saturation=%d sharpness=%d "
-                  "denoise=%u special_fx=%u wb_mode=%u awb=%u aec=%u agc=%u "
-                  "ae_level=%d agc_gain=%u hmirror=%u vflip=%u dcw=%u "
-                  "lenc=%u colorbar=%u led_pwm=%u\n",
-                  (unsigned long)cfgVerApplied, (unsigned long)intervalS,
-                  sc.quality, sc.framesize, sc.brightness, sc.contrast,
-                  sc.saturation, sc.sharpness, sc.denoise, sc.special_fx,
-                  sc.wb_mode, sc.awb, sc.aec, sc.agc, sc.ae_level,
-                  sc.agc_gain, sc.hmirror, sc.vflip, sc.dcw, sc.lenc,
-                  sc.colorbar, sc.led_pwm);
   } else {
-    Serial.printf("[CLI] unknown command '%s' (try: reset, status, cfg, net)\n",
+    Serial.printf("[CLI] unknown command '%s' (try: reset, status, net)\n",
                   cmd);
   }
 }
@@ -1451,11 +1266,9 @@ void setup() {
 
   loadNvs();
 
-  // Flash LED PWM BEFORE the camera: initCamera() → applySensorCfg() writes
-  // the LED duty, and LEDC must be set up by then (ch1; XCLK owns ch0).
-  ledcSetup(FLASH_LEDC_CH, FLASH_LEDC_FREQ, FLASH_LEDC_BITS);
-  ledcAttachPin(FLASH_GPIO_NUM, FLASH_LEDC_CH);
-  ledcWrite(FLASH_LEDC_CH, sc.led_pwm);
+  // The white flash LED is never used (Profile v1): hold it off.
+  pinMode(FLASH_GPIO_NUM, OUTPUT);
+  digitalWrite(FLASH_GPIO_NUM, LOW);
 
   camInited = initCamera();
   if (camInited) {
@@ -1475,11 +1288,9 @@ void setup() {
 
   nextTickAt = millis() + 5000;      // first beat after 5 s
 
-  Serial.printf("[BOOT] serial=%s boot=%lu brownout=%lu cfg_ver=%lu "
-                "interval_s=%lu\n",
+  Serial.printf("[BOOT] serial=%s boot=%lu brownout=%lu profile=" PROFILE_ID "\n",
                 serialNo, (unsigned long)bootCount,
-                (unsigned long)brownoutCount, (unsigned long)cfgVerApplied,
-                (unsigned long)intervalS);
+                (unsigned long)brownoutCount);
   // Never print the token itself — only its presence/length (secret).
   Serial.printf("[BOOT] PSRAM=%s free_heap=%u camera=%s token_len=%u wdt=%lus\n",
                 psramFound() ? "yes" : "no", (unsigned)ESP.getFreeHeap(),
@@ -1492,7 +1303,7 @@ void loop() {
   serviceWiFi();                 // non-blocking reconnect with backoff
   server.handleClient();         // LAN cage
   tickService();                 // capture + HTTPS ingest when due
-  serialPoll();                  // "reset" / "status" / "cfg" over USB
+  serialPoll();                  // "reset" / "status" / "net" over USB
   ledService();                  // millis()-based LED patterns
   if (pendingFactoryAt != 0 && due(pendingFactoryAt)) factoryReset();
   delay(2);                      // yield — not a wait for anything

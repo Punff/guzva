@@ -53,8 +53,8 @@ The token is never printed — only its length.
 2 Hz blink = connecting · short flash = good POST · double-blink/1.2 s =
 401 revoked (identity kept, health-only beats, 60→600 s backoff) ·
 0.5 Hz pulse = camera-degraded (probe backoff 10→1800 s, auto-recovery on
-a good frame) · off = idle/healthy. The white flash LED (GPIO4) follows
-`led_pwm` in desired_cfg (0 = off).
+a good frame) · off = idle/healthy. The white flash LED (GPIO4) is held
+off.
 
 ## LAN cage (port 80 — installer-facing, unauthenticated by design)
 
@@ -82,14 +82,19 @@ the threat model: the cage exists for installing, not for the internet).
 - **Identity survives everything** except factory reset: 401 = slow
   health beats, never a wipe (§1 degradation contract).
 
-## Remote config (desired_cfg, 22 keys — docs/proto-v1.md)
+## Camera profile (frozen — docs/print-v4.md §3)
 
-`interval_s`, `quality`, 19 sensor keys (framesize, awb/aec/agc, flips,
-led_pwm, …). The server's response rides every POST; values are clamped,
-persisted to NVS, applied to the sensor, and the applied version is echoed
-back as `cfg_ver_applied` (an amber read-back on the fleet board until it
-arrives). `guzva cfg -serial <serial> -set key=value` or the admin device
-page change it; the board never needs a reflash for config.
+Profile `p1`: QVGA 320×240, JPEG q14, auto exposure/gain/white balance,
+`ae_level` 0, dcw + lens correction on, everything else at driver
+defaults. There is no remote camera config: the server's render removes
+the room's lighting itself, so nothing needs tuning per venue. The profile
+id rides every POST (`profile`) and `/api/status`. Upside-down mount:
+build with `-DPROFILE_FLIP=1`. A dark room (4 dark rejects in a row) slows
+the cadence to 300 s until a frame passes.
+
+**Install instead of tune:** focus the lens at the real viewing distance
+using the LAN `/jpg` (an edge must look crisp at ~3 m), and mount so no
+bright window fills the frame — auto exposure will crush everything else.
 
 ## OTA
 
