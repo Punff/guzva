@@ -263,3 +263,77 @@ func TestAreaAverageIsExact(t *testing.T) {
 		t.Errorf("QQVGA replicate: got %d", g[21*GW+41])
 	}
 }
+
+// Outlines (v5): a step edge becomes one continuous line, one cell thin,
+// and the flat areas either side stay clean.
+func TestOutlineIsThinAndContinuous(t *testing.T) {
+	img := gray(320, 240, func(x, y int) uint8 {
+		if x >= 160 {
+			return 140
+		}
+		return 100
+	})
+	b, _ := Pipeline(img, 4, nil, Defaults)
+	p, _ := decodeLevels(t, b)
+	for y := 20; y < 220; y++ {
+		n := 0
+		for x := 150; x < 170; x++ {
+			if p.Pix[y*GW+x] == 0 {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Fatalf("row %d: %d ink cells at the edge, want exactly 1", y, n)
+		}
+	}
+	off := Defaults
+	off.Edge = 0
+	b, _ = Pipeline(img, 4, nil, off)
+	q, _ := decodeLevels(t, b)
+	for i := range p.Pix {
+		x := i % GW
+		if (x < 150 || x >= 170) && p.Pix[i] != q.Pix[i] {
+			t.Fatalf("outline touched a flat area at x=%d", x)
+		}
+	}
+}
+
+// The line colour rule: ink on light tones; light (s2, Šablon paper) on
+// ink — two dark things touching is how a person melts into a dark
+// background, and an ink line there would be invisible.
+func TestOutlineColourOnInk(t *testing.T) {
+	lp := make([]int64, GW*GH)
+	bg := make([]int64, GW*GH)
+	vis := maskGrid(nil)
+	for i := range lp {
+		bg[i] = 100 * 16
+		if i%GW >= 160 {
+			lp[i] = 160 * 16
+		} else {
+			lp[i] = 100 * 16
+		}
+	}
+	for _, c := range []struct {
+		levels int
+		under  uint8
+		want   uint8
+	}{{4, 2, 0}, {4, 3, 0}, {4, 0, 2}, {2, 1, 0}, {2, 0, 1}} {
+		q := make([]uint8, GW*GH)
+		for i := range q {
+			q[i] = c.under
+		}
+		outline(q, lp, bg, vis, c.levels, Defaults)
+		lines := 0
+		for i, v := range q {
+			if v != c.under {
+				lines++
+				if v != c.want {
+					t.Fatalf("levels %d on s%d: line cell %d = s%d, want s%d", c.levels, c.under, i, v, c.want)
+				}
+			}
+		}
+		if lines < GH-2 {
+			t.Errorf("levels %d on s%d: only %d line cells", c.levels, c.under, lines)
+		}
+	}
+}

@@ -37,9 +37,10 @@ func main() {
 	sweep := flag.Bool("sweep", false, "sweep σp × σb × thresholds instead of Defaults only")
 	synth := flag.String("synthetic", "", "write the procedural hard scene JPEG to this path and exit")
 	masks := flag.String("masks", "", "static masks x0,y0,x1,y1 in 320×240 cells, ';'-separated")
-	flag.Func("p", "extra variant σp,σb,k,dark2,dark1,light (repeatable)", func(v string) error {
+	flag.Func("p", "extra variant σp,σb,k,dark2,dark1,light[,edge] (repeatable)", func(v string) error {
 		p := render.Defaults
-		if _, err := fmt.Sscanf(v, "%g,%g,%d,%d,%d,%d", &p.SigmaP, &p.SigmaB, &p.K, &p.Dark2, &p.Dark1, &p.Light); err != nil {
+		n, err := fmt.Sscanf(v, "%g,%g,%d,%d,%d,%d,%d", &p.SigmaP, &p.SigmaB, &p.K, &p.Dark2, &p.Dark1, &p.Light, &p.Edge)
+		if n < 6 {
 			return err
 		}
 		extra = append(extra, variant{"p" + v, 4, p})

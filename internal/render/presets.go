@@ -9,7 +9,9 @@ package render
 // Version bumps whenever the output changes for the same input; frames
 // record name@version so a style change never rewrites meaning (D2).
 // History: v1 colour JPEG, v2 stamped PNG, v3 160×120 blur/threshold/mode,
-// v4 the 320×240 band-pass with Weber-contrast tones (docs/print-v4.md).
+// v4 the 320×240 band-pass with Weber-contrast tones (docs/print-v4.md),
+// v5 adds 1-cell outlines so distant objects don't melt into the
+// background (tuned on real bench frames, 14 Oct 2026).
 type Style struct {
 	Name    string
 	Version int
@@ -17,8 +19,8 @@ type Style struct {
 }
 
 var styles = map[string]Style{
-	"poster": {Name: "poster", Version: 4, Levels: 4},
-	"mono":   {Name: "mono", Version: 4, Levels: 2},
+	"poster": {Name: "poster", Version: 5, Levels: 4},
+	"mono":   {Name: "mono", Version: 5, Levels: 2},
 }
 
 // DefaultStyle is what an unknown or empty venue style renders as.

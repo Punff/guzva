@@ -58,6 +58,12 @@ type Params struct {
 	// Dark1, s3 at or above Light, s2 otherwise. Šablon inks below Dark1.
 	Dark2, Dark1, Light int
 	Cleanup             bool
+	// Edge is the outline threshold: cells where the Weber-normalised
+	// gradient of the privacy-filtered image is a local maximum at or above
+	// Edge (Q8) are inked. 0 = no outlines. The lines come from P, after the
+	// privacy low-pass, so they trace shapes that survived it — they cannot
+	// put back detail the blur removed.
+	Edge int
 }
 
 // Defaults are the frozen poster@4 / mono@4 constants. Starting values from
@@ -67,6 +73,7 @@ var Defaults = Params{
 	SigmaP: 2, SigmaB: 48, K: 24,
 	Dark2: -90, Dark1: -28, Light: 36,
 	Cleanup: true,
+	Edge:    20,
 }
 
 // Rect is a privacy mask in grid cells, half-open [X0,X1)×[Y0,Y1).
@@ -376,12 +383,65 @@ func tones(g []uint8, levels int, masks []Rect, p Params) []uint8 {
 	if p.Cleanup {
 		q = despeckle(q, levels)
 	}
+	if p.Edge > 0 {
+		outline(q, lp, bg, vis, levels, p)
+	}
 	for i := range q {
 		if vis[i] == 0 {
 			q[i] = 0
 		}
 	}
 	return q
+}
+
+// outline inks object boundaries (stage 7b): a Weber-normalised central-
+// difference gradient of P, thinned by non-maximum suppression along its
+// dominant axis so lines stay one cell wide, kept where ≥ p.Edge. Cells
+// beside a mask are skipped (the mask edge is not an object).
+//
+// Lines are ink, except inside ink: two dark things touching (dark clothes
+// on a dark sofa) is exactly how a person melts into the background, and
+// an ink line there is invisible — so on s0 the line is drawn light (s2,
+// or paper in Šablon).
+func outline(q []uint8, lp, bg []int64, vis []uint8, levels int, p Params) {
+	light := uint8(2)
+	if levels == 2 {
+		light = 1
+	}
+	mag := make([]int64, len(lp))
+	horiz := make([]bool, len(lp)) // dominant gradient runs along x
+	for y := 1; y < GH-1; y++ {
+		for x := 1; x < GW-1; x++ {
+			i := y*GW + x
+			if vis[i-1] == 0 || vis[i+1] == 0 || vis[i-GW] == 0 || vis[i+GW] == 0 {
+				continue
+			}
+			gx, gy := lp[i+1]-lp[i-1], lp[i+GW]-lp[i-GW]
+			ax, ay := max(gx, -gx), max(gy, -gy)
+			mag[i] = (ax + ay) * 256 / (bg[i] + int64(p.K)*16)
+			horiz[i] = ax >= ay
+		}
+	}
+	for y := 1; y < GH-1; y++ {
+		for x := 1; x < GW-1; x++ {
+			i := y*GW + x
+			m := mag[i]
+			if m < int64(p.Edge) {
+				continue
+			}
+			a, b := mag[i-GW], mag[i+GW]
+			if horiz[i] {
+				a, b = mag[i-1], mag[i+1]
+			}
+			if m >= a && m > b {
+				if q[i] == 0 {
+					q[i] = light
+				} else {
+					q[i] = 0
+				}
+			}
+		}
+	}
 }
 
 // despeckle replaces each cell that no neighbour agrees with by the
