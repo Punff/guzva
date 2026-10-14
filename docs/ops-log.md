@@ -985,3 +985,66 @@ This is a Phase 2 item (after W0–W6 close). I'll tag it in PLAN.md §14
 when the current pass ships. No code changes today — this note is the
 decision record so the workstreams don't drift back toward
 re-adding the form.
+
+## 2026-10-14 — `v0.6.3` release candidate: restart-recovery reliability + the hours-edit fix + guzva-qa round 1
+
+Nine commits from the autonomous afternoon pass (040e338…5cabe4e).
+
+**Firmware (`f597df4`, `1cadcbf`, `2243609`, `09a1ba5`) — restart-recovery
+reliability.** Four commits, each grep-verified and `pio run` green
+(RAM 19.1 %, Flash 77.6 %):
+- Warm-up gate: the first 2 captures after boot AND after any
+  exposure-affecting config apply are discarded locally (`[WARM]`
+  lines) so the OV2640 auto-exposure converges before the first POST.
+  Discarded frames never touch dark/post_fail/tls counters.
+- Dark escalation: 4 consecutive `dark` rejects from the server →
+  `[CAM]` warning + health-only beats until a frame passes.
+- TLS transport backoff: consecutive failures double 60 → 900 s,
+  reset on any 201/409. The dead-radio hammer pattern is gone.
+- `[SENS]` serial warning when `agc=1 ∧ agc_gain=0` (the exact
+  pair that caused yesterday's dark loop) — on top of the server-side
+  reject the backend owes (not yet landed, see below).
+The two contract gaps found in review were fixed before commit:
+`warmDiscards` resets on config-apply, `warmConsecutiveDark` resets
+on 201/409.
+
+**Backend (`83b707d`) — the user-reported hours-edit bug.**
+`pageCache.serve` never sent `Last-Modified` and never answered 304,
+so `venue.html`'s 60 s flip detector could not fire: settings edits
+(hours, closing time, flips, the midnight "danas" move) never reached
+already-open pages. Fixed: `Last-Modified` from the index.html mtime
+(the same mtime the state key moves on), `If-Modified-Since` → empty
+304 with security headers. New `TestIndexHtmlConditionalGet`,
+mutation-checked. Live curl proof in the commit handoff. Item C
+(mean-luma instrumentation) is NOT in this release — the backend
+session burned its runs; re-dispatched separately.
+
+**guzva-qa round 1 (`d778468`, `36441c1`, `5cabe4e`) — 196 assertions.**
+Harness (`qa/`): hermetic Go fixture generator, ingest matrix (85/86
+pass), pageCache conditional-GET (22/23, enforced against `83b707d`),
+public-page contract 68/68, hermetic a11y + i18n audits (both
+mutation-checked; shipped palette 5.70:1 … 14.16:1, clears AA).
+Findings in `docs/qa-findings.md`. Open P1s for dispatch:
+- **Q-05 (backend)**: a zero-length frame part gets 201 — same
+  blind spot item C closes, different door (`ingest.go:262`).
+- **Q-01 (backend)**: mean-luma instrumentation absent; spec restated.
+- **Q-04 (backend, P2)**: `Vary: Accept-Encoding` on the gzip branch
+  only — one-line move.
+- **Q-07 (orchestrator)**: prod is v0.6.2; the hours-edit symptom is
+  live in production until this ships — this deploy.
+QA also corrected its own false positives twice (CSP on 304 is
+correctly absent per RFC 9111 §4.3.4; HTTP/2 lowercases headers) —
+the code was right, the assertions weren't.
+
+**Process note.** The openchamber tool flapped through the pass
+(create/send/session.list intermittently unavailable), and the
+backend session (openrouter/nemotron drift) produced two handoffs
+claiming work that was not in the tree — caught by grep-verify each
+time; its model was restored to the roster fit
+(`nvidia/deepseek-ai/deepseek-v4.1-flash`) and the B-only dispatch
+landed clean. A `git stash pop` incident (NUL padding in two files)
+was disclosed and recovered from HEAD by the backend session; the
+tree was verified NUL-free before commit.
+
+Ships as `v0.6.3`: firmware reflash + bench verify of the three
+checklists still owed after deploy.
