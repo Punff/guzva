@@ -760,99 +760,52 @@ func TestOnStoredHook(t *testing.T) {
 	}
 }
 
-// The per-ingest journal line: one Info line per accepted outcome with the
-// soak's fields (status, serial, rssi, free_heap), Warn on rejects.
-func TestIngestLogsOutcome(t *testing.T) {
-	f := newFixture(t, 4)
-	if w := f.postFrame(t, "C1-1-aaaa", syntheticFrame(t, 320, 240, 9)); w.Code != proto.StatusStored {
-		t.Fatalf("post = %d", w.Code)
+// The per-ingest journal line is what the soak and support read: one line
+// per device-visible outcome. Stored frames carry render_ms (the Phase 1
+// render-latency gate, no metrics endpoint); rejects carry reject=<reason>
+// so "why was it dropped" never needs the quarantine file; dark/dead carry
+// the measured mean_luma (Q-01: covered lens ≈ 0 vs dead sensor ≈ 128) and
+// nothing else does, so the key's presence proves a measurement. No token
+// ever reaches the journal (§1).
+func TestIngestJournalLine(t *testing.T) {
+	f := newFixture(t, 8)
+	beat := func(t *testing.T) *httptest.ResponseRecorder {
+		return f.post(t, "Bearer "+testToken, metaJSON(t, proto.Meta{CaptureID: "C1-5-eeee", FW: "1.0.0", RSSI: -60}), nil)
 	}
-	if w := f.postFrame(t, "C1-2-bbbb", blackFrame(t, 640, 480)); w.Code != proto.StatusRejected {
-		t.Fatalf("dark = %d", w.Code)
-	}
-	logs := f.logs.String()
-	if !strings.Contains(logs, "ingest status=201 serial=esp32-aa") ||
-		!strings.Contains(logs, "rssi=-60") {
-		t.Errorf("missing accepted ingest line, logs:\n%s", logs)
-	}
-	if !strings.Contains(logs, "ingest status=422") {
-		t.Errorf("missing rejected ingest line, logs:\n%s", logs)
-	}
-	// Privacy (§1): no frame bytes, no bearer token in the journal.
-	if strings.Contains(logs, testToken) || strings.Contains(logs, "Bearer") {
-		t.Errorf("token leaked into logs:\n%s", logs)
-	}
-}
-
-// render_ms appears on the per-ingest journal line for stored frames, so the
-// Phase 1 exit gate ("render ms on the e2-micro") reads it without a metrics
-// endpoint. Health beats (no frame) and pre-render rejects carry no value.
-func TestLogOutcomeCarriesRenderMs(t *testing.T) {
-	f := newFixture(t, 4)
-	f.postFrame(t, "C1-1-aaaa", syntheticFrame(t, 320, 240, 3))
-	lh := f.logs.String()
-	if !strings.Contains(lh, "render_ms=") {
-		t.Fatalf("stored 201 missing render_ms:\n%s", lh)
-	}
-	// Health-only beat: no render → no field.
-	w := f.post(t, "Bearer "+testToken, metaJSON(t, proto.Meta{
-		CaptureID: "C1-2-bbbb", FW: "1.0.0", RSSI: -60,
-	}), nil)
-	if w.Code != proto.StatusStored {
-		t.Fatalf("beat = %d", w.Code)
-	}
-	lh2 := f.logs.String()[len(lh):]
-	if strings.Contains(lh2, "render_ms=") {
-		t.Fatalf("health-only beat carried render_ms:\n%s", lh2)
-	}
-}
-
-// A 422 carries its reason in the journal (reject=), so support can answer
-// "why was this frame dropped" from the journal alone — the quarantine file
-// must not be the only place it exists. The historical bench corpus has
-// `bad_meta` rejects that are unreadable without it.
-func TestLogOutcomeCarriesRejectReason(t *testing.T) {
-	f := newFixture(t, 4)
-	f.postFrame(t, "C1-1-aaaa", blackFrame(t, 640, 480))
-	lh := f.logs.String()
-	if !strings.Contains(lh, "reject=dark") {
-		t.Fatalf("dark frame 422 missing reject reason:\n%s", lh)
-	}
-}
-
-// Q-01: dark/dead rejects carry mean_luma on the journal line — covered
-// lens (mean ≈ 0) vs dead sensor (mean ≈ 128) distinguishable without
-// raw-image access (§1). Every other reject never logs the key, so its
-// presence proves a frame was measured.
-func TestLogOutcomeCarriesMeanLuma(t *testing.T) {
-	f := newFixture(t, 4)
-	// dark: uniform black → measured ≈ 0.
-	if w := f.postFrame(t, "C1-1-aaaa", blackFrame(t, 640, 480)); w.Code != proto.StatusRejected {
-		t.Fatalf("dark = %d", w.Code)
-	}
-	tail := f.logs.String()
-	if !strings.Contains(tail, "reject=dark") || !strings.Contains(tail, "mean_luma=0") {
-		t.Errorf("dark 422 missing mean_luma=0:\n%s", tail)
-	}
-	// dead: uniform mid-gray → a real nonzero number flows, not a default.
-	mark := len(f.logs.String())
-	if w := f.postFrame(t, "C1-2-bbbb", grayFrame(t, 320, 240)); w.Code != proto.StatusRejected {
-		t.Fatalf("dead = %d", w.Code)
-	}
-	tail = f.logs.String()[mark:]
-	if !strings.Contains(tail, "reject=dead") || !strings.Contains(tail, "mean_luma=1") {
-		t.Errorf("dead 422 missing mean_luma≈128:\n%s", tail)
-	}
-	// dims: decoded but unmeasured → the key must be absent.
-	mark = len(f.logs.String())
-	if w := f.postFrame(t, "C1-3-cccc", syntheticFrame(t, 64, 64, 3)); w.Code != proto.StatusRejected {
-		t.Fatalf("dims = %d", w.Code)
-	}
-	tail = f.logs.String()[mark:]
-	if !strings.Contains(tail, "reject=dims") {
-		t.Errorf("dims 422 missing reason:\n%s", tail)
-	}
-	if strings.Contains(tail, "mean_luma=") {
-		t.Errorf("unmeasured dims reject logged mean_luma:\n%s", tail)
+	for _, tc := range []struct {
+		name     string
+		do       func(t *testing.T) *httptest.ResponseRecorder
+		code     int
+		has, not []string
+	}{
+		{"stored", func(t *testing.T) *httptest.ResponseRecorder {
+			return f.postFrame(t, "C1-1-aaaa", syntheticFrame(t, 320, 240, 9))
+		}, proto.StatusStored, []string{"level=INFO", "status=201 serial=esp32-aa", "rssi=-60", "render_ms="}, []string{"reject="}},
+		{"dark", func(t *testing.T) *httptest.ResponseRecorder {
+			return f.postFrame(t, "C1-2-bbbb", blackFrame(t, 640, 480))
+		}, proto.StatusRejected, []string{"level=WARN", "status=422", "reject=dark", "mean_luma=0"}, nil},
+		{"dead", func(t *testing.T) *httptest.ResponseRecorder {
+			return f.postFrame(t, "C1-3-cccc", grayFrame(t, 320, 240))
+		}, proto.StatusRejected, []string{"reject=dead", "mean_luma=1"}, nil},
+		{"dims", func(t *testing.T) *httptest.ResponseRecorder {
+			return f.postFrame(t, "C1-4-dddd", syntheticFrame(t, 64, 64, 3))
+		}, proto.StatusRejected, []string{"reject=dims"}, []string{"mean_luma="}},
+		{"health beat", beat, proto.StatusStored, []string{"status=201"}, []string{"render_ms="}},
+	} {
+		mark := f.logs.Len()
+		if w := tc.do(t); w.Code != tc.code {
+			t.Fatalf("%s: status %d, want %d", tc.name, w.Code, tc.code)
+		}
+		line := f.logs.String()[mark:]
+		for _, want := range tc.has {
+			if !strings.Contains(line, want) {
+				t.Errorf("%s: journal lacks %q:\n%s", tc.name, want, line)
+			}
+		}
+		for _, bad := range append(tc.not, testToken, "Bearer") {
+			if strings.Contains(line, bad) {
+				t.Errorf("%s: journal contains %q:\n%s", tc.name, bad, line)
+			}
+		}
 	}
 }
