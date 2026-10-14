@@ -809,3 +809,39 @@ func TestIngestJournalLine(t *testing.T) {
 		}
 	}
 }
+
+// A body that breaks off mid-upload (the device's link dropped) is a
+// transport event: 408, counted as aborted, no quarantine record. A
+// complete body with unparseable meta is still a 422 bad_meta.
+func TestIngestAbortedUploadIsNotBadMeta(t *testing.T) {
+	f := newFixture(t, 8)
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField(proto.PartMeta, string(metaJSON(t, proto.Meta{CaptureID: "C1-1-aaaa"})))
+	fw, _ := mw.CreateFormFile(proto.PartFrame, "frame.jpg")
+	_, _ = fw.Write(syntheticFrame(t, 320, 240, 1))
+	_ = mw.Close()
+	cut := body.Bytes()[:body.Len()/2] // the link died halfway through the frame
+	r := httptest.NewRequest(http.MethodPost, proto.PathIngest, bytes.NewReader(cut))
+	r.Header.Set("Content-Type", mw.FormDataContentType())
+	r.Header.Set(proto.HeaderAuth, "Bearer "+testToken)
+	w := httptest.NewRecorder()
+	f.srv.HandleIngest(w, r)
+	if w.Code != http.StatusRequestTimeout {
+		t.Fatalf("truncated upload = %d %s, want 408", w.Code, w.Body.String())
+	}
+	if f.srv.Metrics().Get("aborted") != 1 || f.srv.Metrics().Get("bad_meta") != 0 {
+		t.Errorf("metrics aborted=%d bad_meta=%d", f.srv.Metrics().Get("aborted"), f.srv.Metrics().Get("bad_meta"))
+	}
+	if q, _ := os.ReadFile(filepath.Join(f.dataDir, "quarantine.jsonl")); len(q) != 0 {
+		t.Errorf("aborted upload wrote a quarantine record: %s", q)
+	}
+	if !strings.Contains(f.logs.String(), "ingest aborted mid-upload") {
+		t.Errorf("no aborted log line:\n%s", f.logs.String())
+	}
+
+	if w := f.post(t, "Bearer "+testToken, "{not json", nil); w.Code != proto.StatusRejected ||
+		!strings.Contains(w.Body.String(), proto.ReasonBadMeta) {
+		t.Errorf("complete body with bad meta = %d %s, want 422 bad_meta", w.Code, w.Body.String())
+	}
+}

@@ -7,7 +7,7 @@ import "sync/atomic"
 var ingestOutcomes = []string{
 	"stored", "duplicate", "quarantined", "health",
 	"unauthorized", "ratelimited", "too_large", "disk_full",
-	"bad_meta", "internal",
+	"bad_meta", "aborted", "internal",
 }
 
 // Metrics counts ingest outcomes. The readers today are the test suite and

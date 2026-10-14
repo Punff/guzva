@@ -20,6 +20,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -218,6 +219,18 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 			s.m.add("too_large")
 			s.logOutcome(proto.StatusTooLarge, dev, meta, r.TLS, 0, "", 0)
 			s.writeErr(w, proto.StatusTooLarge, "too_large")
+			return
+		}
+		// The body broke off mid-upload: the device's link dropped or it gave
+		// up on a stalled write. That is a transport event, not a malformed
+		// request — no quarantine record (there is no capture to key it),
+		// and the device retries on its own. Logged so a flaky link shows up
+		// as what it is (it used to read as 422 bad_meta with empty fields).
+		if aborted(err) {
+			s.m.add("aborted")
+			s.log.Warn("ingest aborted mid-upload", "serial", dev.Serial, "venue", dev.VenueID,
+				"err", err.Error())
+			s.writeErr(w, http.StatusRequestTimeout, "aborted")
 			return
 		}
 		s.m.add("bad_meta")
@@ -581,6 +594,14 @@ func writeTemp(abs string, data []byte, fileMode, dirMode os.FileMode) (string, 
 func sha256hex(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+// aborted reports a body read that ended because the connection did: a
+// truncated multipart stream or a read deadline.
+func aborted(err error) bool {
+	var ne net.Error
+	return errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, os.ErrDeadlineExceeded) ||
+		(errors.As(err, &ne) && ne.Timeout())
 }
 
 func reasonOf(err error) string {
