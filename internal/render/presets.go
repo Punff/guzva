@@ -1,40 +1,31 @@
 package render
 
-// Preset is one public style. Implementations must be pure and
-// deterministic: same input grid → same output levels, no clock, no
-// randomness, no globals (§7). A new style = one registry line + one golden
-// test.
+// Style is one public print style. There is no raw style — ever (§7): the
+// table simply has no entry that would pass frames through unstyled.
 //
-// There is no raw preset — ever (§7). The registry simply has no entry that
-// would pass frames through unstyled.
+// Names are the stable IDs stored on venues and frames ("poster"/"mono");
+// display names live in the UI (Tisak/Šablon, DESIGN.md §5.8).
 //
-// Display names live in the UI (Tisak/Šablon); the registry keeps the stable
-// IDs "poster"/"mono" so old rows keep their meaning (DESIGN.md §5.8).
-type Preset interface {
-	Name() string
-	// Version bumps whenever the output changes for the same input; frames
-	// record preset@version so a style change never rewrites meaning (D2).
-	Version() int
-	// Levels is the tone count: 4 for the print, 2 for the stencil.
-	Levels() int
+// Version bumps whenever the output changes for the same input; frames
+// record name@version so a style change never rewrites meaning (D2).
+// History: v1 colour JPEG, v2 stamped PNG, v3 160×120 blur/threshold/mode,
+// v4 the 320×240 band-pass with Weber-contrast tones (docs/print-v4.md).
+type Style struct {
+	Name    string
+	Version int
+	Levels  int // 4 for the print (Tisak), 2 for the stencil (Šablon)
 }
 
-// TisakPreset: the 4-tone print (poster@4).
-//
-// Versions: v1 colour JPEG, v2 stamped PNG, v3 160×120 blur/threshold/mode,
-// v4 the 320×240 band-pass with Weber-contrast tones (docs/print-v4.md).
-// D2's rule: bump whenever the output changes for the same input, so old
-// sidecars keep their meaning.
-type TisakPreset struct{}
+var styles = map[string]Style{
+	"poster": {Name: "poster", Version: 4, Levels: 4},
+	"mono":   {Name: "mono", Version: 4, Levels: 2},
+}
 
-func (TisakPreset) Name() string { return "poster" }
-func (TisakPreset) Version() int { return 4 }
-func (TisakPreset) Levels() int  { return 4 }
+// DefaultStyle is what an unknown or empty venue style renders as.
+const DefaultStyle = "poster"
 
-// SablonPreset: the 2-tone stencil (mono@4) — the same contrast map, inked
-// where the scene is darker than its surroundings.
-type SablonPreset struct{}
-
-func (SablonPreset) Name() string { return "mono" }
-func (SablonPreset) Version() int { return 4 }
-func (SablonPreset) Levels() int  { return 2 }
+// LookupStyle returns the named style.
+func LookupStyle(name string) (Style, bool) {
+	s, ok := styles[name]
+	return s, ok
+}

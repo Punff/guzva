@@ -22,15 +22,9 @@ import (
 	"guzva/internal/proto"
 )
 
-// fixedClock pins received_at so tests are deterministic (Clock is the
-// plan's one injected interface, §3).
-type fixedClock struct{ t time.Time }
-
-func (c fixedClock) Now() time.Time { return c.t }
-
 var testNow = time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 
-func testEngine() *Engine { return NewEngine(fixedClock{testNow}, 2) }
+func testEngine() *Engine { return NewEngine(func() time.Time { return testNow }, 2) }
 
 // syntheticFrame renders a smooth gradient + seeded noise (never uniform,
 // never dark) and JPEG-encodes it. Fixed seed → stable bytes per run.
@@ -367,20 +361,23 @@ func TestRejectMean(t *testing.T) {
 	}
 }
 
-// §7: no raw preset exists — the registry cannot publish an unstyled frame.
-func TestNoRawPreset(t *testing.T) {
-	e := testEngine()
-	if _, ok := e.Preset("raw"); ok {
-		t.Fatal("raw preset must not exist (§7)")
+// §7: no raw style exists — exactly poster + mono, nothing passes through.
+func TestNoRawStyle(t *testing.T) {
+	if len(styles) != 2 {
+		t.Fatalf("styles = %v, want exactly poster+mono", styles)
 	}
-	for _, want := range []string{"poster", "mono"} {
-		if _, ok := e.Preset(want); !ok {
-			t.Fatalf("registry lacks %q — want exactly poster+mono", want)
+	for _, name := range []string{"poster", "mono"} {
+		if _, ok := LookupStyle(name); !ok {
+			t.Errorf("missing style %q", name)
 		}
 	}
-	// Unknown style falls back to the default, never to nothing.
-	if p, ok := e.Preset("definitely-not-a-style"); ok || p != nil {
-		t.Fatal("unknown preset must not resolve")
+	if _, ok := LookupStyle("raw"); ok {
+		t.Fatal("raw style must not exist (§7)")
+	}
+	// An unknown venue style renders as the default, never unstyled.
+	out, err := process(t, testEngine(), syntheticFrame(t, 320, 240, 3), "raw")
+	if err != nil || out.Preset != DefaultStyle {
+		t.Fatalf("unknown style → %q err=%v, want %q", out.Preset, err, DefaultStyle)
 	}
 }
 

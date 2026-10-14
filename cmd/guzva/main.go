@@ -131,7 +131,7 @@ func serveMain(args []string) int {
 	}
 	defer st.Close()
 
-	eng := render.NewEngine(render.RealClock{}, renderConcurrency)
+	eng := render.NewEngine(nil, renderConcurrency)
 	lim := auth.DefaultLimiter(time.Now)
 	ing := frames.New(st, eng, lim, *dataDir, *retainHours, log)
 

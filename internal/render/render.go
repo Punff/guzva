@@ -34,17 +34,6 @@ const (
 	DarkMeanLuma = 6
 )
 
-// Clock is injected so tests can pin received_at (PLAN §3: an interface only
-// when a second implementation exists — this is the test implementation).
-type Clock interface {
-	Now() time.Time
-}
-
-// RealClock is the production Clock.
-type RealClock struct{}
-
-func (RealClock) Now() time.Time { return time.Now() }
-
 // FrameIn is one ingest attempt. Raw is owned by Process and is zeroed on
 // return regardless of success or failure.
 type FrameIn struct {
@@ -112,39 +101,17 @@ func RejectMean(err error) float64 {
 // Engine runs the pipeline. A single global semaphore bounds concurrent
 // Process calls (§6.1): one slow frame must not starve the fast ones.
 type Engine struct {
-	presets  map[string]Preset
-	fallback string
-	clock    Clock
-	sem      chan struct{}
+	now func() time.Time // injectable so tests can pin received_at
+	sem chan struct{}
 }
 
-// NewEngine builds an Engine with the built-in presets registered.
-// maxConcurrent caps in-flight Process calls (0 → 1).
-func NewEngine(clock Clock, maxConcurrent int) *Engine {
-	if clock == nil {
-		clock = RealClock{}
+// NewEngine builds an Engine. now nil means time.Now; maxConcurrent caps
+// in-flight Process calls (0 → 1).
+func NewEngine(now func() time.Time, maxConcurrent int) *Engine {
+	if now == nil {
+		now = time.Now
 	}
-	if maxConcurrent < 1 {
-		maxConcurrent = 1
-	}
-	e := &Engine{
-		presets:  make(map[string]Preset),
-		fallback: TisakPreset{}.Name(),
-		clock:    clock,
-		sem:      make(chan struct{}, maxConcurrent),
-	}
-	e.Register(TisakPreset{})
-	e.Register(SablonPreset{})
-	return e
-}
-
-// Register adds a preset to the registry (one line per new style, §7).
-func (e *Engine) Register(p Preset) { e.presets[p.Name()] = p }
-
-// Preset looks a preset up by name.
-func (e *Engine) Preset(name string) (Preset, bool) {
-	p, ok := e.presets[name]
-	return p, ok
+	return &Engine{now: now, sem: make(chan struct{}, max(maxConcurrent, 1))}
 }
 
 // Process runs the full pipeline for one frame. The input buffer is always
@@ -168,14 +135,14 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 	out := Output{
 		SHA256:     hex.EncodeToString(sum[:]),
 		RawBytes:   len(in.Raw),
-		ReceivedAt: e.clock.Now().UTC(),
+		ReceivedAt: e.now().UTC(),
 	}
 
-	preset, ok := e.presets[in.Preset]
+	style, ok := styles[in.Preset]
 	if !ok {
-		preset = e.presets[e.fallback]
+		style = styles[DefaultStyle]
 	}
-	out.Preset, out.PresetVer = preset.Name(), preset.Version()
+	out.Preset, out.PresetVer = style.Name, style.Version
 
 	// --- validate (cheap checks before the full decode) ---
 	if len(in.Raw) > proto.MaxFrameBytes {
@@ -210,7 +177,7 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 	}
 
 	// --- the print (tisak.go).
-	pngBytes, err := encode(tones(g, preset.Levels(), in.Masks, Defaults), preset.Levels())
+	pngBytes, err := encode(tones(g, style.Levels, in.Masks, Defaults), style.Levels)
 	if err != nil {
 		return Output{}, err
 	}

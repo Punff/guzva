@@ -34,7 +34,7 @@ func newTestMux(t *testing.T) *http.ServeMux {
 		t.Fatalf("store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	eng := render.NewEngine(render.RealClock{}, 1)
+	eng := render.NewEngine(nil, 1)
 	lim := auth.DefaultLimiter(time.Now)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ing := frames.New(st, eng, lim, dir, 48, log)
