@@ -1156,3 +1156,22 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   stored frame is still poster@4 from v0.7.0 firmware; the public page
   correctly shows "Slika kasni". The flip and outlines are unverified on
   hardware until it is powered again.
+
+### Bench link outage + recovery, first poster@5 frame (2026-10-14 17:44–18:29 UTC)
+
+- After the 19:44-local unplug/move the board could not hold WiFi: LAN ping
+  60–100 % loss at 0.6–3.6 s RTT (router itself: 8 ms, 0 %), server-side
+  TLS handshakes from the home NAT ending in EOF / 15 s i/o timeout,
+  firmware escalating its backoff. The CH340 also dropped off USB on its
+  own (kernel log: disconnect + re-attach as ttyUSB1), which is why one
+  upload hit "port busy" — platformio.ini pins ttyUSB0.
+- Reflashed the same build (`--upload-port /dev/ttyUSB1`, hashes OK):
+  no change over 15 min — software ruled out (WiFi sleep already off,
+  TX power unchanged since v3, identical behaviour across two flashes).
+- The user then re-powered/moved the board (boot 40): 201s with
+  tls_fail 0 from 18:27, first real frame 18:29:28 — `poster@5`
+  (outlines), 5.1 KB, render 30.7 ms, firmware v0.8.1-1-g75faa27 with
+  PROFILE_VFLIP. Orientation to be confirmed by eye on the live page.
+- Lesson recorded: the bench link problem is physical (supply/cable/
+  placement); diagnose with LAN ping + server journal + kernel USB log,
+  never serial.
