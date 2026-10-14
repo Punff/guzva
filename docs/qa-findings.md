@@ -197,8 +197,19 @@ as a defect rather than a harness failure.
 
 ### Q-05 · P1 · ingest · a zero-length frame part is answered 201, not 422
 
-**Status:** OPEN — backend-go's lane (`internal/frames/ingest.go`). Reported,
-not touched. Regression row lives in `qa/test_ingest.sh`.
+**Status:** FIXED — commit `85d551b` (solo pass, 2026-10-14).
+`TestIngestEmptyFramePartRejected` + matrix row "was Q-05, fixed"
+(87/87). Regression row lives in `qa/test_ingest.sh`.
+
+**The fix (one condition, no signature change):** the marker the fix
+shape asked for already existed — `readMultipart` leaves `frameRaw`
+`nil` when the part is absent, while `io.ReadAll` returns a non-nil
+empty slice for a present-but-empty part. `ingest.go` now beats
+only on `frameRaw == nil`; an empty part falls through to render
+and rejects as `bad_magic` (quarantine row + 422 + idempotent 409 on
+retry). The health-only path is untouched (`TestIngestHealthOnlyBeat`
+still green, and the matrix asserts the reject body now DIFFERS from
+a beat body).
 
 **Area:** device-visible honesty (§1), the same class as the dark loop: a
 device that is *not* delivering frames must not be told it is.
@@ -304,7 +315,7 @@ two failures are real defects, not harness noise:
 
 | row | expected | got | finding |
 |---|---|---|---|
-| zero-length frame part | 422 `bad_magic` | 201, identical to a health beat | Q-05 |
+| zero-length frame part | 422 `bad_magic` | 201, identical to a health beat | Q-05 FIXED |
 | `Vary` on the identity-encoded page | present | absent | Q-04 |
 
 Everything else in the matrix passes against the current tree:

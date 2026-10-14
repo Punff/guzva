@@ -258,8 +258,13 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Health-only beat: no frame part (camera-degraded mode, §4).
-	if len(frameRaw) == 0 {
+	// Health-only beat: the frame part is ABSENT (camera-degraded mode,
+	// §4). A PRESENT-but-empty part is different: the device claims a
+	// capture yet sent zero bytes — that falls through to render and
+	// rejects as bad_magic, quarantined like any other corrupt frame.
+	// (readMultipart leaves frameRaw nil when the part is absent;
+	// io.ReadAll returns non-nil for an empty part.)
+	if frameRaw == nil {
 		if err := s.st.UpdateDeviceBeat(ctx, dev.ID, beat); err != nil {
 			s.internal(w, "beat update", err)
 			return

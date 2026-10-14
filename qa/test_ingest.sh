@@ -123,23 +123,26 @@ assert_reject truncated-tail.jpg truncated "valid JPEG cut at 200 B"
 qa_case "422 bad_magic — not a JPEG at all (captive portal / wrong proxy)"
 assert_reject bad-magic.jpg bad_magic "html body"
 
-qa_case "422 bad_magic — a ZERO-LENGTH frame part (KNOWN DEFECT, Q-05)"
-# Expected: a present-but-empty frame part is a malformed request, and
-# render.go:165 already says so ("len(in.Raw) < 2 → bad_magic"). Today it is
-# intercepted one layer earlier by ingest.go:262 (`len(frameRaw) == 0` →
-# health-only beat) and answered 201, so a device whose capture silently
-# produced nothing is told it succeeded.
-# Asserted, expected to FAIL until backend-go lands the fix:
-# docs/qa-findings.md Q-05.
+qa_case "422 bad_magic — a ZERO-LENGTH frame part (was Q-05, fixed)"
+# A present-but-empty frame part is a malformed request: render.go:165
+# says so ("len(in.Raw) < 2 → bad_magic"), and ingest.go answers 422 —
+# a device whose capture silently produced nothing is told it FAILED,
+# quarantined like any other corrupt frame. Only an ABSENT part is the
+# camera-degraded health-only beat.
 r="$(qa_post "$F/empty.jpg")"
-if [[ "$(qa_status "$r")" == "422" ]]; then
-  qa_ok "zero-length frame rejected ($(qa_body "$r" | grep -o '"reason":"[a-z_]*"'))"
+qa_eq "zero-length frame rejected" "$(qa_status "$r")" "422"
+if [[ "$(qa_body "$r")" == *'"reason":"bad_magic"'* ]]; then
+  qa_ok "reject body carries reason=bad_magic (a beat never does)"
 else
-  qa_bad "empty frame part got $(qa_status "$r") — a device that captured nothing is told it succeeded (Q-05)"
+  qa_bad "empty frame reject body missing reason: $(qa_body "$r")"
 fi
-qa_eq "…and today it is byte-identical to a real health-only beat" \
-  "$(qa_body "$r" | sed 's/"server_time":"[^"]*"/T/')" \
-  "$(qa_body "$(qa_post -)" | sed 's/"server_time":"[^"]*"/T/')"
+beat_body="$(qa_body "$(qa_post -)" | sed 's/"server_time":"[^"]*"/T/')"
+reject_body="$(qa_body "$r" | sed 's/"server_time":"[^"]*"/T/')"
+if [[ "$reject_body" != "$beat_body" ]]; then
+  qa_ok "reject body differs from a health-only beat (201 no-reason)"
+else
+  qa_bad "empty frame answer still byte-identical to a health beat (Q-05 regressed)"
+fi
 
 qa_case "422 bad_meta — the meta part is not the documented JSON"
 for bad in '{"capture_id":' 'not json at all' '[]' '{"capture_id":123}' ''; do

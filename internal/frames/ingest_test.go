@@ -364,6 +364,39 @@ func TestIngestDarkFrameQuarantined(t *testing.T) {
 	}
 }
 
+func TestIngestEmptyFramePartRejected(t *testing.T) {
+	f := newFixture(t, 4)
+	// Present-but-empty frame part: the device claims a capture yet sent
+	// zero bytes. That is a corrupt frame (bad_magic), NOT a health-only
+	// beat — a device that captured nothing must not be told it
+	// succeeded (Q-05). Only an ABSENT part is the camera-degraded beat.
+	w := f.postFrame(t, "C1-1-e0e0", []byte{})
+	if w.Code != proto.StatusRejected {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
+	}
+	if body := decodeResponse(t, w); body["reason"] != proto.ReasonBadMagic {
+		t.Errorf("reason = %v, want %q", body["reason"], proto.ReasonBadMagic)
+	}
+
+	// Nothing stored, freshness untouched, idempotency row present.
+	if files := stills(t, f.dataDir); len(files) != 0 {
+		t.Errorf("empty frame stored files: %v", files)
+	}
+	if v := f.venue(t); !v.LastFrameAt.IsZero() {
+		t.Errorf("empty frame moved freshness: %v", v.LastFrameAt)
+	}
+	exists, err := f.st.FrameExists(context.Background(), f.vid, "C1-1-e0e0")
+	if err != nil || !exists {
+		t.Errorf("quarantine row: exists=%v err=%v", exists, err)
+	}
+	if f.srv.Metrics().Get("quarantined") != 1 {
+		t.Errorf("quarantined metric = %d", f.srv.Metrics().Get("quarantined"))
+	}
+	if f.srv.Metrics().Get("health") != 0 {
+		t.Errorf("health metric = %d, want 0", f.srv.Metrics().Get("health"))
+	}
+}
+
 func TestIngestHealthOnlyBeat(t *testing.T) {
 	f := newFixture(t, 6)
 	// Establish freshness with a real frame first.
