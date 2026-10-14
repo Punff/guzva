@@ -1,61 +1,70 @@
-# Guzva — agent team (OpenChamber, 6 roles, all free models)
+# Guzva — solo agent protocol
 
-One repo, one binary, one SQLite file. Parallel agents work by **file ownership**:
-only the owner edits its paths. Everyone reads everything. PLAN.md §1 contracts
-hold for every change. Green gate: `make test` before any handoff.
+One repo, one binary, one SQLite file. **One agent works the whole
+tree directly** — no worker sessions, no dispatches, no handoffs.
+(From 2026-10-14 the 6-role OpenChamber roster is retired: worker
+runs repeatedly stalled mid-task or claimed work that wasn't in the
+tree; the solo loop below shipped v0.6.3 in one pass and is the
+proven setup. History of the team mode lives in docs/ops-log.md.)
 
-## Roster
+## The loop (every change, no exceptions)
 
-| # | Role | Model (free, cost 0) | Owns (only writer) | Workstreams |
-|---|------|----------------------|--------------------|-------------|
-| 0 | orchestrator — architect + merger | `nvidia/z-ai/glm-5.3` (variant thinking) | `PLAN.md`, `docs/maintenance.md` §3 log, `docs/ops-log.md`, tags/releases order | sequences W0–W8, resolves conflicts, runs `make tag/deploy`, owns history scrub decision |
-| 1 | backend-go — ingest/store/render/pages/sched/auth | `nvidia/deepseek-ai/deepseek-v4.1-flash` | `cmd/guzva/`, `internal/{proto,store,render,frames,venue,pages,sched,auth,admin}`, `go.mod` | W1 CLI parity, W3 422 parity/state-key/sched-clock, privacy proofs (no-raw, idempotency 409, EXIF, zeroed RAM) |
-| 2 | firmware-esp32 — device plane | `opencode/nemotron-3.5-lightning-free` (alt `nvidia/nvidia/nemotron-3.5-lightning-30b-a3b`) | `firmware/` | W4: pinned toolchain, WDT 150 s, PSRAM→DRAM fallback, jsonStr reason fix, Retry-After 5xx, git-stamped FW_VERSION; bench verify only on hardware |
-| 3 | frontend-tisak — design system + consoles | `opencode/muse-spark-1.3-contributor-free` | `web/`, `internal/webui/`, `internal/admin/` templates, `docs/design.md`, `docs/ux.md` | W2 B1/B3/B4/H8 (state chips, favicon, no-JS forms, CSP), W7 polish (attention sort, hours labels, dark toggle, QR poster decision), WCAG AA, kit page |
-| 4 | devops-qa — CI/gate/deploys/backups | `opencode/mimo-v2.6-flash-free` | `Makefile`, `Makefile.web.mk`, `.github/workflows/`, `deploy/`, `tools/{fakecam,bench-cert.sh,restore-drill.sh}` | W5: CI PR gate, `make tag/drill`, restore drill log, fakecam load gate (1 slow + 19 fast), TLS/disk guards |
-| 5 | docs-i18n — truth + Croatian catalog | `opencode/ling-3.1-flash-free` (fallback `opencode/exo-free`) | `README.md`, `docs/{dev-setup,cli,runbook,proto-v1}.md`, `internal/i18n/`, public/owner copy | W2 B2 (owner.fresh/late/stale + key-exists test), W6 truth sweep, `hr` default + `en` fallback, `dd.mm.yyyy.` + 24 h + Europe/Sarajevo |
-| 6 | guzva-qa — test harness + bug hunt | `nvidia/deepseek-ai/deepseek-v4.1-flash` | `qa/` (new); direct fixes ONLY in `web/` + `internal/webui/` (orchestrator-authorized while frontend idle); everything else report-only | ingest-reject matrix, pageCache 304 test, single-clock/state contracts, a11y + i18n coverage, incident-regression tests (4:3, agc_gain, dark loop) |
+1. **Read the code first.** The contract you're changing is in the
+   source, PLAN.md §1, and the doc that owns the surface
+   (docs/proto-v1.md for the wire, docs/design.md + docs/ux.md for
+   pages, docs/cli.md for the CLI).
+2. **One item at a time.** Small commit per item, explicit paths
+   (`git add <paths>`, never `-A`), `make test` green BEFORE each
+   commit. If tests fail on your own change, fix before committing.
+3. **Prove it, don't claim it.** Behavior changes get a test or a
+   live curl/serial proof pasted into the handoff... there is no
+   handoff — into the commit message or ops-log. Grep-verify markers
+   exist before writing "done". Never describe work that isn't in
+   the tree.
+4. **Push after each green commit** (`git push origin master`), let
+   CI gate it (repo: Punff/guzva). Fix CI before starting the next
+   item.
+5. **Deploy when a coherent set has landed:** `make tag V=vX.Y.Z` →
+   `make deploy` → verify with the `make check` output + a live
+   probe of the changed behavior → append the deploy entry to
+   docs/ops-log.md and push.
+6. **Console-visible change → screenshot it** (`.openchamber/screenshots/`)
+   and keep the rendered-template tests in sync.
 
-Spares (free, on call): `opencode/space-bunny-free`, `opencode/exo-free`,
-`opencode/longcat-2.5-preview-free`, `nvidia/z-ai/glm-5.3-flash` (fast GLM for
-routine orchestrator chores), `nvidia/meta/muse-glimmer-30b`, `nvidia/moonshotai/kimi-k3`.
+## Hard rules (carried over unchanged)
 
-Why these fits: GLM-5.3 = strongest free reasoner (already ran the 4-way audit,
-holds whole PLAN in head) → orchestrator. DeepSeek Flash = precise code correctness
-→ Go privacy invariants. Nemotron Lightning = deterministic, low-hallucination →
-C++/memory/TLS budgets. Muse Spark = creative + UI → Tisak Tailwind/a11y.
-MiMo Flash = fast agentic tool-runner → make/pio/drill loops. Ling Flash = light
-thorough scanner → catalog/docs consistency.
+- PLAN.md §1 contracts hold for every change. Privacy: raw JPEG in
+  RAM one call only, stylised PNG at rest, no biometrics ever (D9),
+  push-only server.
+- No new Go deps (stdlib + 3 direct). Interface only with a 2nd
+  implementation.
+- `make test` is the only gate. Green means all packages, including
+  `qa/` — a failing test is a finding (fix it or file it as
+  numbered Q-xx in docs/qa-findings.md), never a thing to skip.
+- docs/ops-log.md is append-only and tells the truth, including
+  failures and reverted work.
+- Firmware touches the real board only via `pio run -t upload`;
+  serial is DANGEROUS raw (`stty`/`cat` on /dev/ttyUSB0 drives the
+  CH340 DTR/RTS into download mode) — use a pyserial RTS-pulse
+  capture script; regenerate it if missing (the original
+  `/tmp/opencode/esp32-bootlog.py` was lost to tmp cleanup).
+- Prod: `ssh root@guzva`, data `/var/lib/guzva`, bench venue
+  `https://34.139.58.143/bench/`, board serial `bd2a58b`.
+  Never POST frames to prod from tests; never open the device
+  token outside the VPS.
+- `firmware/include/settings.h` holds real WiFi credentials —
+  gitignored, never committed.
 
-## Unison protocol
+## Open queue (docs/qa-findings.md is the tracker)
 
-1. All 6 sessions live in `/home/punff/Downloads/esp32-cam` (same OpenChamber
-   location). See each other via session list. Titles start with `guzva-`.
-2. Single-writer: never edit outside your Owns. Need a cross-cut? Ask
-   orchestrator in `docs/ops-log.md`, it dispatches.
-3. Every change: dogfood migrated DB + real board when it touches device/pages
-   (PLAN §1). Privacy: raw JPEG in RAM one call only, stylised PNG at rest,
-   no biometrics ever (D9), push-only server.
-4. Handoff: `make test` green → append ops-log line → tell orchestrator.
-   Orchestrator merges in workstream order W0→W6, one series per workstream.
-5. No new Go deps (stdlib + 3 direct). Interface only with 2nd implementation.
-6. Console-visible change → check via kit page + rendered-template test +
-   OpenChamber screenshot (`.openchamber/screenshots/`).
-7. Blocked? Write `BLOCKED: <what> — needs <who>` to ops-log, notify, stop.
-   Never idle-edit another role's files.
-
-## Kickoff order (from docs/maintenance.md §3)
-
-W0 hygiene + W1 CLI + W2 surface bugs first (P0) → W3 server + W4 firmware (P1,
-bench session for hardware verify + secret rotation) → W5 CI/drill (needs W0
-history decision before first push) → W6 docs truth → W7/W8 sequenced next,
-not this pass (QR poster, paused state, threshold tuning need real frames).
-
-## Session titles (exact, for OpenChamber)
-
-- `guzva-orchestrator`
-- `guzva-backend-go`
-- `guzva-firmware-esp32`
-- `guzva-frontend-tisak`
-- `guzva-devops-qa`
-- `guzva-docs-i18n`
+- Q-01 (P1): mean-luma instrumentation on dark/dead rejects —
+  spec restated by QA round 1.
+- Q-05 (P1): zero-length frame part answers 201 like a health
+  beat (ingest.go `len(frameRaw) == 0` intercept).
+- Q-04 (P2): `Vary: Accept-Encoding` only on the gzip branch.
+- Item D: cfg coherence validation (`agc=1 ∧ agc_gain=0` reject,
+  fixed-exposure warn) at cfg-set.
+- Item E: admin board shows last reject reason + mean + since.
+- Bench-verify: dark escalation + TLS backoff need an induced
+  failure to observe on hardware.
+- WiFi password rotation (router) — needs the user.

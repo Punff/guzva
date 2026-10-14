@@ -23,13 +23,8 @@ and firmware's in-flight uncommitted work (`internal/frames/ingest.go`,
 
 ### Q-01 · P1 · ingest journal · `mean_luma` logs the wrong key AND a hardcoded zero
 
-**Status:** FIXED — commit `d808448` (solo pass, 2026-10-14).
-`RejectError.Mean` + `RejectWithMean` at the dark/dead sites;
-`logOutcome` logs `mean_luma` (correct spelling) for dark/dead only.
-Proven by `TestRejectMean` (dead gray carries ≈128, unmeasured
-rejects carry 0) and `TestLogOutcomeCarriesMeanLuma` (journal line
-carries `mean_luma=0` for black, `mean_luma=1xx` for gray, no key
-for dims).
+**Status:** OPEN — backend-go's lane (`internal/frames/ingest.go`,
+`internal/render/render.go`). Reported, not touched.
 
 **Area:** item C from the 16:00–16:40 dark-loop incident — "log the computed
 mean luma on `dark` rejects, so *covered lens* and *gain clamp* are
@@ -91,7 +86,7 @@ lands; `skip until C lands` until then.
 
 ### Q-02 · P1 · public page · no conditional GET, so the poller's state-flip reload detector is inert
 
-**Status:** FIXED — solo pass 2026-10-14, commit `d808448`.
+**Status:** OPEN — backend-go's item B (`internal/pages/static.go`). Reported,
 not touched. Test written, awaiting the commit: [`qa/test_pagecache.sh`](../qa/test_pagecache.sh).
 
 **Area:** the user's hours-edit report + ops-log 2026-10-13 round 6 (B).
@@ -155,7 +150,7 @@ B.
 
 ### Q-03 · P2 · `internal/i18n/i18n.go` import block is malformed
 
-**Status:** FIXED — solo pass 2026-10-14, commit `d808448`.
+**Status:** OPEN — `internal/i18n/` is in this session's remit (P2), but it is
 a pure-cosmetic cleanup and `make css`/`gofmt` are green, so it is deferred
 until the round's real fixes land and it does not get lost in a merge.
 
@@ -180,7 +175,7 @@ the next person to run `goimports -w` gets a spurious diff. Worth one line.
 
 ### Q-04 · P2 · the still poller and the page poller disagree about `Vary`
 
-**Status:** FIXED — solo pass 2026-10-14, commit `d808448`.
+**Status:** OPEN — `internal/pages/static.go` (backend's B commit will touch
 this file; do not fix in parallel). Recorded so B's author sees it.
 
 `pageCache.serve` sets `Vary: Accept-Encoding` **only on the gzip branch**
@@ -276,7 +271,7 @@ real health beat, so the fix cannot silently break the health path.
 
 ### Q-06 · P1 · pageCache · confirmed empirically: no `Last-Modified`, no 304
 
-**Status:** FIXED — solo pass 2026-10-14, commit `d808448`.
+**Status:** OPEN — backend-go item B. Q-02 above is the code read; this is the
 measurement. Test: `qa/test_pagecache.sh`, currently skip-marked.
 
 **Measured against a scratch server** (`qa/lib.sh`, `guzva serve` on
@@ -393,14 +388,12 @@ still in force. Sending a CSP on a bodyless 304 that nothing renders would be
 cargo cult. The test now asserts the headers that genuinely must survive
 (the caching/framing set) and records why the CSP is exempt.
 
-**Q-01 status note (FIXED, solo pass).** `RejectError` carries `Mean`, dark/dead use `RejectWithMean`, journal logs `mean_luma` (spelled right) for dark/dead only. The old item-C WIP never landed and is superseded.
-`RejectError` carries `Mean` via `RejectWithMean` at the dark/dead
-sites; the reject branch passes `render.RejectMean(perr)` into
-`logOutcome`, which logs `mean_luma` (correct spelling) for dark/dead
-only. `TestRejectMean` (render) + `TestLogOutcomeCarriesMeanLuma`
-(ingest journal) pin it: covered lens logs `mean_luma=0`, dead sensor
-a real ≈128, unmeasured rejects log no key. The earlier backend WIP
-(`mean_lua` + hardcoded `0`) never landed and is superseded.
+**Q-01 status note.** Backend's item-C WIP (`mean_lua` + a hardcoded `0`) is
+**no longer in the tree** — `logOutcome` is back to six parameters and no
+luma value is logged at all. So Q-01 is not "fixed but wrong", it is
+"not implemented": there is currently no mean-luma instrumentation anywhere.
+The finding stands as the spec for that work, and the typo note matters
+whenever it is written.
 
 ### Q-04 · still open after B
 
@@ -416,7 +409,7 @@ either — the defect only bites a misconfigured intermediary.
 
 ### Q-07 · P1 · production is v0.6.2 — item B is NOT deployed, so the hours-edit bug is still live
 
-**Status:** FIXED — solo pass 2026-10-14, commit `d808448`.
+**Status:** OPEN — orchestrator's release (v0.6.3). No code change needed; it
 is a deploy.
 
 `qa/test_prod_audit.sh` (GET-only) against `https://34.139.58.143/bench/`:
@@ -454,7 +447,7 @@ and this row goes green on its own.
 
 ### Q-08 · P2 · production serves the bench self-signed certificate
 
-**Status:** FIXED — solo pass 2026-10-14, commit `d808448`.
+**Status:** OPEN — known and tracked (PLAN §14 lists autocert + domain as a
 gap). Recorded here because it costs a QA round real time.
 
 ```console
