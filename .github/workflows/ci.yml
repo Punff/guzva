@@ -40,6 +40,9 @@ jobs:
       - name: vet
         run: go vet ./...
 
+      - name: zbar (QR round-trip decoder for internal/qr)
+        run: sudo apt-get install -y --no-install-recommends zbar-tools
+
       - name: unit tests
         run: go test ./...
 
