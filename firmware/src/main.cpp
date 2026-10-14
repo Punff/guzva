@@ -225,6 +225,7 @@ WiFiClientSecure tlsClient;
 WebServer server(80);
 
 uint32_t tlsLastUseMs    = 0;
+uint8_t  tlsConsecutiveFailures = 0;  // escalating backoff counter
 bool     camInited       = false;
 bool     camEverOk       = false;
 bool     camDegraded     = false;
@@ -1125,9 +1126,25 @@ static void runTick() {
   uint32_t sleepS = intervalS;
   if (status == 0) {
     lastHttp = 0;
-    sleepS = intervalS;
-    Serial.printf("[HTTP] transport failure after %u attempts -> frame dropped "
-                  "(post_fail=%lu)\n", POST_ATTEMPTS, (unsigned long)postFail);
+    // Escalating backoff for consecutive transport failures (TLS connect/full-post
+    // failure against dead radio). Doubles per failure, capped at ~15 min (900 s),
+    // reset on any successful POST. Mirrors the existing REVOKED_BACKOFF pattern.
+    if (tlsConsecutiveFailures < 255) {
+      tlsConsecutiveFailures++;
+      uint32_t backoffS = REVOKED_BACKOFF_MIN;
+      for (uint8_t i = 1; i < tlsConsecutiveFailures; i++)
+        backoffS *= 2;
+      if (backoffS > 900) backoffS = 900;  // ~15 min cap
+      sleepS = backoffS;
+      Serial.printf("[HTTP] transport failure after %u attempts -> escalating "
+                    "backoff %u s (consecutive %u)\n",
+                    POST_ATTEMPTS, (unsigned)backoffS,
+                    (unsigned)tlsConsecutiveFailures);
+    } else {
+      sleepS = intervalS;
+      Serial.printf("[HTTP] transport failure after %u attempts -> frame dropped "
+                    "(post_fail=%lu)\n", POST_ATTEMPTS, (unsigned long)postFail);
+    }
   } else {
     lastHttp = status;
     applyCfgFromBody();
@@ -1138,6 +1155,7 @@ static void runTick() {
         Serial.println("[HTTP] token accepted again -> normal cadence");
       }
       ledOkFlash();
+      tlsConsecutiveFailures = 0;  // reset on successful POST
       sleepS = respNextS();
       Serial.printf("[HTTP] %d ok -> sleep %lu s\n", status,
                     (unsigned long)sleepS);
