@@ -1156,6 +1156,7 @@ static void runTick() {
       }
       ledOkFlash();
       tlsConsecutiveFailures = 0;  // reset on successful POST
+      warmConsecutiveDark = 0;       // reset: next 201 clears dark-reject escalation
       sleepS = respNextS();
       Serial.printf("[HTTP] %d ok -> sleep %lu s\n", status,
                     (unsigned long)sleepS);
