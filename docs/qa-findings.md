@@ -23,8 +23,7 @@ and firmware's in-flight uncommitted work (`internal/frames/ingest.go`,
 
 ### Q-01 · P1 · ingest journal · `mean_luma` logs the wrong key AND a hardcoded zero
 
-**Status:** OPEN — backend-go's lane (`internal/frames/ingest.go`,
-`internal/render/render.go`). Reported, not touched.
+**Status:** FIXED — solo pass 2026-10-14, commit `29e6f2b`.
 
 **Area:** item C from the 16:00–16:40 dark-loop incident — "log the computed
 mean luma on `dark` rejects, so *covered lens* and *gain clamp* are
@@ -388,12 +387,7 @@ still in force. Sending a CSP on a bodyless 304 that nothing renders would be
 cargo cult. The test now asserts the headers that genuinely must survive
 (the caching/framing set) and records why the CSP is exempt.
 
-**Q-01 status note.** Backend's item-C WIP (`mean_lua` + a hardcoded `0`) is
-**no longer in the tree** — `logOutcome` is back to six parameters and no
-luma value is logged at all. So Q-01 is not "fixed but wrong", it is
-"not implemented": there is currently no mean-luma instrumentation anywhere.
-The finding stands as the spec for that work, and the typo note matters
-whenever it is written.
+**Q-01 status note (FIXED, solo pass).** `RejectError` carries `Mean`, dark/dead use `RejectWithMean`, journal logs `mean_luma` (spelled right) for dark/dead only. The old item-C WIP never landed and is superseded.
 
 ### Q-04 · still open after B
 
