@@ -393,3 +393,114 @@ with no `Vary`. Confirmed again against `83b707d`. Moving the single
 it is a one-line move in a file backend owns. P2, because both the page and
 the still are `no-cache`, so no conforming shared cache should be storing
 either — the defect only bites a misconfigured intermediary.
+
+---
+
+### Q-07 · P1 · production is v0.6.2 — item B is NOT deployed, so the hours-edit bug is still live
+
+**Status:** OPEN — orchestrator's release (v0.6.3). No code change needed; it
+is a deploy.
+
+`qa/test_prod_audit.sh` (GET-only) against `https://34.139.58.143/bench/`:
+
+```console
+$ curl -sk https://34.139.58.143/healthz
+{"disk_free_pct":39.13,"ok":true,"uptime_s":79064,"version":"v0.6.2"}
+
+$ curl -sk -o /dev/null -D - https://34.139.58.143/bench/ | grep -i last-modified
+(no output)
+```
+
+This tree is `v0.6.2-10-g36441c1`, so **ten commits — including `83b707d`,
+the conditional-GET fix — are undeployed.** Consequences a real visitor has
+today, not after the next release:
+
+- Changing work hours still does not reach an already-open page. The flip
+  detector keys on `Last-Modified`, prod does not send it, and the branch is
+  dead code exactly as described in Q-02. **The user-reported symptom is
+  still in production.**
+- Every poller tick pulls a full ~3.7 KB gzip body instead of a 0.3 KB 304.
+
+Everything else in the audit passes on prod: CSP with the inline-block hashes,
+`no-cache`, `nosniff`, `DENY`, `no-referrer`, `CORP`, `Permissions-Policy`,
+`noindex`, one `#hl` and no `#stamp`, `role=status` + `aria-live=polite` on
+the figcaption, `lang="hr"`, `Zatvoreno` (the bench venue is outside its
+hours at audit time), the `<noscript>` meta refresh, the privacy caption, no
+third-party requests, and a `public.css` within 16 B of this tree — so prod
+is not stale in any way *other* than the ten commits.
+
+**Owner:** orchestrator — `make tag V=v0.6.3 && make deploy` re-runs the audit
+and this row goes green on its own.
+
+---
+
+### Q-08 · P2 · production serves the bench self-signed certificate
+
+**Status:** OPEN — known and tracked (PLAN §14 lists autocert + domain as a
+gap). Recorded here because it costs a QA round real time.
+
+```console
+$ echo | openssl s_client -connect 34.139.58.143:443 2>/dev/null \
+    | openssl x509 -noout -subject -ext subjectAltName
+subject=O=camtest-bench, CN=34.139.58.143
+X509v3 Subject Alternative Name:
+    IP Address:34.139.58.143, IP Address:127.0.0.1, DNS:34.139.58.143,
+    DNS:guzva, DNS:guzva.local
+```
+
+The SAN **does** cover the IP, so this is not a name mismatch — the chain is
+simply untrusted (a private CA from `tools/bench-cert.sh`, not a public one).
+`curl -k` is therefore happy while a browser is not, which is why the first
+attempt to screenshot the production page produced
+`chrome-error://chromewebdata/` and a black 390×844 capture.
+
+Practical consequence for this round: **production screenshots are not
+obtainable; HTTP-level auditing is.** That is the better check for a
+conditional-GET/header contract anyway, and the screenshots in
+`.openchamber/screenshots/qa-local-*.jpg` come from the local scratch server
+instead. No action needed beyond the existing §14 item.
+
+---
+
+### Q-09 · PASS · a11y and i18n audits are clean (now part of the gate)
+
+`qa/audit_test.go` runs inside `make test` — no server, no fixtures, no
+network — and all four checks pass:
+
+**State-colour contrast (WCAG AA).** The chip is 1rem/600, which is *not*
+"large text" (that starts at 18.66 px bold), so the full 4.5:1 applies. Every
+pair clears it with room to spare:
+
+| pair | ratio | floor |
+|---|---|---|
+| chip label (ink on paper) | 14.16:1 | 4.5 |
+| body text (ink on paper-2) | 12.70:1 | 4.5 |
+| muted text on paper | 6.75:1 | 4.5 |
+| muted on paper-2 (hours/info cards) | 6.06:1 | 4.5 |
+| fresh shape on paper | 5.71:1 | 3.0 |
+| late shape on paper | 5.90:1 | 3.0 |
+| nosignal shape on paper | 5.95:1 | 3.0 |
+| closed/waiting shape on paper | 6.75:1 | 3.0 |
+| accent (btn--primary text) | 5.70:1 | 4.5 |
+| focus ring, 3px accent on paper | 5.70:1 | 3.0 |
+
+**Catalog placeholder parity.** `internal/i18n` already pins that hr and en
+have identical *key sets*. That is necessary but not sufficient: a key can
+exist in both and still be broken in one, because `Get()` falls back to
+Croatian and repairs a missing key silently. The case nothing covered is
+**mismatched placeholders** — `{time}` in hr, `{t}` in en — where every call
+site still compiles, the key still exists, and an English venue renders "The
+last picture is from " with the time silently dropped. Now checked; the
+shipped catalogs agree.
+
+**Copy that escaped the catalog.** Scoped to `internal/pages/templates` on
+purpose: the public page is the Croatian-first surface D7 governs, while the
+admin console is catalog-free English *by design*. A first cut that scanned
+both directories produced 40 false positives — Go template actions and the
+templates' own prose comments both read as literals — and was narrowed until
+it only fires on real prose. It currently reports nothing.
+
+**Mutation-checked**, so these are not vacuous: changing `--late` to
+`#c9a227` fails the contrast test (2.07:1), and changing the en `stale.detail`
+placeholder to `{t}` fails the parity test with
+`en placeholders {t}, hr placeholders {time}`.
