@@ -1094,3 +1094,29 @@ firmware. Commits `5c67796..` on master, CI green on each push.
 - Admin: fleet creation forms folded into disclosures, device page is
   read-only health; public print 1:1 on 360 px phones. Q-03, Q-04 fixed.
 
+
+### Deploy — `v0.7.0` live + board on Profile v1 (2026-10-14 16:46–17:08 UTC)
+
+- CI green on `3bd5b2d`; `make backup` first (`guzva-20261014-1643.db.gz` —
+  the rollback point: v0.6.3 refuses a v9 database). Tag `v0.7.0`.
+- `make deploy` OK: `healthcheck OK: version v0.7.0, page + admin answer`.
+  Live probe: schema 7 → 9 in place; bench calib_json had `Masks: null`, so
+  masks_json stayed empty; v0.6.3 firmware kept posting 201 with no
+  desired_cfg in the reply; its frames stored `poster@4` 320×240;
+  **render_ms 23–41 on the e2-micro** (first real measurement);
+  `Vary: Accept-Encoding` on the identity page response (Q-04 live).
+- Firmware `v0.7.0` flashed (`pio run -t upload`, all hashes verified).
+  Serial boot: `profile=p1`, camera ok, token kept (len 32), warm-up gate
+  discarded the first capture.
+- **Outage 16:52–17:00, partly self-inflicted.** Every `tools/bootlog.py`
+  attach rebooted the board (boot 28 → 31: a Linux tty open asserts
+  DTR/RTS before pyserial can hold them low), and each reboot costs two
+  warm-up discards + a WiFi rejoin. The link was also bad in that window:
+  beacon-loss disconnects (reason 200/201), one scan hearing no networks,
+  TCP probes with no SYN-ACK, TLS handshakes failing ssl_err=-1. The user
+  noticed the board "off"; it recovered on its own.
+- Steady state from 17:05: 201 every ~65 s, rssi −75 → −69, tls_fail flat
+  at 2 since boot 31, raw frames ~5 KB (v0.6.3 config: ~3.5 KB).
+  Lesson: diagnose the link from the server journal, never by attaching
+  serial to a board that is mid-recovery.
+- Still owed: 48 h soak on p1; real-corpus tuning of the v4 constants.
