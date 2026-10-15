@@ -140,8 +140,10 @@
   }
   .btn:hover { background: var(--paper-2); }
   .btn:active { transform: translate(2px, 2px); box-shadow: 0 0 0 0 var(--ink); }
-  .btn--primary { background: var(--accent); color: var(--paper); border-color: var(--ink); }
-  .btn--primary:hover { filter: brightness(1.07); }
+  /* Primary = ink. Red is reserved for destructive actions (.btn--danger),
+     so it keeps its meaning (legibility pass, 15 Oct 2026). */
+  .btn--primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .btn--primary:hover { background: var(--s1); }
   .btn--danger { background: transparent; color: var(--accent); border-color: var(--accent); box-shadow: none; }
   .btn--danger:hover { background: var(--accent); color: var(--paper); }
   /* Buttons size to their label by default. A full-width primary button on a

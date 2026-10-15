@@ -41,8 +41,8 @@ type FrameIn struct {
 	CaptureID string
 	Preset    string // venue style; unknown names fall back to the default
 	Raw       []byte // the JPEG exactly as it arrived off the wire
-	// Masks are the venue's static privacy rects in grid cells (≤ MaxMasks).
-	Masks []Rect
+	// Look is the venue's picture tuning (look.go); zero value = Defaults.
+	Look Look
 }
 
 // Output is the result of a successful Process.
@@ -177,7 +177,7 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 	}
 
 	// --- the print (tisak.go).
-	pngBytes, err := encode(tones(g, style.Levels, in.Masks, Defaults), style.Levels)
+	pngBytes, err := encode(tones(g, style.Levels, nil, in.Look.Params()), style.Levels)
 	if err != nil {
 		return Output{}, err
 	}

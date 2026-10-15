@@ -10,84 +10,50 @@
 
 {{template "page-head.html" dict "title" "Fleet" "signOut" "/admin/logout"}}
 
-<div id="flash">{{if .ShowCreated}}<div class="card card--inset text-sm" role="status">Venue created.</div>{{end}}</div>
+<div id="flash">{{if .ShowCreated}}<p class="card card--inset text-sm mb-5" role="status">Venue created.</p>{{end}}{{if .Deleted}}<p class="card card--inset text-sm mb-5" role="status">Venue /{{.Deleted}}/ deleted, with its cameras, pictures and public page.</p>{{end}}</div>
 
 <section class="grid gap-4">
 {{range .Venues}}
 <article class="card card--raised">
-  <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mb-3">
-    <a class="text-lg font-bold tracking-tight hover:underline" href="/{{.Slug}}/" target="_blank" rel="noreferrer">{{.Name}}</a>
-    <code class="text-sm text-muted font-mono">/{{.Slug}}/</code>
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
+    <a class="text-lg font-bold tracking-tight underline decoration-2 underline-offset-4" href="/admin/venues/{{.ID}}">{{.Name}}</a>
     {{template "chip.html" .Fresh}}
-    <span class="text-sm text-muted tnum" title="Public page views in the last 7 days{{if .Live}}; people with the page open now{{end}}">{{.Views7}} views / 7 d{{if .Live}} · <span class="text-fresh">{{.Live}} watching</span>{{end}}</span>
-    <span class="push flex items-center gap-x-3">
-      <span class="text-sm text-muted" title="Last frame">{{.LastAge}}</span>
-      <a class="btn btn--quiet" href="/admin/venues/{{.ID}}">Edit</a>
-    </span>
+    <span class="text-sm text-muted">last picture {{.LastAge}}</span>
+    <span class="text-sm tnum">{{.Views7}} views this week{{if .Live}}, <span class="text-fresh font-semibold">{{.Live}} watching now</span>{{end}}</span>
+    <a class="push text-sm text-muted underline" href="/{{.Slug}}/" target="_blank" rel="noreferrer">/{{.Slug}}/ ↗</a>
   </div>
   {{if .Devices}}
   <div class="hidden md:block">
   <table class="tbl tbl--bare">
     <thead>
-      <tr> <th>Serial</th> <th>State</th> <th>FW</th> <th>Signal</th> <th>Last seen</th> <th title="WiFi joins failed / uploads failed / TLS failed since boot">Failures</th> <th>Profile</th>
-        <th></th>
-      </tr>
+      <tr><th>Camera</th><th>Status</th><th>Last seen</th><th>Signal</th><th title="Since the camera last restarted">Failures</th><th>Firmware</th></tr>
     </thead>
     <tbody>
       {{range .Devices}}
       <tr>
-        <td class="font-mono"><a class="hover:underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a></td>
-        <td>{{if eq .Status "active"}}<span class="text-fresh font-semibold">active</span>{{else}}<span class="text-muted">revoked</span>{{end}}</td>
-        <td>{{if .FW}}{{.FW}}{{else}}—{{end}}</td>
-        <td class="tnum{{if .Weak}} text-accent{{end}}"{{if .Weak}} title="Below the −65 dBm install gate — move the camera or add an access point"{{end}}>{{.RSSIText}}</td>
+        <td><a class="font-semibold underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a></td>
+        <td class="{{if eq .Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Status}}</td>
         <td>{{.SeenAge}}</td>
-        {{/* Plain sentences, never a counter soup like b181·bo4·j0 (§8.1) */}}
-        <td class="text-muted">
-          <span title="WiFi joins that failed since boot">{{.Counters.JoinFail}} wifi</span> ·
-          <span title="Uploads that failed">{{.Counters.PostFail}} upload</span> ·
-          <span title="TLS connections that failed">{{.Counters.TLSFail}} tls</span>
-        </td>
-        <td class="font-mono">{{if .Profile}}{{.Profile}}{{else}}legacy{{end}}</td>
-        <td>
-          {{if eq .Status "active"}}
-          {{/* method+action: revoke works without JS (DESIGN §8); htmx adds
-               the confirm + partial swap on top. */}}
-          <form class="inline" method="post" action="/admin/devices/{{.ID}}/revoke" hx-post="/admin/devices/{{.ID}}/revoke" hx-confirm="Revoke {{.Serial}}? It stops being able to post.">
-            <button class="btn btn--danger" type="submit">Revoke</button>
-          </form>
-          {{else}}<span class="text-muted text-xs">revoked</span>{{end}}
-        </td>
+        <td class="tnum{{if .Weak}} text-accent font-semibold{{end}}"{{if .Weak}} title="Below −65 dBm: move the camera or add an access point"{{end}}>{{.RSSIText}}</td>
+        <td class="{{if eq .Failures "none"}}text-muted{{end}}">{{.Failures}}</td>
+        <td class="text-muted">{{if .FW}}{{.FW}}{{else}}—{{end}}{{if .Profile}}, {{.Profile}}{{end}}</td>
       </tr>
       {{end}}
     </tbody>
   </table>
   </div>
 
-  <div class="grid gap-2 md:hidden">
+  <ul class="grid gap-2 md:hidden">
     {{range .Devices}}
-    <div class="border-2 border-ink bg-paper-2 p-3">
+    <li class="border-t border-paper-2 pt-2">
       <div class="flex items-baseline justify-between gap-2">
-        <a class="font-mono font-bold hover:underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a>
-        <span class="text-sm font-semibold {{if eq .Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Status}}</span>
+        <a class="font-semibold underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a>
+        <span class="text-sm {{if eq .Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Status}}</span>
       </div>
-      <div class="text-sm text-muted mt-1 flex flex-wrap gap-x-3 gap-y-1">
-        {{if .FW}}<span>fw {{.FW}}</span>{{end}}
-        <span class="tnum{{if .Weak}} text-accent{{end}}">{{.RSSIText}}</span>
-        <span>{{.SeenAge}}</span>
-        <span class="font-mono">{{if .Profile}}{{.Profile}}{{else}}legacy{{end}}</span>
-      </div>
-      <div class="text-xs text-muted mt-1">
-        {{.Counters.JoinFail}} wifi · {{.Counters.PostFail}} upload · {{.Counters.TLSFail}} tls
-        <span class="block">failed since last boot</span>
-      </div>
-      {{if eq .Status "active"}}
-      <form class="mt-2" method="post" action="/admin/devices/{{.ID}}/revoke" hx-post="/admin/devices/{{.ID}}/revoke" hx-confirm="Revoke {{.Serial}}? It stops being able to post.">
-        <button class="btn btn--danger btn--block" type="submit">Revoke</button>
-      </form>
-      {{end}}
-    </div>
+      <p class="text-sm text-muted">seen {{.SeenAge}}, <span class="tnum{{if .Weak}} text-accent{{end}}">{{.RSSIText}}</span>, failures: {{.Failures}}</p>
+    </li>
     {{end}}
-  </div>
+  </ul>
   {{else}}
   <div class="tx-dither border-2 border-ink p-4 text-sm text-muted">No devices yet — mint one below.</div>
   {{end}}

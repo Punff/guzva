@@ -2,114 +2,151 @@
 <html lang="en">
 <head>
 {{template "shell-head.html" .}}
-<title>guzva — venue {{.Venue.Slug}}</title>
+<title>{{.Venue.Name}} — guzva admin</title>
 <script src="/admin/static/htmx.min.js" defer></script>
-<script src="/admin/static/masks.js" defer></script>
 </head>
 <body class="bg-paper text-ink font-sans">
-<div class="mx-auto w-full max-w-[52rem] px-4 py-6 sm:px-6">
-{{template "page-head.html" dict "title" .Venue.Name "trailHref" "/admin/" "trailText" "fleet" "signOut" "/admin/logout"}}
+<div class="mx-auto w-full max-w-[72rem] px-4 py-6 sm:px-6">
+{{template "page-head.html" dict "title" .Venue.Name "trailHref" "/admin/" "trailText" "Fleet" "signOut" "/admin/logout"}}
 
 <div id="flash">
-  {{if .Saved}}<div class="card card--inset text-sm" role="status">Saved — live on the next device POST where applicable.</div>{{end}}
-  {{if .OwnerSet}}<div class="card card--inset text-sm" role="status">Owner password set.</div>{{end}}
+  {{if .Saved}}<p class="card card--inset text-sm mb-5" role="status">Details saved. The public page updates within 30 seconds.</p>{{end}}
+  {{if .OwnerSet}}<p class="card card--inset text-sm mb-5" role="status">Owner password set.</p>{{end}}
+  {{if .StyleSet}}<p class="card card--inset text-sm mb-5" role="status">Picture style saved. It applies from the next picture.</p>{{end}}
 </div>
 
-<section class="card card--raised mb-5">
-  <h2 class="text-lg font-bold mb-1">Details</h2>
-  <p class="text-sm text-muted mb-3">Slug <code class="font-mono text-ink">/{{.Venue.Slug}}/</code> is identity and never changes. <a class="underline" href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">Open the public page ↗</a></p>
-  {{/* method+action: works without JS (§8); htmx enhances. */}}
-  <form class="grid gap-3" method="post" action="/admin/venues/{{.Venue.ID}}"
-        hx-post="/admin/venues/{{.Venue.ID}}" hx-target="#flash" hx-swap="innerHTML">
-    <div class="fieldset">
-      <label class="lbl" for="v-name">Name</label>
-      <input class="inp" id="v-name" name="name" value="{{.Venue.Name}}" required>
-    </div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <div class="fieldset">
-      <label class="lbl" for="v-tz">Timezone</label>
-        <input class="inp" id="v-tz" name="tz" value="{{.Venue.TZ}}">
-      </div>
-      <div class="fieldset">
-      <label class="lbl" for="v-style">Picture style</label>
-        <select class="inp" id="v-style" name="style">
-          <option value="poster"{{if eq .Venue.Style "poster"}} selected{{end}}>Tisak (print, 4 tones)</option>
-          <option value="mono"{{if eq .Venue.Style "mono"}} selected{{end}}>Šablon (stencil, 2 tones)</option>
-        </select>
-      </div>
-    </div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <div class="fieldset">
-        <label class="lbl" for="v-desc">Description (public)</label>
-        <input class="inp" id="v-desc" name="description" value="{{.Venue.Description}}" maxlength="200"
-               placeholder="One sentence for guests scanning the QR code">
-      </div>
-      <div class="fieldset">
-        <label class="lbl" for="v-phone">Phone (public)</label>
-        <input class="inp tnum" id="v-phone" name="phone" value="{{.Venue.Phone}}" maxlength="20"
-               inputmode="tel" placeholder="+387 61 000 000">
-      </div>
-    </div>
-    <div class="fieldset">
-      <label class="lbl" for="v-loc">Location (public)</label>
-      <input class="inp" id="v-loc" name="location" value="{{.Venue.Location}}" maxlength="160"
-             placeholder="One line: street, landmark">
-    </div>
-    <div class="fieldset">
-      <span class="lbl mb-2">Hours</span>
-      {{template "hours-editor.html" dict "days" .Days "closed" "closed" "copy" "Copy Monday to weekdays"
-        "openL" "Opens" "closeL" "Closes" "split" "Second interval kept on the page (%s) — saving here keeps only the first."}}
-    </div>
-    <button class="btn btn--primary" type="submit">Save details</button>
-  </form>
-</section>
+<div class="grid gap-8 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start">
 
-<section class="card card--raised mb-5">
-  <h2 class="text-lg font-bold mb-1">Owner login</h2>
-  {{if .HasOwner}}<p class="text-sm text-muted mb-3">Enabled. A new password replaces the old one.</p>{{else}}<p class="text-sm text-muted mb-3">Not set yet — set one to give the venue owner their own panel.</p>{{end}}
-  <form class="grid gap-3" method="post" action="/admin/venues/{{.Venue.ID}}/ownerpw">
-    <div class="fieldset">
-      <label class="lbl" for="o-pw">New owner password</label>
-      <input class="inp" type="password" id="o-pw" name="password" autocomplete="new-password" minlength="10" required>
-    </div>
-    <button class="btn btn--primary" type="submit">Set owner password (≥10 chars)</button>
-  </form>
-  <p class="text-xs text-muted mt-3">Hand the password out-of-band. It is hashed on save and never shown again.</p>
-</section>
+  {{/* Left: what guests see, and how it is drawn. */}}
+  <div class="grid gap-6">
+    <section>
+      <a href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer" class="block w-fit max-w-full border-2 border-ink bg-s3">
+        {{if .HasFrame}}<img src="/{{.Venue.Slug}}/latest.png" alt="Current picture" width="320" height="240" class="block w-[320px] max-w-full h-auto [image-rendering:pixelated]">
+        {{else}}<div class="tx-dither aspect-[4/3]" aria-hidden="true"></div>{{end}}
+      </a>
+      <p class="text-sm text-muted mt-2">
+        <a class="underline" href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">/{{.Venue.Slug}}/</a>
+        — the public page. The address never changes.
+      </p>
+    </section>
 
-{{/* Privacy masks (print v4): the only per-venue render setting. The
-      overlay is enhancement-only (masks.js); the form works without JS. */}}
-<section class="card card--raised">
-  <h2 class="text-lg font-bold mb-1">Privacy masks</h2>
-  <p class="text-sm text-muted mb-4">
-    Up to four rectangles always rendered solid ink — for seats closer to the camera than the print can protect.
-    Coordinates are cells of the 320×240 print (x 0–320, y 0–240). <strong class="text-ink">Rule:</strong>
-    a head at the nearest seat should be at most ~16 cells wide; wider than that, move the camera or mask the seat.
-    Tones need no setting — the print adapts to the room's light. Applies to the next frame.
-  </p>
-  <div class="grid gap-4 lg:grid-cols-2">
-    <div>
-      <div class="lbl mb-1">Your masks over the current print</div>
-      <div id="mask-preview" class="relative border-2 border-ink bg-s3">
-        <img id="mask-still" src="/{{.Venue.Slug}}/latest.png" alt="" width="320" height="240" class="block w-full [image-rendering:pixelated]">
-      </div>
-    </div>
-    <form id="mask-form" class="grid gap-3" method="post" action="/admin/venues/{{.Venue.ID}}/masks">
-      {{range $i, $m := .Masks}}
-      <div class="grid grid-cols-4 gap-2">
-        <div class="fieldset"><label class="lbl" for="m{{$i}}x0">Mask {{inc $i}} x0</label><input class="inp tnum" type="number" id="m{{$i}}x0" name="m{{$i}}x0" min="0" max="320" value="{{index $m 0}}"></div>
-        <div class="fieldset"><label class="lbl" for="m{{$i}}y0">y0</label><input class="inp tnum" type="number" id="m{{$i}}y0" name="m{{$i}}y0" min="0" max="240" value="{{index $m 1}}"></div>
-        <div class="fieldset"><label class="lbl" for="m{{$i}}x1">x1</label><input class="inp tnum" type="number" id="m{{$i}}x1" name="m{{$i}}x1" min="0" max="320" value="{{index $m 2}}"></div>
-        <div class="fieldset"><label class="lbl" for="m{{$i}}y1">y1</label><input class="inp tnum" type="number" id="m{{$i}}y1" name="m{{$i}}y1" min="0" max="240" value="{{index $m 3}}"></div>
-      </div>
-      {{end}}
-      <div class="flex flex-wrap gap-2">
-        <button class="btn btn--primary" type="submit">Save masks</button>
-        {{if .MasksSet}}<span class="text-sm text-muted self-center" role="status">Saved — applies to the next frame.</span>{{end}}
-      </div>
-      <p class="text-xs text-muted">Clear a row to remove that mask.</p>
-    </form>
+    <section class="card">
+      <h2 class="text-lg font-bold">Picture style</h2>
+      <p class="text-sm text-muted mb-4">How the camera image is turned into the print. Changes apply from the next picture.</p>
+      <form class="grid gap-4" method="post" action="/admin/venues/{{.Venue.ID}}/style">
+        <fieldset class="grid gap-2">
+          <legend class="lbl mb-1">Style</legend>
+          <label class="flex items-start gap-3 min-h-11"><input type="radio" name="style" value="poster" class="mt-1 w-5 h-5 accent-[var(--ink)]"{{if eq .Venue.Style "poster"}} checked{{end}}>
+            <span><span class="font-semibold">Tisak</span><span class="block text-sm text-muted">Four tones. Reads best in most rooms.</span></span></label>
+          <label class="flex items-start gap-3 min-h-11"><input type="radio" name="style" value="mono" class="mt-1 w-5 h-5 accent-[var(--ink)]"{{if eq .Venue.Style "mono"}} checked{{end}}>
+            <span><span class="font-semibold">Šablon</span><span class="block text-sm text-muted">Two tones, like a line drawing.</span></span></label>
+        </fieldset>
+        <div class="fieldset">
+          <label class="lbl" for="s-outline">Outlines</label>
+          <select class="inp" id="s-outline" name="outline">
+            {{range .Outlines}}<option value="{{.Value}}"{{if eq .Value $.Venue.Look.Outline}} selected{{end}}>{{.Label}}</option>{{end}}
+          </select>
+          <span class="text-xs text-muted">Lines around objects, so they don't merge into the background.</span>
+        </div>
+        <div class="fieldset">
+          <label class="lbl" for="s-blur">Privacy blur</label>
+          <select class="inp" id="s-blur" name="blur">
+            {{range .Blurs}}<option value="{{.Value}}"{{if eq .Value $.Venue.Look.Blur}} selected{{end}}>{{.Label}}</option>{{end}}
+          </select>
+          <span class="text-xs text-muted">Standard keeps heads up to ~16 cells wide unrecognisable. Use softer if guests sit close to the camera.</span>
+        </div>
+        <div class="fieldset">
+          <label class="lbl" for="s-contrast">Contrast</label>
+          <select class="inp" id="s-contrast" name="contrast">
+            {{range .Contrasts}}<option value="{{.Value}}"{{if eq .Value $.Venue.Look.Contrast}} selected{{end}}>{{.Label}}</option>{{end}}
+          </select>
+        </div>
+        <button class="btn btn--primary justify-self-start" type="submit">Save picture style</button>
+      </form>
+    </section>
   </div>
+
+  {{/* Right: the venue's facts, its cameras and its owner. */}}
+  <div class="grid gap-6">
+    <section class="card">
+      <h2 class="text-lg font-bold mb-4">Details</h2>
+      {{/* method+action: works without JS (§8); htmx enhances. */}}
+      <form class="grid gap-4" method="post" action="/admin/venues/{{.Venue.ID}}"
+            hx-post="/admin/venues/{{.Venue.ID}}" hx-target="#flash" hx-swap="innerHTML">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="fieldset">
+            <label class="lbl" for="v-name">Name</label>
+            <input class="inp" id="v-name" name="name" value="{{.Venue.Name}}" required>
+          </div>
+          <div class="fieldset">
+            <label class="lbl" for="v-tz">Time zone</label>
+            <input class="inp" id="v-tz" name="tz" value="{{.Venue.TZ}}">
+          </div>
+          <div class="fieldset">
+            <label class="lbl" for="v-phone">Phone (public)</label>
+            <input class="inp tnum" id="v-phone" name="phone" value="{{.Venue.Phone}}" maxlength="20" inputmode="tel" placeholder="+387 61 000 000">
+          </div>
+          <div class="fieldset">
+            <label class="lbl" for="v-loc">Location (public)</label>
+            <input class="inp" id="v-loc" name="location" value="{{.Venue.Location}}" maxlength="160" placeholder="Street, landmark">
+          </div>
+        </div>
+        <div class="fieldset">
+          <label class="lbl" for="v-desc">Description (public)</label>
+          <input class="inp" id="v-desc" name="description" value="{{.Venue.Description}}" maxlength="200" placeholder="One sentence for guests">
+        </div>
+        <fieldset class="grid gap-2">
+          <legend class="lbl mb-1">Opening hours</legend>
+          {{template "hours-editor.html" dict "days" .Days "closed" "Closed" "copy" "Copy Monday to Tuesday–Friday"
+            "openL" "Opens" "closeL" "Closes" "split" "A second interval (%s) is kept on the page; saving here keeps only the first."}}
+        </fieldset>
+        <button class="btn btn--primary justify-self-start" type="submit">Save details</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2 class="text-lg font-bold mb-3">Cameras</h2>
+      {{if .Devices}}
+      <ul class="grid gap-2">
+        {{range .Devices}}
+        <li class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <a class="font-semibold underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a>
+          <span class="text-sm {{if eq .Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Status}}</span>
+          <span class="text-sm text-muted">seen {{.SeenAge}}</span>
+          <span class="text-sm tnum{{if .Weak}} text-accent{{else}} text-muted{{end}}">{{.RSSIText}}</span>
+        </li>
+        {{end}}
+      </ul>
+      {{else}}<p class="text-sm text-muted">No camera yet. Add one from the fleet page.</p>{{end}}
+    </section>
+
+    <section class="card">
+      <h2 class="text-lg font-bold">Owner login</h2>
+      <p class="text-sm text-muted mb-4">{{if .HasOwner}}The owner can sign in at /owner/. A new password replaces the old one.{{else}}Not set up. Set a password to give the owner their own panel at /owner/.{{end}}</p>
+      <form class="flex flex-wrap items-end gap-3" method="post" action="/admin/venues/{{.Venue.ID}}/ownerpw">
+        <div class="fieldset grow">
+          <label class="lbl" for="o-pw">New owner password (10+ characters)</label>
+          <input class="inp" type="password" id="o-pw" name="password" autocomplete="new-password" minlength="10" required>
+        </div>
+        <button class="btn btn--primary" type="submit">Set password</button>
+      </form>
+      <p class="text-xs text-muted mt-2">Hand it over in person or by phone. It is stored hashed and can't be shown again.</p>
+    </section>
+  </div>
+</div>
+
+{{/* Destructive, so set apart and two-step: the slug must be typed. */}}
+<section class="mt-10 border-2 border-accent p-4">
+  <h2 class="text-lg font-bold text-accent">Delete this venue</h2>
+  <p class="text-sm mb-4">Removes the public page, every stored picture, the visit statistics and all of its cameras (their tokens stop working). This can't be undone.</p>
+  <form class="flex flex-wrap items-end gap-3" method="post" action="/admin/venues/{{.Venue.ID}}/delete"
+        hx-post="/admin/venues/{{.Venue.ID}}/delete" hx-target="#flash" hx-swap="innerHTML">
+    <div class="fieldset">
+      <label class="lbl" for="d-confirm">Type <span class="font-semibold text-ink">{{.Venue.Slug}}</span> to confirm</label>
+      <input class="inp" id="d-confirm" name="confirm" autocomplete="off" required>
+    </div>
+    <button class="btn btn--danger" type="submit">Delete venue</button>
+  </form>
 </section>
 
 {{template "shell-foot.html" .}}

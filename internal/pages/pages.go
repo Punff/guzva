@@ -501,3 +501,12 @@ const (
 	shapeClosed  = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><rect y="2" width="12" height="3" fill="currentColor"/><rect y="7" width="12" height="3" fill="currentColor"/></svg>`
 	shapeWaiting = `<svg viewBox="0 0 12 12" width="12" height="12" shape-rendering="crispEdges" aria-hidden="true"><path d="M0 0h4v4H0zM8 0h4v4H8zM4 4h4v4H4zM0 8h4v4H0zM8 8h4v4H8z" fill="currentColor"/></svg>`
 )
+
+// Remove deletes a venue's public directory (index.html + still). The slug
+// is re-validated so a bad value can never point outside the web root.
+func (w *Writer) Remove(slug string) error {
+	if !store.ValidSlug(slug) {
+		return fmt.Errorf("pages: refusing to remove invalid slug %q", slug)
+	}
+	return os.RemoveAll(filepath.Join(w.Root(), slug))
+}

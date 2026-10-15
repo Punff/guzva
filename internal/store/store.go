@@ -228,6 +228,13 @@ CREATE TABLE visits_daily (
 );
 `
 
+// schemaV11 adds the per-venue picture look (render.Look presets as JSON)
+// and retires privacy masks from the product (masks_json stays, unread, so
+// old backups still open).
+const schemaV11 = `
+ALTER TABLE venues ADD COLUMN look_json TEXT NOT NULL DEFAULT '';
+`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []struct {
 	sql  string
@@ -238,6 +245,7 @@ var migrations = []struct {
 	{sql: schemaV8, post: backfillMasks},
 	{sql: schemaV9},
 	{sql: schemaV10},
+	{sql: schemaV11},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -378,15 +386,18 @@ func (s *Store) CreateVenue(ctx context.Context, v Venue) (int64, error) {
 	return res.LastInsertId()
 }
 
-const venueCols = `id, slug, name, tz, style, description, phone, location, owner_hash, lang, masks_json, last_frame_at, created_at`
+const venueCols = `id, slug, name, tz, style, description, phone, location, owner_hash, lang, look_json, last_frame_at, created_at`
 
 func scanVenue(row interface{ Scan(...any) error }) (*Venue, error) {
 	var v Venue
 	var last, created int64
-	var masks string
+	var look string
 	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &v.Description, &v.Phone,
-		&v.Location, &v.OwnerHash, &v.Lang, &masks, &last, &created)
-	v.Masks = ParseMasks(masks)
+		&v.Location, &v.OwnerHash, &v.Lang, &look, &last, &created)
+	if look != "" {
+		_ = json.Unmarshal([]byte(look), &v.Look) // malformed → zero Look = defaults
+	}
+	v.Look = v.Look.Normalize()
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -492,8 +503,8 @@ type Venue struct {
 	Phone       string // optional public contact, digits/+/spaces
 	Location    string // optional public "where we are" line, free text
 	OwnerHash   string
-	Lang        string        // page language, "hr" (default) or "en" (⚑9)
-	Masks       []render.Rect // static privacy masks, 320×240 cells (print v4)
+	Lang        string      // page language, "hr" (default) or "en" (⚑9)
+	Look        render.Look // picture tuning presets (admin style panel)
 	LastFrameAt time.Time
 	CreatedAt   time.Time
 }
@@ -508,11 +519,14 @@ func (s *Store) UpdateVenue(ctx context.Context, id int64, name, style, tz, desc
 	return err
 }
 
-// SetMasks stores the venue's static privacy masks (at most
-// render.MaxMasks; callers validate geometry first).
-func (s *Store) SetMasks(ctx context.Context, id int64, masks []render.Rect) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE venues SET masks_json = ? WHERE id = ?`, MarshalMasks(masks), id)
+// SetLook stores the venue's picture tuning (normalized: only known
+// preset values reach the column).
+func (s *Store) SetLook(ctx context.Context, id int64, l render.Look) error {
+	b, err := json.Marshal(l.Normalize())
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE venues SET look_json = ? WHERE id = ?`, string(b), id)
 	return err
 }
 
@@ -664,6 +678,43 @@ func (s *Store) LastReject(ctx context.Context, venueID int64) (string, time.Tim
 		return "", time.Time{}, ErrNotFound
 	}
 	return reason, fromTS(at), err
+}
+
+// DeleteVenue removes a venue row; its devices, frames and visit counts go
+// with it (ON DELETE CASCADE, foreign_keys on). Files — renders and the
+// public page — are the caller's to remove. ErrNotFound if it did not exist.
+func (s *Store) DeleteVenue(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM venues WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteDevice removes a device and its token for good (revoke keeps the
+// identity; delete forgets it). Frames belong to the venue and stay.
+func (s *Store) DeleteDevice(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM devices WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateDevice renames a device and/or moves it to another venue (the
+// token is unchanged, so a flashed board keeps working after a move).
+func (s *Store) UpdateDevice(ctx context.Context, id int64, serial string, venueID int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE devices SET serial = ?, venue_id = ? WHERE id = ?`, serial, venueID, id)
+	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+		return ErrSerialTaken
+	}
+	return err
 }
 
 // SetDeviceStatus flips a device between active and revoked (admin revoke).
@@ -864,17 +915,8 @@ func (s *Store) PruneMeta(ctx context.Context, metaCutoff time.Time) error {
 	return err
 }
 
-// ParseMasks decodes masks_json. Malformed means no masks — but every
-// writer goes through MarshalMasks, so that only happens to a hand edit.
-func ParseMasks(raw string) []render.Rect {
-	var m []render.Rect
-	if raw == "" || json.Unmarshal([]byte(raw), &m) != nil {
-		return nil
-	}
-	return m[:min(len(m), render.MaxMasks)]
-}
-
-// MarshalMasks is the one writer of the masks_json format ("" for none).
+// MarshalMasks writes the masks_json format ("" for none). Masks left the
+// product in v11; this remains for the v8 backfill migration.
 func MarshalMasks(m []render.Rect) string {
 	if len(m) == 0 {
 		return ""

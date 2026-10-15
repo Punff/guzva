@@ -2,34 +2,69 @@
 <html lang="en">
 <head>
 {{template "shell-head.html" .}}
-<title>guzva — device {{.Device.Serial}}</title>
+<title>{{.Device.Serial}} — guzva admin</title>
 <script src="/admin/static/htmx.min.js" defer></script>
 </head>
 <body class="bg-paper text-ink font-sans">
 <div class="mx-auto w-full max-w-[52rem] px-4 py-6 sm:px-6">
-{{template "page-head.html" dict "title" .Device.Serial "trailHref" "/admin/" "trailText" "fleet" "signOut" "/admin/logout"}}
+{{template "page-head.html" dict "title" .Device.Serial "trailHref" (printf "/admin/venues/%d" .Device.VenueID) "trailText" .Venue "signOut" "/admin/logout"}}
 
-<section class="card card--raised mb-5">
-  <h2 class="text-lg font-bold mb-3">Health</h2>
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-    <div><div class="lbl">Status</div><div class="font-semibold {{if eq .Device.Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Device.Status}}</div></div>
-    <div><div class="lbl">Firmware</div><div>{{if .Device.FW}}{{.Device.FW}}{{else}}—{{end}}</div></div>
-    <div><div class="lbl">Signal</div><div class="tnum{{if .Weak}} text-accent{{end}}"{{if .Weak}} title="Below the −65 dBm install gate"{{end}}>{{if not .Seen}}—{{else}}{{.Device.RSSI}} dBm{{end}}</div></div>
-    <div><div class="lbl">Last seen</div><div>{{.SeenAge}}</div></div>
-    <div><div class="lbl">Camera profile</div><div class="font-mono">{{if .Device.Profile}}{{.Device.Profile}}{{else}}legacy{{end}}</div></div>
-    <div class="col-span-1 sm:col-span-3"><div class="lbl">Last rejected frame</div><div>{{if .Reject}}<span class="font-mono">{{.Reject}}</span> · {{.RejectAge}}{{else}}none{{end}}</div></div>
-  </div>
-  <p class="text-xs text-muted mt-3">The camera settings are frozen in firmware (print v4) — changing them is a new firmware build, not a setting. <span class="font-mono">legacy</span> = firmware from before Profile v1, still running on its stored config.</p>
+<div id="flash">{{if .Saved}}<p class="card card--inset text-sm mb-5" role="status">Camera saved.</p>{{end}}</div>
+
+<section class="card mb-6">
+  <h2 class="text-lg font-bold mb-4">Health</h2>
+  <dl class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+    <div><dt class="lbl">Status</dt><dd class="font-semibold {{if eq .Device.Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Device.Status}}</dd></div>
+    <div><dt class="lbl">Last seen</dt><dd>{{.SeenAge}}</dd></div>
+    <div><dt class="lbl">Signal</dt><dd class="tnum{{if .Weak}} text-accent{{end}}">{{if not .Seen}}—{{else}}{{.Device.RSSI}} dBm{{if .Weak}} (below −65, too weak){{end}}{{end}}</dd></div>
+    <div><dt class="lbl">Firmware</dt><dd>{{if .Device.FW}}{{.Device.FW}}{{else}}—{{end}}</dd></div>
+    <div><dt class="lbl">Camera profile</dt><dd>{{if .Device.Profile}}{{.Device.Profile}}{{else}}older firmware{{end}}</dd></div>
+    <div><dt class="lbl">Last rejected picture</dt><dd>{{if .Reject}}{{.Reject}}, {{.RejectAge}}{{else}}none{{end}}</dd></div>
+  </dl>
 </section>
 
-<section class="card card--raised">
-  <h2 class="text-lg font-bold mb-1">Diagnostics since boot</h2>
-  <p class="text-xs text-muted mb-3">Counters reset on reboot. Rising <span class="tnum">power dips</span> means the supply, not the code; rising <span class="tnum">wifi</span> on a weak signal means the install gate (−65 dBm) was missed.</p>
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-    <div><div class="lbl">WiFi joins failed</div><div class="tnum text-lg font-bold">{{.Device.Counters.JoinFail}}</div></div>
-    <div><div class="lbl">Uploads failed</div><div class="tnum text-lg font-bold">{{.Device.Counters.PostFail}}</div></div>
-    <div><div class="lbl">TLS connects failed</div><div class="tnum text-lg font-bold">{{.Device.Counters.TLSFail}}</div></div>
-    <div><div class="lbl">Power dips</div><div class="tnum text-lg font-bold">{{.Device.Counters.Brownout}}</div></div>
+<section class="card mb-6">
+  <h2 class="text-lg font-bold">Since the last restart</h2>
+  <p class="text-sm text-muted mb-4">Counters reset when the camera restarts. Rising power dips point at the cable or charger; rising WiFi failures at a weak signal.</p>
+  <dl class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+    <div><dt class="lbl">Restarts (total)</dt><dd class="tnum text-xl font-bold">{{.Device.Counters.Boot}}</dd></div>
+    <div><dt class="lbl">Power dips</dt><dd class="tnum text-xl font-bold">{{.Device.Counters.Brownout}}</dd></div>
+    <div><dt class="lbl">WiFi failures</dt><dd class="tnum text-xl font-bold">{{.Device.Counters.JoinFail}}</dd></div>
+    <div><dt class="lbl">Failed uploads</dt><dd class="tnum text-xl font-bold">{{.Device.Counters.PostFail}}</dd></div>
+  </dl>
+</section>
+
+<section class="card mb-6">
+  <h2 class="text-lg font-bold mb-4">Name and venue</h2>
+  <form class="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end" method="post" action="/admin/devices/{{.Device.ID}}"
+        hx-post="/admin/devices/{{.Device.ID}}" hx-target="#flash" hx-swap="innerHTML">
+    <div class="fieldset">
+      <label class="lbl" for="d-serial">Serial</label>
+      <input class="inp" id="d-serial" name="serial" value="{{.Device.Serial}}" required>
+    </div>
+    <div class="fieldset">
+      <label class="lbl" for="d-venue">Venue</label>
+      <select class="inp" id="d-venue" name="venue_id">
+        {{range .Venues}}<option value="{{.ID}}"{{if eq .ID $.Device.VenueID}} selected{{end}}>{{.Name}}</option>{{end}}
+      </select>
+    </div>
+    <button class="btn btn--primary" type="submit">Save</button>
+  </form>
+  <p class="text-xs text-muted mt-2">Moving a camera keeps its token: it starts posting for the new venue on its next upload.</p>
+</section>
+
+<section class="border-2 border-accent p-4">
+  <h2 class="text-lg font-bold text-accent">Stop this camera</h2>
+  <p class="text-sm mb-4"><span class="font-semibold">Revoke</span> blocks its uploads but keeps the record, so it can be traced. <span class="font-semibold">Delete</span> forgets the camera and its token entirely. Pictures already stored stay with the venue.</p>
+  <div class="flex flex-wrap gap-3">
+    {{if eq .Device.Status "active"}}
+    <form method="post" action="/admin/devices/{{.Device.ID}}/revoke" hx-post="/admin/devices/{{.Device.ID}}/revoke" hx-confirm="Revoke {{.Device.Serial}}? Its uploads will be refused.">
+      <button class="btn btn--danger" type="submit">Revoke</button>
+    </form>
+    {{end}}
+    <form method="post" action="/admin/devices/{{.Device.ID}}/delete" hx-post="/admin/devices/{{.Device.ID}}/delete" hx-confirm="Delete {{.Device.Serial}} for good? This can't be undone.">
+      <button class="btn btn--danger" type="submit">Delete camera</button>
+    </form>
   </div>
 </section>
 

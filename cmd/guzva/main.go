@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 	_ "time/tzdata" // venue tz names resolve without a system zone db (§2)
@@ -175,6 +176,14 @@ func serveMain(args []string) int {
 	// once-a-minute flush to SQLite from sched (internal/stats).
 	rec := stats.New(nil)
 	adm.Stats = rec
+	// Deleting a venue in the console removes its files too: the public
+	// page and the stored renders (the DB rows cascade in the store).
+	adm.OnVenueDeleted = func(v *store.Venue) error {
+		if err := pub.Remove(v.Slug); err != nil {
+			return err
+		}
+		return os.RemoveAll(filepath.Join(*dataDir, "venues", strconv.FormatInt(v.ID, 10)))
+	}
 	mux := newMux(ing, adm, pub.Root(), rec, healthzHandler(*dataDir, started))
 
 	srv := &http.Server{

@@ -79,6 +79,7 @@ ssh info: root@guzva
 | D8 | Vendor lifecycle in scope; **billing/invoicing deferred** | Onboarding checklist, invite/activate, per-venue settings, health/overview, offboarding are product features (§10). Billing (BAM, PDV 17 %) is a §14 trigger with the shape recorded. |
 | D9 | **No biometrics, ever** | No face/plate/people detection; it is a privacy commitment and a Bosnian/EU legal simplification (§13). Recorded here so no future feature quietly adds it. |
 | D10 | **Visit counts, never visitors** (owner statistics, 14 Oct 2026) | The public handler counts page views, still polls (watch time), `?src=qr` scans and "watching now" in memory (`internal/stats`); a sched job flushes counts to SQLite once a minute, so public requests still never touch the DB (D5). A visitor is sha256(daily random salt ‖ IP ‖ UA) held in RAM for the current UTC day only; the salt is never written and is replaced at midnight. No cookies, no IPs, no ids at rest — tested by a byte scan of the DB files. |
+| D11 | **Per-venue picture look, presets only; masks retired** (15 Oct 2026, user decision) | The admin "Picture style" panel sets style (Tisak/Šablon), outlines, privacy blur and contrast per venue from named presets (`render.Look`) — never raw numbers. Every blur option is ≥ the default σp (privacy floor, tested). Supersedes print-v4 decision 3's "no per-venue tuning" for these presets. Privacy masks are removed from the product (UI, ingest path); `masks_json` stays in the schema, unread. |
 
 ---
 

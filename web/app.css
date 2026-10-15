@@ -35,12 +35,12 @@
   }
   .inp:focus-visible { border-color: var(--accent); }
 
+  /* Sentence case: tracked capitals on every label read as template
+     chrome and are harder to scan (owner/admin legibility pass). */
   .lbl {
     display: block;
-    font-size: 0.6875rem;
+    font-size: 0.8125rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
     color: var(--muted);
   }
 
@@ -53,10 +53,8 @@
   .tbl th, .tbl td { text-align: left; padding: 0.375rem 0.5rem; }
   .tbl thead th {
     background: var(--paper-2);
-    font-size: 0.6875rem;
+    font-size: 0.8125rem;
     font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
     color: var(--muted);
     border-bottom: 2px solid var(--ink);
   }
@@ -68,18 +66,4 @@
    * inline style (which the CSP would reject). */
   .push { margin-left: auto; }
 
-  /* The calibration mask overlay is created by masks.js at RUNTIME
-   * (document.createElementNS), so no Tailwind scanner can generate its
-   * positioning as utilities — the W2/B1 shape, which once left every
-   * state chip in ink and here left the overlay SVG as a static block
-   * below the picture, stretching the preview box with a dead zone.
-   * Plain CSS: the overlay must sit exactly on the picture, in grid
-   * cells. masks.js sets no classes; this selector does the work. */
-  #mask-preview svg {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-  }
 }

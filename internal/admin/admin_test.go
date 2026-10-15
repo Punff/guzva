@@ -587,51 +587,83 @@ func TestKitGated(t *testing.T) {
 	}
 }
 
-// Masks form: valid rows store, an empty row is no mask, bad geometry
-// flashes in words, clearing every row removes the masks.
-func TestSetMasks(t *testing.T) {
+// Picture style panel: style + look presets save; unknown values fall back
+// to the defaults; the details form no longer resets the style.
+func TestSetStyle(t *testing.T) {
 	f := newFixture(t, mustHash(t, "sekret"))
 	ck := f.login(t)
 	f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{
 		"slug": {"jadro"}, "name": {"Jadro"}, "style": {"poster"},
 	}, nil), ck, true)
-	set := func(v url.Values) *httptest.ResponseRecorder {
-		return f.do(t, http.MethodPost, "/admin/venues/1/masks", v, ck, true)
+	w := f.do(t, http.MethodPost, "/admin/venues/1/style", url.Values{
+		"style": {"mono"}, "outline": {"strong"}, "blur": {"softer"}, "contrast": {"made-up"},
+	}, ck, true)
+	if w.Header().Get("HX-Redirect") == "" {
+		t.Fatalf("set style: %q", w.Body.String())
 	}
-	masks := func() []render.Rect {
-		v, err := f.st.VenueByID(t.Context(), 1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v.Masks
+	v, _ := f.st.VenueByID(t.Context(), 1)
+	if v.Style != "mono" || v.Look != (render.Look{Outline: "strong", Blur: "softer", Contrast: "normal"}) {
+		t.Fatalf("stored style/look = %s %+v", v.Style, v.Look)
+	}
+	if w := f.do(t, http.MethodPost, "/admin/venues/1/style", url.Values{"style": {"raw"}}, ck, true); !strings.Contains(w.Body.String(), "Tisak or Šablon") {
+		t.Errorf("raw style accepted: %q", w.Body.String())
+	}
+	// Saving details without a style field keeps the chosen style.
+	f.do(t, http.MethodPost, "/admin/venues/1", withHours(url.Values{"name": {"Jadro 2"}}, nil), ck, true)
+	if v, _ := f.st.VenueByID(t.Context(), 1); v.Style != "mono" || v.Name != "Jadro 2" {
+		t.Errorf("details save changed style: %s %q", v.Style, v.Name)
+	}
+	page := f.do(t, http.MethodGet, "/admin/venues/1", nil, ck, false).Body.String()
+	if !strings.Contains(page, "Picture style") || strings.Contains(page, "Privacy masks") {
+		t.Error("venue page: style panel missing or masks still shown")
+	}
+}
+
+// CRUD: a device can be renamed/moved and deleted; a venue is deleted only
+// when its slug is typed, and takes its devices and files with it.
+func TestDeviceAndVenueDelete(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	ck := f.login(t)
+	for _, slug := range []string{"jadro", "other"} {
+		f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{"slug": {slug}, "name": {slug}, "style": {"poster"}}, nil), ck, true)
+	}
+	f.do(t, http.MethodPost, "/admin/devices", url.Values{"venue_id": {"1"}, "serial": {"cam1"}}, ck, true)
+	f.do(t, http.MethodPost, "/admin/devices", url.Values{"venue_id": {"1"}, "serial": {"cam2"}}, ck, true)
+
+	if w := f.do(t, http.MethodPost, "/admin/devices/1", url.Values{"serial": {"cam2"}, "venue_id": {"1"}}, ck, true); !strings.Contains(w.Body.String(), "already has that serial") {
+		t.Errorf("duplicate serial accepted: %q", w.Body.String())
+	}
+	f.do(t, http.MethodPost, "/admin/devices/1", url.Values{"serial": {"cam1-moved"}, "venue_id": {"2"}}, ck, true)
+	if d, _ := f.st.DeviceByID(t.Context(), 1); d.Serial != "cam1-moved" || d.VenueID != 2 {
+		t.Fatalf("device after move = %+v", d)
+	}
+	f.do(t, http.MethodPost, "/admin/devices/1/delete", nil, ck, true)
+	if _, err := f.st.DeviceByID(t.Context(), 1); err == nil {
+		t.Fatal("deleted device still exists")
 	}
 
-	w := set(url.Values{"m1x0": {"10"}, "m1y0": {"20"}, "m1x1": {"300"}, "m1y1": {"240"}})
-	if w.Header().Get("HX-Redirect") == "" {
-		t.Fatalf("valid masks: no redirect, body %q", w.Body.String())
+	var removed []string
+	f.s.OnVenueDeleted = func(v *store.Venue) error { removed = append(removed, v.Slug); return nil }
+	if w := f.do(t, http.MethodPost, "/admin/venues/1/delete", url.Values{"confirm": {"wrong"}}, ck, true); !strings.Contains(w.Body.String(), "nothing was deleted") {
+		t.Fatalf("delete without the slug went through: %q", w.Body.String())
 	}
-	if m := masks(); len(m) != 1 || m[0] != (render.Rect{X0: 10, Y0: 20, X1: 300, Y1: 240}) {
-		t.Fatalf("stored masks = %+v", m)
+	if _, err := f.st.VenueByID(t.Context(), 1); err != nil {
+		t.Fatal("venue gone after a refused delete")
 	}
-	for _, bad := range []url.Values{
-		{"m0x0": {"30"}, "m0y0": {"20"}, "m0x1": {"10"}, "m0y1": {"40"}}, // inverted
-		{"m0x0": {"30"}, "m0y0": {"20"}},                                 // partial
-		{"m0x0": {"0"}, "m0y0": {"0"}, "m0x1": {"321"}, "m0y1": {"40"}},  // off grid
-	} {
-		if w := set(bad); !strings.Contains(w.Body.String(), "mask 1") {
-			t.Errorf("bad mask %v accepted: %q", bad, w.Body.String())
-		}
+	if w := f.do(t, http.MethodPost, "/admin/venues/1/delete", url.Values{"confirm": {"jadro"}}, ck, true); w.Header().Get("HX-Redirect") == "" {
+		t.Fatalf("confirmed delete: %q", w.Body.String())
 	}
-	if len(masks()) != 1 {
-		t.Fatal("a rejected form changed the stored masks")
+	if _, err := f.st.VenueByID(t.Context(), 1); err == nil {
+		t.Fatal("venue still exists")
 	}
-	set(url.Values{})
-	if m := masks(); m != nil {
-		t.Fatalf("cleared masks = %+v", m)
+	if _, err := f.st.DeviceByID(t.Context(), 2); err == nil {
+		t.Error("the venue's remaining camera survived the venue")
 	}
-	w = f.do(t, http.MethodGet, "/admin/venues/1", nil, ck, false)
-	if !strings.Contains(w.Body.String(), "Privacy masks") {
-		t.Fatal("venue page missing masks section")
+	if len(removed) != 1 || removed[0] != "jadro" {
+		t.Errorf("file hook calls = %v", removed)
+	}
+	if _, err := f.st.VenueByID(t.Context(), 2); err != nil {
+		t.Error("the other venue was deleted too")
 	}
 }
 

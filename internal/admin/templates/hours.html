@@ -15,29 +15,23 @@
       "closeL" (time-input labels), "split" (second-interval warning with
       one %s; "" skips the warning). */}}
 {{define "hours-editor.html"}}
-<div class="grid gap-2">
+<div class="grid">
   {{range $i, $d := .days}}
-  <div class="grid gap-2 border-2 border-ink bg-paper p-3 sm:grid-cols-[8rem_1fr] sm:items-start">
-    <div class="flex items-center justify-between sm:block">
-      <span class="font-semibold">{{$d.Name}}</span>
-      <label class="text-sm text-muted flex items-center gap-2 sm:mt-2 min-h-11">
-        <input type="checkbox" name="h{{$i}}_closed" value="1"{{if $d.Closed}} checked{{end}} class="w-6 h-6 accent-[var(--accent)]">
-        <span class="lbl">{{$.closed}}</span>
-      </label>
+  <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 py-1.5 border-b border-paper-2 sm:grid-cols-[7.5rem_1fr_1fr_auto]">
+    <span class="font-semibold">{{$d.Name}}</span>
+    <div class="col-span-2 row-start-2 grid grid-cols-2 gap-2 sm:col-span-2 sm:row-start-auto sm:col-start-2">
+      <label class="sr-only" for="h{{$i}}_open">{{$d.Name}} — {{$.openL}}</label>
+      <input class="inp tnum" type="time" id="h{{$i}}_open" name="h{{$i}}_open" value="{{$d.Open}}">
+      <label class="sr-only" for="h{{$i}}_close">{{$d.Name}} — {{$.closeL}}</label>
+      <input class="inp tnum" type="time" id="h{{$i}}_close" name="h{{$i}}_close" value="{{$d.Close}}">
     </div>
-    <div class="grid grid-cols-2 gap-2">
-      <div class="fieldset">
-        <label class="sr-only" for="h{{$i}}_open">{{$d.Name}} — {{$.openL}}</label>
-        <input class="inp tnum" type="time" id="h{{$i}}_open" name="h{{$i}}_open" value="{{$d.Open}}">
-      </div>
-      <div class="fieldset">
-        <label class="sr-only" for="h{{$i}}_close">{{$d.Name}} — {{$.closeL}}</label>
-        <input class="inp tnum" type="time" id="h{{$i}}_close" name="h{{$i}}_close" value="{{$d.Close}}">
-      </div>
-    </div>
-    {{if and $d.Split $.split}}<p class="text-xs text-late sm:col-span-2" role="note">{{printf $.split (print $d.Open2 "–" $d.Close2)}}</p>{{end}}
+    <label class="col-start-2 row-start-1 flex items-center gap-2 text-sm text-muted min-h-11 sm:col-start-4">
+      <input type="checkbox" name="h{{$i}}_closed" value="1"{{if $d.Closed}} checked{{end}} class="w-5 h-5 accent-[var(--ink)]">
+      {{$.closed}}
+    </label>
+    {{if and $d.Split $.split}}<p class="col-span-full text-xs text-late" role="note">{{printf $.split (print $d.Open2 "–" $d.Close2)}}</p>{{end}}
   </div>
   {{end}}
 </div>
-<button class="btn mt-3" type="submit" name="copy_mon" value="1">{{.copy}}</button>
+<button class="btn btn--quiet justify-self-start mt-2" type="submit" name="copy_mon" value="1">{{.copy}}</button>
 {{- end}}

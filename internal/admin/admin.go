@@ -9,6 +9,7 @@ package admin
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -41,6 +42,9 @@ type Server struct {
 	// Dev builds only: it exists so a solo builder can eyeball every state,
 	// not as a product surface. Set from GUZVA_KIT=1.
 	Kit bool
+	// OnVenueDeleted removes a deleted venue's files (renders + public
+	// page); set by main, which knows the data directory. Nil in tests.
+	OnVenueDeleted func(v *store.Venue) error
 	// Stats is the live visit recorder ("watching right now"); nil in
 	// tests that don't care.
 	Stats *stats.Recorder
@@ -112,7 +116,10 @@ func (s *Server) Register(mux *http.ServeMux) {
 	sub.HandleFunc("GET /admin/venues/{id}", s.require(s.venuePage))
 	sub.HandleFunc("POST /admin/venues/{id}", s.require(s.updateVenue))
 	sub.HandleFunc("POST /admin/venues/{id}/ownerpw", s.require(s.setOwnerPassword))
-	sub.HandleFunc("POST /admin/venues/{id}/masks", s.require(s.setMasks))
+	sub.HandleFunc("POST /admin/venues/{id}/style", s.require(s.setStyle))
+	sub.HandleFunc("POST /admin/venues/{id}/delete", s.require(s.deleteVenue))
+	sub.HandleFunc("POST /admin/devices/{id}", s.require(s.updateDevice))
+	sub.HandleFunc("POST /admin/devices/{id}/delete", s.require(s.deleteDevice))
 	sub.HandleFunc("POST /admin/devices", s.require(s.createDevice))
 	sub.HandleFunc("GET /admin/devices/{id}", s.require(s.devicePage))
 	sub.HandleFunc("POST /admin/devices/{id}/revoke", s.require(s.revokeDevice))
@@ -273,6 +280,7 @@ type deviceView struct {
 	SeenAge  string // "never" | "2 min ago" (live board — relative is fine)
 	Counters proto.Counters
 	Profile  string // frozen camera profile; "" = firmware before Profile v1
+	Failures string // "none" | "2 WiFi, 1 upload" — only the non-zero ones
 }
 
 // newDeviceView is the one device row builder (fleet board + owner panel).
@@ -287,6 +295,19 @@ func newDeviceView(d store.Device, now time.Time) deviceView {
 	if !d.LastSeenAt.IsZero() {
 		dv.RSSIText = fmt.Sprintf("%d dBm", d.RSSI)
 		dv.Weak = d.RSSI <= InstallGateRSSI
+	}
+	var parts []string
+	for _, c := range []struct {
+		n    uint32
+		what string
+	}{{d.Counters.JoinFail, "WiFi"}, {d.Counters.PostFail, "upload"}, {d.Counters.TLSFail, "TLS"}} {
+		if c.n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", c.n, c.what))
+		}
+	}
+	dv.Failures = "none"
+	if len(parts) > 0 {
+		dv.Failures = strings.Join(parts, ", ")
 	}
 	return dv
 }
@@ -317,6 +338,7 @@ type fleetModel struct {
 	Venues      []venueView
 	DeviceOpts  []store.Venue // for the create-device <select>
 	ShowCreated bool
+	Deleted     string           // slug of a venue just deleted, for the confirmation line
 	Devices     int              // fleet-wide count: opens "New device" when 0
 	Days        [7]venue.DayForm // create-form hours, Mo-Fr 09-17 prefilled
 }
@@ -343,7 +365,7 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 		byVenue[d.VenueID] = append(byVenue[d.VenueID], newDeviceView(d, now))
 	}
 	defHours, _ := venue.ParseSpec("Mo-Fr 09:00-17:00")
-	model := fleetModel{DeviceOpts: venues, Devices: len(devices), ShowCreated: r.URL.Query().Get("created") != "",
+	model := fleetModel{DeviceOpts: venues, Devices: len(devices), Deleted: r.URL.Query().Get("deleted"), ShowCreated: r.URL.Query().Get("created") != "",
 		Days: venue.EditModel(defHours, i18n.For(i18n.EN).DayNames())}
 	// Needs attention first (design-pass2 §6): the board is the "is
 	// everything OK" screen, so it must read top-down — no signal beats
@@ -593,10 +615,11 @@ type venueEditModel struct {
 	HasOwner  bool
 	Saved     bool
 	OwnerSet  bool
-	MasksSet  bool
-	// Masks are the four form rows as display strings, "" for an empty row
-	// (an int 0 would render value="0" and save as a real coordinate).
-	Masks [render.MaxMasks][4]string
+	StyleSet  bool
+	HasFrame  bool
+	Devices   []deviceView
+	// The style panel's choices (render.Look presets; default first).
+	Outlines, Blurs, Contrasts []render.LookOption
 }
 
 func (s *Server) loadVenue(w http.ResponseWriter, r *http.Request) (*store.Venue, bool) {
@@ -627,9 +650,15 @@ func (s *Server) venuePage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	m := venueEditModel{Venue: *v, HoursSpec: h.Spec(), Days: venue.EditModel(h, i18n.For(i18n.EN).DayNames()), HasOwner: v.OwnerHash != "",
 		Saved: r.URL.Query().Get("saved") != "", OwnerSet: r.URL.Query().Get("owner") != "",
-		MasksSet: r.URL.Query().Get("masks") != ""}
-	for i, r := range v.Masks {
-		m.Masks[i] = [4]string{strconv.Itoa(r.X0), strconv.Itoa(r.Y0), strconv.Itoa(r.X1), strconv.Itoa(r.Y1)}
+		StyleSet: r.URL.Query().Get("style") != "", HasFrame: !v.LastFrameAt.IsZero(),
+		Outlines: render.OutlineOptions, Blurs: render.BlurOptions, Contrasts: render.ContrastOptions}
+	devs, err := s.st.DevicesByVenue(r.Context(), v.ID)
+	if err != nil {
+		s.internal(w, "devices", err)
+		return
+	}
+	for _, d := range devs {
+		m.Devices = append(m.Devices, newDeviceView(d, s.now().UTC()))
 	}
 	if err := s.tmpl.ExecuteTemplate(w, "venue.html", m); err != nil {
 		s.log.Error("admin: render venue", "err", err.Error())
@@ -642,8 +671,12 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.ParseForm()
+	style := r.FormValue("style")
+	if style == "" {
+		style = v.Style // the style lives in its own panel now
+	}
 	tz, ferr := parseVenueForm(
-		r.FormValue("name"), r.FormValue("style"), r.FormValue("tz"))
+		r.FormValue("name"), style, r.FormValue("tz"))
 	if ferr != "" {
 		s.flash(w, ferr)
 		return
@@ -660,7 +693,7 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
-	if err := s.st.UpdateVenue(r.Context(), v.ID, name, r.FormValue("style"), tz, desc, phone, loc); err != nil {
+	if err := s.st.UpdateVenue(r.Context(), v.ID, name, style, tz, desc, phone, loc); err != nil {
 		s.internal(w, "update venue", err)
 		return
 	}
@@ -669,7 +702,7 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("admin: venue updated", "venue_id", v.ID, "slug", v.Slug,
-		"name", name, "tz", tz, "style", r.FormValue("style"), "actor", "admin")
+		"name", name, "tz", tz, "style", style, "actor", "admin")
 	redirect(w, r, fmt.Sprintf("/admin/venues/%d?saved=1", v.ID))
 }
 
@@ -711,26 +744,33 @@ type deviceModel struct {
 	SeenAge   string
 	Reject    string // last quarantine reason for the venue, "" = none
 	RejectAge string
+	Venue     string        // the venue's name, for the page header
+	Venues    []store.Venue // "move to venue" choices
+	Saved     bool
 }
 
 func (s *Server) devicePage(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil || id <= 0 {
-		http.NotFound(w, r)
+	d, ok := s.loadDevice(w, r)
+	if !ok {
 		return
 	}
-	d, err := s.st.DeviceByID(r.Context(), id)
+	venues, err := s.st.ListVenues(r.Context())
 	if err != nil {
-		http.NotFound(w, r)
+		s.internal(w, "list venues", err)
 		return
 	}
 	now := s.now().UTC()
-	m := deviceModel{Device: *d,
+	m := deviceModel{Device: *d, Venues: venues, Saved: r.URL.Query().Get("saved") != "",
 		Seen:    !d.LastSeenAt.IsZero(),
 		SeenAge: age(now, d.LastSeenAt),
 		Weak:    !d.LastSeenAt.IsZero() && d.RSSI <= InstallGateRSSI}
 	if reason, at, err := s.st.LastReject(r.Context(), d.VenueID); err == nil {
 		m.Reject, m.RejectAge = reason, age(now, at)
+	}
+	for _, v := range venues {
+		if v.ID == d.VenueID {
+			m.Venue = v.Name
+		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -814,51 +854,120 @@ func shape(cls string) template.HTML {
 	}
 }
 
-// setMasks stores the venue's privacy masks from the four form rows. Every
-// field is validated here in words the installer understands; an empty row
-// is no mask, a partly filled one is an error.
-func (s *Server) setMasks(w http.ResponseWriter, r *http.Request) {
+// setStyle saves the venue's picture style and look presets. Unknown
+// values never reach the store (Normalize maps them to the defaults), and
+// no option blurs less than the default: privacy has a floor.
+func (s *Server) setStyle(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.loadVenue(w, r)
 	if !ok {
 		return
 	}
 	r.ParseForm()
-	var masks []render.Rect
-	for m := 0; m < render.MaxMasks; m++ {
-		var c [4]int
-		filled := 0
-		for j, key := range []string{"x0", "y0", "x1", "y1"} {
-			k := fmt.Sprintf("m%d%s", m, key)
-			raw := strings.TrimSpace(r.FormValue(k))
-			if raw == "" {
-				continue
-			}
-			filled++
-			hi := render.GW
-			if j%2 == 1 {
-				hi = render.GH
-			}
-			n, err := strconv.Atoi(raw)
-			if err != nil || n < 0 || n > hi {
-				s.flash(w, fmt.Sprintf("mask %d %s must be a number 0–%d", m+1, key, hi))
-				return
-			}
-			c[j] = n
-		}
-		if filled == 0 {
-			continue
-		}
-		rect := render.Rect{X0: c[0], Y0: c[1], X1: c[2], Y1: c[3]}
-		if filled < 4 || rect.X0 >= rect.X1 || rect.Y0 >= rect.Y1 {
-			s.flash(w, fmt.Sprintf("mask %d needs all four numbers with x0<x1 and y0<y1", m+1))
-			return
-		}
-		masks = append(masks, rect)
-	}
-	if err := s.st.SetMasks(r.Context(), v.ID, masks); err != nil {
-		s.internal(w, "set masks", err)
+	style := r.FormValue("style")
+	if _, ok := render.LookupStyle(style); !ok {
+		s.flash(w, "Pick Tisak or Šablon.")
 		return
 	}
-	s.log.Info("admin: masks set", "venue", v.ID, "masks", len(masks))
-	redirect(w, r, fmt.Sprintf("/admin/venues/%d?masks=1", v.ID))
+	look := render.Look{Outline: r.FormValue("outline"), Blur: r.FormValue("blur"), Contrast: r.FormValue("contrast")}.Normalize()
+	if err := s.st.UpdateVenue(r.Context(), v.ID, v.Name, style, v.TZ, v.Description, v.Phone, v.Location); err != nil {
+		s.internal(w, "set style", err)
+		return
+	}
+	if err := s.st.SetLook(r.Context(), v.ID, look); err != nil {
+		s.internal(w, "set look", err)
+		return
+	}
+	s.log.Info("admin: style set", "venue_id", v.ID, "style", style, "outline", look.Outline,
+		"blur", look.Blur, "contrast", look.Contrast, "actor", "admin")
+	redirect(w, r, fmt.Sprintf("/admin/venues/%d?style=1", v.ID))
+}
+
+// deleteVenue removes a venue for good: its devices (tokens stop working),
+// stored renders, visit counts and public page. The form must repeat the
+// slug — a destructive action takes a deliberate second step, not a click.
+func (s *Server) deleteVenue(w http.ResponseWriter, r *http.Request) {
+	v, ok := s.loadVenue(w, r)
+	if !ok {
+		return
+	}
+	r.ParseForm()
+	if strings.TrimSpace(r.FormValue("confirm")) != v.Slug {
+		s.flash(w, fmt.Sprintf("Type %s to confirm — nothing was deleted.", v.Slug))
+		return
+	}
+	if err := s.st.DeleteVenue(r.Context(), v.ID); err != nil {
+		s.internal(w, "delete venue", err)
+		return
+	}
+	if s.OnVenueDeleted != nil {
+		if err := s.OnVenueDeleted(v); err != nil {
+			// The row is gone; leftover files are logged, never fatal.
+			s.log.Error("admin: venue files not removed", "venue_id", v.ID, "slug", v.Slug, "err", err.Error())
+		}
+	}
+	s.log.Info("admin: venue deleted", "venue_id", v.ID, "slug", v.Slug, "actor", "admin")
+	redirect(w, r, "/admin/?deleted="+v.Slug)
+}
+
+func (s *Server) loadDevice(w http.ResponseWriter, r *http.Request) (*store.Device, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	d, err := s.st.DeviceByID(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	return d, true
+}
+
+// updateDevice renames a device and/or moves it to another venue. The
+// token stays, so a flashed board keeps posting — now for the new venue.
+func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) {
+	d, ok := s.loadDevice(w, r)
+	if !ok {
+		return
+	}
+	r.ParseForm()
+	serial := strings.TrimSpace(r.FormValue("serial"))
+	if serial == "" {
+		s.flash(w, "Serial is required.")
+		return
+	}
+	venueID, err := strconv.ParseInt(r.FormValue("venue_id"), 10, 64)
+	if err != nil {
+		s.flash(w, "Pick a venue.")
+		return
+	}
+	if _, err := s.st.VenueByID(r.Context(), venueID); err != nil {
+		s.flash(w, "That venue no longer exists.")
+		return
+	}
+	if err := s.st.UpdateDevice(r.Context(), d.ID, serial, venueID); err != nil {
+		if errors.Is(err, store.ErrSerialTaken) {
+			s.flash(w, "Another device already has that serial.")
+			return
+		}
+		s.internal(w, "update device", err)
+		return
+	}
+	s.log.Info("admin: device updated", "device_id", d.ID, "serial", serial, "venue_id", venueID, "actor", "admin")
+	redirect(w, r, fmt.Sprintf("/admin/devices/%d?saved=1", d.ID))
+}
+
+// deleteDevice forgets a device and its token. Its frames belong to the
+// venue and stay. Revoke is the reversible alternative.
+func (s *Server) deleteDevice(w http.ResponseWriter, r *http.Request) {
+	d, ok := s.loadDevice(w, r)
+	if !ok {
+		return
+	}
+	if err := s.st.DeleteDevice(r.Context(), d.ID); err != nil {
+		s.internal(w, "delete device", err)
+		return
+	}
+	s.log.Info("admin: device deleted", "device_id", d.ID, "serial", d.Serial, "actor", "admin")
+	redirect(w, r, fmt.Sprintf("/admin/venues/%d?devdeleted=1", d.VenueID))
 }

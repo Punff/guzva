@@ -314,13 +314,72 @@ func TestMigrationV8BackfillsMasks(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	a, _ := s.VenueBySlug(context.Background(), "a")
-	if len(a.Masks) != 1 || a.Masks[0] != (render.Rect{X0: 20, Y0: 40, X1: 60, Y1: 80}) {
-		t.Errorf("a masks = %v, want one rect scaled ×2", a.Masks)
+	// Masks left the product in v11, but the v8 backfill must still have
+	// run (the column is the record of what old venues had).
+	var am, bm string
+	_ = s.db.QueryRow(`SELECT masks_json FROM venues WHERE slug = 'a'`).Scan(&am)
+	_ = s.db.QueryRow(`SELECT masks_json FROM venues WHERE slug = 'b'`).Scan(&bm)
+	if am != MarshalMasks([]render.Rect{{X0: 20, Y0: 40, X1: 60, Y1: 80}}) || bm != "" {
+		t.Errorf("masks_json a=%q b=%q, want one rect scaled ×2 and none", am, bm)
 	}
-	b, _ := s.VenueBySlug(context.Background(), "b")
-	if b.Masks != nil {
-		t.Errorf("b masks = %v, want none", b.Masks)
+}
+
+// Look round-trips normalized; venue deletion cascades to devices, frames
+// and visits; devices can be renamed, moved and deleted.
+func TestLookAndCRUD(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	vid := mustVenue(t, s, "jadro")
+	other := mustVenue(t, s, "other")
+	if err := s.SetLook(ctx, vid, render.Look{Outline: "strong", Blur: "nonsense"}); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := s.VenueByID(ctx, vid)
+	if v.Look != (render.Look{Outline: "strong", Blur: "standard", Contrast: "normal"}) {
+		t.Errorf("look = %+v", v.Look)
+	}
+
+	did, _ := s.CreateDevice(ctx, Device{VenueID: vid, Serial: "cam-a"}, "h-a")
+	if _, err := s.CreateDevice(ctx, Device{VenueID: vid, Serial: "cam-b"}, "h-b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateDevice(ctx, did, "cam-b", vid); !errors.Is(err, ErrSerialTaken) {
+		t.Errorf("rename onto a taken serial: err = %v", err)
+	}
+	if err := s.UpdateDevice(ctx, did, "cam-renamed", other); err != nil {
+		t.Fatal(err)
+	}
+	if d, _ := s.DeviceByID(ctx, did); d.Serial != "cam-renamed" || d.VenueID != other {
+		t.Errorf("device after move = %+v", d)
+	}
+	if err := s.DeleteDevice(ctx, did); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DeviceByID(ctx, did); !errors.Is(err, ErrNotFound) {
+		t.Errorf("deleted device still found: %v", err)
+	}
+
+	if _, err := s.InsertFrame(ctx, Frame{VenueID: vid, CaptureID: "C1-1-aaaa", SHA256: "x", ReceivedAt: time.Now(), Status: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddVisitHour(ctx, vid, time.Now(), 3, 1, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteVenue(ctx, vid); err != nil {
+		t.Fatal(err)
+	}
+	for table, want := range map[string]int{"devices": 0, "frames": 0, "visits_hourly": 0} {
+		var n int
+		_ = s.db.QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE venue_id = ?`, vid).Scan(&n)
+		if n != want {
+			t.Errorf("%s rows left for the deleted venue: %d", table, n)
+		}
+	}
+	if err := s.DeleteVenue(ctx, vid); !errors.Is(err, ErrNotFound) {
+		t.Errorf("second delete: err = %v, want ErrNotFound", err)
+	}
+	if _, err := s.VenueByID(ctx, other); err != nil {
+		t.Errorf("the other venue was touched: %v", err)
 	}
 }
 
@@ -369,8 +428,8 @@ func TestMigrationFromV1(t *testing.T) {
 	if v.Lang != "hr" {
 		t.Fatalf("venue lang = %q after migrating from v1, want \"hr\"", v.Lang)
 	}
-	if v.Masks != nil {
-		t.Fatalf("venue masks = %v after migrating from v1, want none", v.Masks)
+	if v.Look != (render.Look{}).Normalize() {
+		t.Fatalf("venue look = %+v after migrating from v1, want defaults", v.Look)
 	}
 	if v.Name != "Old" || v.OwnerHash != "" {
 		t.Fatalf("v1 venue not intact: %+v", v)

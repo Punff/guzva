@@ -289,7 +289,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		CaptureID: meta.CaptureID,
 		Preset:    venue.Style,
 		Raw:       frameRaw,
-		Masks:     venue.Masks,
+		Look:      venue.Look,
 	})
 	cancel()
 	renderMS = float64(s.now().Sub(start).Microseconds()) / 1000 // §11: gate-visible
