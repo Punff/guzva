@@ -3,6 +3,7 @@ package admin
 import (
 	"html/template"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -206,7 +207,7 @@ func (s *Server) ownerDash(w http.ResponseWriter, r *http.Request, v *store.Venu
 	if s.Stats != nil {
 		live = s.Stats.Live(v.Slug)
 	}
-	m.Stats = buildOwnerStats(now, loc, vh, vd, ft, since, live, cat)
+	m.Stats = buildOwnerStats(now, loc, vh, vd, ft, since, live, h, cat)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	if err := s.tmpl.ExecuteTemplate(w, "owner_dash.html", m); err != nil {
@@ -304,8 +305,10 @@ func (s *Server) ownerPoster(w http.ResponseWriter, r *http.Request, v *store.Ve
 type ownerDevice struct {
 	Serial string
 	Off    bool   // revoked by the administrator
-	Last   string // "zadnja slika u 19:21" / "još nije poslala sliku"
-	Signal string // "" when never heard from
+	Last   string // "javila se u 19:21" / "još se nije javila"
+	Bars   int    // 1–4 signal bars, 0 when never heard from
+	Word   string // "dobar" … in the owner's language
+	DBm    string // "-61 dBm", for the tooltip
 	Weak   bool
 }
 
@@ -314,11 +317,9 @@ func newOwnerDevice(d store.Device, loc *time.Location, cat *i18n.Catalog) owner
 	if !d.LastSeenAt.IsZero() {
 		od.Last = cat.F("owner.device.last", cat.Time(d.LastSeenAt.In(loc)))
 		od.Weak = d.RSSI <= InstallGateRSSI
-		key := "owner.signal.ok"
-		if od.Weak {
-			key = "owner.signal.weak"
-		}
-		od.Signal = cat.F(key, d.RSSI)
+		od.Bars = signalBars(d.RSSI)
+		od.Word = cat.Get("owner.signal." + strconv.Itoa(od.Bars))
+		od.DBm = strconv.Itoa(d.RSSI) + " dBm"
 	}
 	return od
 }

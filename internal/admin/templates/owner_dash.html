@@ -48,36 +48,66 @@
   </div>
 </section>
 
-{{/* Charts: SVG with attribute geometry (the console CSP has no inline styles). */}}
+{{/* Charts: SVG with attribute geometry (the console CSP has no inline
+     styles). Gridlines carry round values; labels are real dates. */}}
 <div class="grid gap-6 md:grid-cols-2 mb-6">
   <section class="card">
     <h2 class="text-lg font-bold">{{.Cat.Get "owner.chart.days"}}</h2>
-    <p class="text-xs text-muted mb-3">{{.Cat.Get "owner.chart.days.note"}}</p>
-    <svg viewBox="0 0 280 100" class="w-full h-auto" role="img" aria-label="{{.Cat.Get "owner.chart.days"}}">
+    <p class="text-sm text-muted">{{.Cat.Get "owner.chart.days.note"}}</p>
+    <p class="flex gap-4 text-xs text-muted my-2" aria-hidden="true">
+      <span class="inline-flex items-center gap-1.5"><span class="inline-block w-3 h-3 bg-s1"></span>{{.Cat.Get "owner.legend.this"}}</span>
+      <span class="inline-flex items-center gap-1.5"><span class="inline-block w-3 h-3 bg-s2"></span>{{.Cat.Get "owner.legend.prev"}}</span>
+    </p>
+    <svg viewBox="0 0 300 130" class="w-full h-auto" role="img" aria-label="{{.Cat.Get "owner.chart.days"}}">
+      {{range .Stats.WeekGrid}}<line x1="26" x2="300" y1="{{.Y}}.5" y2="{{.Y}}.5" stroke-width="0.5" class="stroke-s2"/><text x="22" y="{{.Y}}" dy="3" text-anchor="end" font-size="9" class="fill-muted">{{.Label}}</text>{{end}}
       {{range .Stats.Week}}
       {{if .HasPrev}}<rect x="{{.Prev.X}}" y="{{.Prev.Y}}" width="{{.Prev.W}}" height="{{.Prev.H}}" class="fill-s2"><title>{{.Prev.Title}}</title></rect>{{end}}
       <rect x="{{.Cur.X}}" y="{{.Cur.Y}}" width="{{.Cur.W}}" height="{{.Cur.H}}" class="{{if .Today}}fill-ink{{else}}fill-s1{{end}}"><title>{{.Cur.Title}}</title></rect>
-      <text x="{{.ValueX}}" y="{{.ValueY}}" text-anchor="middle" font-size="8" font-weight="600" class="fill-ink">{{.Value}}</text>
-      <text x="{{.LabelX}}" y="96" text-anchor="middle" font-size="8"{{if .Today}} font-weight="700"{{end}} class="{{if .Today}}fill-ink{{else}}fill-muted{{end}}">{{.Label}}</text>
+      <text x="{{.ValueX}}" y="{{.ValueY}}" text-anchor="middle" font-size="9.5" font-weight="700" class="fill-ink">{{.Value}}</text>
+      <text x="{{.CX}}" y="114" text-anchor="middle" font-size="10"{{if .Today}} font-weight="700"{{end}} class="fill-ink">{{.Label}}</text>
+      <text x="{{.CX}}" y="126" text-anchor="middle" font-size="8.5" class="fill-muted">{{.Date}}</text>
       {{end}}
-      <line x1="0" x2="280" y1="84.5" y2="84.5" stroke-width="1" class="stroke-ink"/>
+      <line x1="26" x2="300" y1="100.5" y2="100.5" stroke-width="1" class="stroke-ink"/>
     </svg>
   </section>
+
   <section class="card">
     <h2 class="text-lg font-bold">{{.Cat.Get "owner.chart.hours"}}</h2>
-    <p class="text-xs text-muted mb-3">{{.Cat.Get "owner.chart.hours.note"}}</p>
-    <svg viewBox="0 0 240 72" class="w-full h-auto" role="img" aria-label="{{.Cat.Get "owner.chart.hours"}}">
+    <p class="text-sm text-muted">{{.Cat.Get "owner.chart.hours.note"}}</p>
+    <p class="flex gap-4 text-xs text-muted my-2" aria-hidden="true">
+      {{if .Stats.Open}}<span class="inline-flex items-center gap-1.5"><span class="inline-block w-3 h-3 bg-paper-2 border border-s2"></span>{{.Cat.Get "owner.legend.open"}}</span>{{end}}
+      <span class="inline-flex items-center gap-1.5"><span class="inline-block w-3 h-3 bg-ink"></span>{{.Cat.Get "owner.legend.peak"}}</span>
+    </p>
+    <svg viewBox="0 0 300 90" class="w-full h-auto" role="img" aria-label="{{.Cat.Get "owner.chart.hours"}}">
+      {{range .Stats.Open}}<rect x="{{.X}}" y="8" width="{{.W}}" height="64" class="fill-paper-2"/>{{end}}
+      {{range .Stats.HourGrid}}<line x1="26" x2="290" y1="{{.Y}}.5" y2="{{.Y}}.5" stroke-width="0.5" class="stroke-s2"/><text x="22" y="{{.Y}}" dy="3" text-anchor="end" font-size="9" class="fill-muted">{{.Label}}</text>{{end}}
       {{range .Stats.Hours}}
       <rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" class="{{if .Peak}}fill-ink{{else}}fill-s1{{end}}"><title>{{.Title}}</title></rect>
-      {{if .Value}}<text x="{{.CX}}" y="{{.ValueY}}" text-anchor="middle" font-size="8" font-weight="600" class="fill-ink">{{.Value}}</text>{{end}}
-      {{if .Label}}<text x="{{.X}}" y="70" font-size="7" class="fill-muted">{{.Label}}</text>{{end}}
+      {{if .Value}}<text x="{{.CX}}" y="{{.ValueY}}" text-anchor="middle" font-size="9.5" font-weight="700" class="fill-ink">{{.Value}}</text>{{end}}
       {{end}}
-      <text x="240" y="70" text-anchor="end" font-size="7" class="fill-muted">24</text>
-      <line x1="0" x2="240" y1="60.5" y2="60.5" stroke-width="1" class="stroke-ink"/>
+      <line x1="26" x2="290" y1="72.5" y2="72.5" stroke-width="1" class="stroke-ink"/>
+      {{range .Stats.HourTicks}}<line x1="{{.X}}.5" x2="{{.X}}.5" y1="72" y2="75" stroke-width="1" class="stroke-ink"/><text x="{{.X}}" y="86" text-anchor="middle" font-size="9.5" class="fill-muted">{{.Label}}</text>{{end}}
     </svg>
-    {{if .Stats.Peak}}<p class="text-sm mt-2">{{.Stats.Peak}}</p>{{end}}
+    {{if .Stats.Peak}}<p class="text-sm mt-1">{{.Stats.Peak}}</p>{{end}}
   </section>
 </div>
+
+<section class="card mb-6">
+  <div class="flex flex-wrap items-baseline justify-between gap-x-4">
+    <h2 class="text-lg font-bold">{{.Cat.Get "owner.trend"}}</h2>
+    {{if .Stats.Trend.HasData}}<p class="text-sm tnum">{{.Cat.F "owner.trend.total" .Stats.Trend.Total}}</p>{{end}}
+  </div>
+  <p class="text-sm text-muted mb-2">{{.Cat.Get "owner.trend.note"}}</p>
+  <svg viewBox="0 0 600 106" class="w-full h-auto" role="img" aria-label="{{.Cat.Get "owner.trend"}}">
+    {{range .Stats.Trend.Grid}}<line x1="26" x2="586" y1="{{.Y}}.5" y2="{{.Y}}.5" stroke-width="0.5" class="stroke-s2"/><text x="22" y="{{.Y}}" dy="3" text-anchor="end" font-size="9" class="fill-muted">{{.Label}}</text>{{end}}
+    {{range .Stats.Trend.Weeks}}<line x1="{{.X}}.5" x2="{{.X}}.5" y1="10" y2="90" stroke-width="0.5" class="stroke-s2"/><text x="{{.X}}" y="103" text-anchor="middle" font-size="9" class="fill-muted">{{.Label}}</text>{{end}}
+    <path d="{{.Stats.Trend.Area}}" class="fill-s2"/>
+    <polyline points="{{.Stats.Trend.Line}}" fill="none" stroke-width="1.5" stroke-linejoin="round" class="stroke-s1"/>
+    {{if .Stats.Trend.Avg}}<polyline points="{{.Stats.Trend.Avg}}" fill="none" stroke-width="1.5" stroke-dasharray="4 3" class="stroke-ink"/>{{end}}
+    <circle cx="{{.Stats.Trend.TodayX}}" cy="{{.Stats.Trend.TodayY}}" r="3" class="fill-ink"/>
+    <line x1="26" x2="586" y1="90.5" y2="90.5" stroke-width="1" class="stroke-ink"/>
+  </svg>
+</section>
 
 {{/* Share: the link and the QR that brings guests in. */}}
 <section class="card mb-6" id="share">
@@ -95,20 +125,34 @@
   </div>
 </section>
 
-{{/* Camera health, in plain words. */}}
+{{/* Camera health: signal as bars, the last day as a strip of 10-minute
+     ticks, troubleshooting only when the picture is not fresh. */}}
 <section class="card mb-6">
-  <h2 class="text-lg font-bold mb-2">{{.Cat.Get "owner.camera"}}</h2>
+  <h2 class="text-lg font-bold mb-3">{{.Cat.Get "owner.camera"}}</h2>
   {{if .Devices}}
-  {{if ge .Stats.Uptime 0}}<p class="text-sm mb-3">{{.Cat.F "owner.uptime" .Stats.Uptime}}</p>{{end}}
-  <ul class="grid gap-1 text-sm">
-    {{range .Devices}}
-    <li class="flex flex-wrap gap-x-3 gap-y-1">
-      <span class="font-semibold">{{.Serial}}</span>
-      {{if .Off}}<span class="text-muted">{{$.Cat.Get "owner.device.off"}}</span>{{else}}<span>{{.Last}}</span>{{end}}
-      {{if .Signal}}<span class="{{if .Weak}}text-accent{{else}}text-muted{{end}}">{{.Signal}}</span>{{end}}
-    </li>
+  {{range .Devices}}
+  <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mb-4">
+    {{if .Off}}<span class="text-muted">{{$.Cat.Get "owner.device.off"}}</span>
+    {{else}}
+    {{if .Bars}}<span class="inline-flex items-center gap-2 font-semibold{{if .Weak}} text-accent{{end}}">{{template "signal.html" dict "bars" .Bars "word" .Word "title" .DBm}}{{.Word}}</span>{{end}}
+    <span class="text-sm text-muted">{{.Last}}</span>
     {{end}}
-  </ul>
+  </div>
+  {{if and .Weak (not .Off)}}<p class="text-sm mb-4">{{$.Cat.Get "owner.signal.weakhint"}}</p>{{end}}
+  {{end}}
+  {{if ge .Stats.Uptime 0}}
+  <div>
+    <div class="flex items-baseline justify-between gap-3 mb-1">
+      <span class="text-sm font-semibold">{{.Cat.F "owner.uptime" .Stats.Uptime}}</span>
+    </div>
+    <svg viewBox="0 0 288 14" class="w-full h-auto" role="img" aria-label="{{.Cat.F "owner.uptime" .Stats.Uptime}}" preserveAspectRatio="none">
+      <rect width="288" height="14" class="fill-paper-2"/>
+      {{range .Stats.Strip}}{{if .On}}<rect x="{{.X}}" width="2" height="14" class="fill-s1"/>{{end}}{{end}}
+    </svg>
+    <div class="flex justify-between text-xs text-muted mt-1"><span>{{.Stats.StripFrom}}</span><span>{{.Cat.Get "owner.strip.now"}}</span></div>
+    <p class="text-xs text-muted mt-1">{{.Cat.Get "owner.strip.legend"}}</p>
+  </div>
+  {{end}}
   {{if ne .State.Cls "fresh"}}
   <div class="border-l-2 border-ink pl-3 mt-4">
     <h3 class="font-semibold">{{.Cat.Get "owner.health.old"}}</h3>

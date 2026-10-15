@@ -624,24 +624,41 @@ func TestSetStyle(t *testing.T) {
 func TestDeviceAndVenueDelete(t *testing.T) {
 	f := newFixture(t, mustHash(t, "sekret"))
 	ck := f.login(t)
-	for _, slug := range []string{"jadro", "other"} {
+	for _, slug := range []string{"jadro", "other", "third"} {
 		f.do(t, http.MethodPost, "/admin/venues", withHours(url.Values{"slug": {slug}, "name": {slug}, "style": {"poster"}}, nil), ck, true)
 	}
 	f.do(t, http.MethodPost, "/admin/devices", url.Values{"venue_id": {"1"}, "serial": {"cam1"}}, ck, true)
-	f.do(t, http.MethodPost, "/admin/devices", url.Values{"venue_id": {"1"}, "serial": {"cam2"}}, ck, true)
-
+	// One camera per venue: a second one on jadro is refused…
+	if w := f.do(t, http.MethodPost, "/admin/devices", url.Values{"venue_id": {"1"}, "serial": {"extra"}}, ck, true); !strings.Contains(w.Body.String(), "already has a camera") {
+		t.Fatalf("second camera on one venue accepted: %q", w.Body.String())
+	}
+	f.do(t, http.MethodPost, "/admin/devices", url.Values{"venue_id": {"2"}, "serial": {"cam2"}}, ck, true)
+	// …and so is moving a camera onto a venue that has one.
+	if w := f.do(t, http.MethodPost, "/admin/devices/1", url.Values{"serial": {"cam1"}, "venue_id": {"2"}}, ck, true); !strings.Contains(w.Body.String(), "already has a camera") {
+		t.Errorf("move onto an occupied venue accepted: %q", w.Body.String())
+	}
 	if w := f.do(t, http.MethodPost, "/admin/devices/1", url.Values{"serial": {"cam2"}, "venue_id": {"1"}}, ck, true); !strings.Contains(w.Body.String(), "already has that serial") {
 		t.Errorf("duplicate serial accepted: %q", w.Body.String())
 	}
-	f.do(t, http.MethodPost, "/admin/devices/1", url.Values{"serial": {"cam1-moved"}, "venue_id": {"2"}}, ck, true)
-	if d, _ := f.st.DeviceByID(t.Context(), 1); d.Serial != "cam1-moved" || d.VenueID != 2 {
+	f.do(t, http.MethodPost, "/admin/devices/1", url.Values{"serial": {"cam1-moved"}, "venue_id": {"3"}}, ck, true)
+	if d, _ := f.st.DeviceByID(t.Context(), 1); d.Serial != "cam1-moved" || d.VenueID != 3 {
 		t.Fatalf("device after move = %+v", d)
 	}
 	f.do(t, http.MethodPost, "/admin/devices/1/delete", nil, ck, true)
 	if _, err := f.st.DeviceByID(t.Context(), 1); err == nil {
 		t.Fatal("deleted device still exists")
 	}
+	// The fleet's "new device" list offers only venues without a camera.
+	fleet := f.do(t, http.MethodGet, "/admin/", nil, ck, false).Body.String()
+	if strings.Contains(fleet, `<option value="2">`) || !strings.Contains(fleet, `<option value="1">`) {
+		t.Errorf("new-device venue list should offer jadro (free) and not other (has cam2)")
+	}
 
+	// Give jadro a camera again, so the delete must take it along.
+	f.do(t, http.MethodPost, "/admin/devices", url.Values{"venue_id": {"1"}, "serial": {"cam-new"}}, ck, true)
+	if _, err := f.st.DeviceBySerial(t.Context(), "cam-new"); err != nil {
+		t.Fatal("setup: cam-new not created")
+	}
 	var removed []string
 	f.s.OnVenueDeleted = func(v *store.Venue) error { removed = append(removed, v.Slug); return nil }
 	if w := f.do(t, http.MethodPost, "/admin/venues/1/delete", url.Values{"confirm": {"wrong"}}, ck, true); !strings.Contains(w.Body.String(), "nothing was deleted") {
@@ -656,8 +673,8 @@ func TestDeviceAndVenueDelete(t *testing.T) {
 	if _, err := f.st.VenueByID(t.Context(), 1); err == nil {
 		t.Fatal("venue still exists")
 	}
-	if _, err := f.st.DeviceByID(t.Context(), 2); err == nil {
-		t.Error("the venue's remaining camera survived the venue")
+	if _, err := f.st.DeviceBySerial(t.Context(), "cam-new"); err == nil {
+		t.Error("the venue's camera survived the venue")
 	}
 	if len(removed) != 1 || removed[0] != "jadro" {
 		t.Errorf("file hook calls = %v", removed)

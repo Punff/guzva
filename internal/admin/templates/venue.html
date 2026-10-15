@@ -105,18 +105,16 @@
     </section>
 
     <section class="card">
-      <h2 class="text-lg font-bold mb-3">Cameras</h2>
+      <h2 class="text-lg font-bold mb-3">Camera</h2>
       {{if .Devices}}
-      <ul class="grid gap-2">
-        {{range .Devices}}
-        <li class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <a class="font-semibold underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a>
-          <span class="text-sm {{if eq .Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Status}}</span>
-          <span class="text-sm text-muted">seen {{.SeenAge}}</span>
-          <span class="text-sm tnum{{if .Weak}} text-accent{{else}} text-muted{{end}}">{{.RSSIText}}</span>
-        </li>
-        {{end}}
-      </ul>
+      {{range .Devices}}
+      <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+        <a class="font-semibold underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a>
+        <span class="text-sm {{if eq .Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Status}}</span>
+        <span class="text-sm text-muted">seen {{.SeenAge}}</span>
+        <span class="inline-flex items-center gap-2 text-sm">{{if .Bars}}{{template "signal.html" dict "bars" .Bars "word" .SignalW "title" .RSSIText}} {{.SignalW}} signal{{else}}<span class="text-muted">no signal yet</span>{{end}}</span>
+      </div>
+      {{end}}
       {{else}}<p class="text-sm text-muted">No camera yet. Add one from the fleet page.</p>{{end}}
     </section>
 

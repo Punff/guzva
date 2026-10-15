@@ -12,6 +12,7 @@ import (
 	"guzva/internal/auth"
 	"guzva/internal/i18n"
 	"guzva/internal/store"
+	"guzva/internal/venue"
 )
 
 func TestBuildOwnerStats(t *testing.T) {
@@ -31,7 +32,9 @@ func TestBuildOwnerStats(t *testing.T) {
 		frames = append(frames, t0)
 	}
 	cat := i18n.For(i18n.HR)
-	st := buildOwnerStats(now.UTC(), loc, hours, days, frames, now.Add(-48*time.Hour), 2, cat)
+	var sched venue.Hours
+	sched[time.Wednesday] = []venue.Range{{OpenMin: 8 * 60, CloseMin: 20 * 60}}
+	st := buildOwnerStats(now.UTC(), loc, hours, days, frames, now.Add(-48*time.Hour), 2, sched, cat)
 
 	want := []kpi{
 		// Complete days only: today's 5 views / 3 visitors / 2 scans are
@@ -60,6 +63,25 @@ func TestBuildOwnerStats(t *testing.T) {
 	if st.Uptime != 50 {
 		t.Errorf("uptime = %d, want 50 (12 h of 24)", st.Uptime)
 	}
+	// Detail: round gridlines, today's opening hours shaded, a 28-point
+	// trend with a 7-day average, a right-aligned uptime strip.
+	if g := st.WeekGrid; len(g) != 3 || g[2].Label != "10" || g[1].Label != "5" {
+		t.Errorf("week grid = %+v, want 0/5/10", g)
+	}
+	if len(st.Open) != 1 || st.Open[0].X != gutter+8*11 || st.Open[0].W != 12*11 {
+		t.Errorf("open band = %+v, want 08–20", st.Open)
+	}
+	if n := len(strings.Fields(st.Trend.Line)); n != 28 || len(strings.Fields(st.Trend.Avg)) != 22 || st.Trend.Total != 19 {
+		t.Errorf("trend: %d points, avg %d, total %d", n, len(strings.Fields(st.Trend.Avg)), st.Trend.Total)
+	}
+	// The trend's geometry must match the template's 600-wide viewBox: today
+	// sits on the axis end (x 586), the oldest day on the gutter (x 26).
+	if st.Trend.TodayX != 586 || !strings.HasPrefix(st.Trend.Line, "26,") {
+		t.Errorf("trend spans %q … %d, want 26 … 586", strings.Fields(st.Trend.Line)[0], st.Trend.TodayX)
+	}
+	if len(st.Strip) != 144 || st.Strip[143].X != 286 || !st.Strip[143].On || st.Strip[0].On {
+		t.Errorf("strip: %d cells, last %+v, first %+v", len(st.Strip), st.Strip[len(st.Strip)-1], st.Strip[0])
+	}
 	if st.Live != 2 || !st.HasData {
 		t.Errorf("live/hasData = %d/%v", st.Live, st.HasData)
 	}
@@ -70,14 +92,14 @@ func TestBuildOwnerStats(t *testing.T) {
 	for i := 1; i < 6; i++ {
 		recent = append(recent, recent[0].Add(time.Duration(i)*10*time.Minute))
 	}
-	if u := buildOwnerStats(now.UTC(), loc, nil, nil, recent, now.Add(-time.Hour), 0, cat).Uptime; u != 100 {
+	if u := buildOwnerStats(now.UTC(), loc, nil, nil, recent, now.Add(-time.Hour), 0, sched, cat).Uptime; u != 100 {
 		t.Errorf("new camera uptime = %d, want 100", u)
 	}
-	if u := buildOwnerStats(now.UTC(), loc, nil, nil, nil, now.Add(-5*time.Minute), 0, cat).Uptime; u != -1 {
+	if u := buildOwnerStats(now.UTC(), loc, nil, nil, nil, now.Add(-5*time.Minute), 0, sched, cat).Uptime; u != -1 {
 		t.Errorf("brand-new camera uptime = %d, want -1 (hidden)", u)
 	}
 
-	empty := buildOwnerStats(now.UTC(), loc, nil, nil, nil, now.Add(-48*time.Hour), 0, cat)
+	empty := buildOwnerStats(now.UTC(), loc, nil, nil, nil, now.Add(-48*time.Hour), 0, sched, cat)
 	if empty.HasData || empty.KPIs[0].Up || empty.KPIs[0].Down || empty.Peak != "" {
 		t.Errorf("empty = %+v", empty)
 	}
@@ -136,5 +158,13 @@ func TestOwnerDashShareAndPoster(t *testing.T) {
 	poster := req("/owner/poster").Body.String()
 	if !strings.Contains(poster, "Skeniraj i pogledaj uživo") || !strings.Contains(poster, "<svg") || !strings.Contains(poster, "Jadro") {
 		t.Errorf("poster = %.300s", poster)
+	}
+}
+
+func TestNiceMax(t *testing.T) {
+	for in, want := range map[int64]int64{0: 4, 3: 4, 7: 10, 10: 10, 11: 20, 38: 50, 133: 200, 501: 1000} {
+		if got := niceMax(in); got != want {
+			t.Errorf("niceMax(%d) = %d, want %d", in, got, want)
+		}
 	}
 }

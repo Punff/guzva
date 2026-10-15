@@ -40,3 +40,10 @@
      gallery); the shape is looked up from the class so text and silhouette
      can never disagree. */}}
 {{define "chip.html"}}<span class="chip"><span class="inline-flex text-{{.Cls}}" aria-hidden="true">{{shape .Cls}}</span>{{.Text}}</span>{{end}}
+
+{{/* Signal bars: four rising bars from RSSI (admin.signalBars), red when at
+     or below the −65 dBm install gate. Call with dict "bars" (0–4), "word"
+     (what a screen reader hears) and "title" (the dBm reading). */}}
+{{define "signal.html"}}<span class="inline-flex items-end gap-[2px] h-4 align-[-2px]" role="img" aria-label="{{.word}}" title="{{.title}}">
+{{- range $i, $h := list "h-1" "h-2" "h-3" "h-4"}}<span class="w-[5px] {{$h}} {{if lt $i $.bars}}{{if le $.bars 2}}bg-accent{{else}}bg-ink{{end}}{{else}}bg-paper-2{{end}}"></span>{{end -}}
+</span>{{end}}

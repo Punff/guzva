@@ -98,17 +98,21 @@
          still's Last-Modified) and the state it describes, as a live region. */}}
     <figcaption class="mx-auto max-w-full w-[320px] md:w-[640px] mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
                 role="status" aria-live="polite">
-      <span class="text-[1.75rem] leading-none font-bold tnum" id="hl">
-        {{if .ShowStill}}{{if .Updated}}{{.Updated}}{{else}}—{{end}}{{else}}—{{end}}
+      <span class="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span class="text-[1.75rem] leading-none font-bold tnum" id="hl">
+          {{if .ShowStill}}{{if .Updated}}{{.Updated}}{{else}}—{{end}}{{else}}—{{end}}
+        </span>
+        {{/* Others watching right now (the poller fills it from the still's
+             X-Watching header, minus the guest). Not announced: aria-live
+             off inside the caption's live region. */}}
+        <span id="watch" class="hidden items-center gap-1.5 bg-ink px-2 py-1 text-sm font-semibold text-paper" aria-live="off">
+          <span class="inline-block h-2 w-2 bg-fresh" aria-hidden="true"></span><span id="watchtext"></span>
+        </span>
       </span>
       <span class="chip chip--lg text-ink" id="chip-{{.StateClass}}">
         <span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}
       </span>
     </figcaption>
-    {{/* Filled by the poller from the still's X-Watching header; shown only
-         when someone besides the guest is looking. Outside the live region
-         on purpose: a count changing every 30 s must not be announced. */}}
-    <p id="watch" class="hidden mx-auto max-w-full w-[320px] md:w-[640px] mt-2 text-sm"></p>
   </figure>
 
   <p id="banner" class="hidden text-sm border-2 border-ink bg-paper-2 px-3 py-2" role="alert"></p>
@@ -211,21 +215,24 @@
     offline: d.offline, idle: d.idle, resume: d.resume,
     newpic: d.newpic
   };
-  var watchEl = $('watch');
+  var watchEl = $('watch'), watchText = $('watchtext');
 
-  // "N people watching" with Croatian plural forms (1 osoba gleda,
-  // 2–4 osobe gledaju, 5+ osoba gleda; English uses one/other). Hidden
-  // below 2: one watcher is the guest themself.
-  function showWatching(n) {
+  // Others watching besides this guest: X-Watching counts everyone with
+  // the page open (including us), so show n − 1, with Croatian plural
+  // forms (1 osoba gleda, 2–4 osobe gledaju, 5+ osoba gleda; English
+  // one/other). Hidden when nobody else is looking.
+  function showWatching(total) {
     if (!watchEl) return;
-    if (!(n >= 2)) { watchEl.classList.add('hidden'); return; }
+    var n = total - 1;
+    if (!(n >= 1)) { watchEl.classList.add('hidden'); watchEl.classList.remove('inline-flex'); return; }
     var m10 = n % 10, m100 = n % 100, t;
-    if (lang === 'en-GB') t = d.watchMany;
+    if (lang === 'en-GB') t = n === 1 ? d.watchOne : d.watchMany;
     else if (m10 === 1 && m100 !== 11) t = d.watchOne;
     else if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) t = d.watchFew;
     else t = d.watchMany;
-    watchEl.textContent = (t || '').replace('{n}', n);
+    watchText.textContent = (t || '').replace('{n}', n);
     watchEl.classList.remove('hidden');
+    watchEl.classList.add('inline-flex');
   }
   var ALT_PREFIX = d.altprefix || '';
   $('idletext').textContent = STR.idle;

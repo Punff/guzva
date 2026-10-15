@@ -67,7 +67,8 @@ func New(st *store.Store, passHash string, secret []byte, secure bool, log *slog
 	// shape resolves a status class to its silhouette (DESIGN.md §3.2). One
 	// source of truth: the fleet, the owner panel and the kit gallery all
 	// render through it, so a class can never gain the wrong shape.
-	funcs := template.FuncMap{"dict": dict, "appCSS": webui.AppPath, "shape": shape, "inc": func(i int) int { return i + 1 }}
+	funcs := template.FuncMap{"dict": dict, "appCSS": webui.AppPath, "shape": shape, "inc": func(i int) int { return i + 1 },
+		"list": func(v ...string) []string { return v }}
 	tmpl, err := template.New("").Funcs(funcs).ParseFS(assets, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("admin: parse templates: %w", err)
@@ -281,6 +282,22 @@ type deviceView struct {
 	Counters proto.Counters
 	Profile  string // frozen camera profile; "" = firmware before Profile v1
 	Failures string // "none" | "2 WiFi, 1 upload" — only the non-zero ones
+	Bars     int    // 0–4 signal bars (0 = never heard from)
+	SignalW  string // "excellent" | "good" | "weak" | "very weak"
+}
+
+// signalBars maps RSSI to 1–4 bars, aligned with the −65 dBm install gate:
+// above −60 excellent, above −65 good, above −75 weak, else very weak.
+func signalBars(rssi int) int {
+	switch {
+	case rssi > -60:
+		return 4
+	case rssi > InstallGateRSSI:
+		return 3
+	case rssi > -75:
+		return 2
+	}
+	return 1
 }
 
 // newDeviceView is the one device row builder (fleet board + owner panel).
@@ -295,6 +312,8 @@ func newDeviceView(d store.Device, now time.Time) deviceView {
 	if !d.LastSeenAt.IsZero() {
 		dv.RSSIText = fmt.Sprintf("%d dBm", d.RSSI)
 		dv.Weak = d.RSSI <= InstallGateRSSI
+		dv.Bars = signalBars(d.RSSI)
+		dv.SignalW = [...]string{"", "very weak", "weak", "good", "excellent"}[dv.Bars]
 	}
 	var parts []string
 	for _, c := range []struct {
@@ -336,7 +355,7 @@ type chip struct {
 
 type fleetModel struct {
 	Venues      []venueView
-	DeviceOpts  []store.Venue // for the create-device <select>
+	DeviceOpts  []store.Venue // venues without a camera, for the create-device <select>
 	ShowCreated bool
 	Deleted     string           // slug of a venue just deleted, for the confirmation line
 	Devices     int              // fleet-wide count: opens "New device" when 0
@@ -365,7 +384,13 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 		byVenue[d.VenueID] = append(byVenue[d.VenueID], newDeviceView(d, now))
 	}
 	defHours, _ := venue.ParseSpec("Mo-Fr 09:00-17:00")
-	model := fleetModel{DeviceOpts: venues, Devices: len(devices), Deleted: r.URL.Query().Get("deleted"), ShowCreated: r.URL.Query().Get("created") != "",
+	var free []store.Venue
+	for _, v := range venues {
+		if len(byVenue[v.ID]) == 0 {
+			free = append(free, v)
+		}
+	}
+	model := fleetModel{DeviceOpts: free, Devices: len(devices), Deleted: r.URL.Query().Get("deleted"), ShowCreated: r.URL.Query().Get("created") != "",
 		Days: venue.EditModel(defHours, i18n.For(i18n.EN).DayNames())}
 	// Needs attention first (design-pass2 §6): the board is the "is
 	// everything OK" screen, so it must read top-down — no signal beats
@@ -559,6 +584,13 @@ func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) {
 		s.flash(w, "Unknown venue.")
 		return
 	}
+	if has, err := s.venueHasCamera(r, venueID, 0); err != nil {
+		s.internal(w, "camera check", err)
+		return
+	} else if has {
+		s.flash(w, "That venue already has a camera. One camera per venue: delete or move the old one first.")
+		return
+	}
 	serial := strings.TrimSpace(r.FormValue("serial"))
 	if serial == "" {
 		serial = "esp32-" + randHex(3)
@@ -747,6 +779,8 @@ type deviceModel struct {
 	Venue     string        // the venue's name, for the page header
 	Venues    []store.Venue // "move to venue" choices
 	Saved     bool
+	Bars      int    // signal bars 1–4 (when Seen)
+	SignalW   string // "excellent" … "very weak"
 }
 
 func (s *Server) devicePage(w http.ResponseWriter, r *http.Request) {
@@ -760,7 +794,8 @@ func (s *Server) devicePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.now().UTC()
-	m := deviceModel{Device: *d, Venues: venues, Saved: r.URL.Query().Get("saved") != "",
+	dv := newDeviceView(*d, s.now().UTC())
+	m := deviceModel{Device: *d, Venues: venues, Saved: r.URL.Query().Get("saved") != "", Bars: dv.Bars, SignalW: dv.SignalW,
 		Seen:    !d.LastSeenAt.IsZero(),
 		SeenAge: age(now, d.LastSeenAt),
 		Weak:    !d.LastSeenAt.IsZero() && d.RSSI <= InstallGateRSSI}
@@ -909,6 +944,22 @@ func (s *Server) deleteVenue(w http.ResponseWriter, r *http.Request) {
 	redirect(w, r, "/admin/?deleted="+v.Slug)
 }
 
+// venueHasCamera reports whether the venue has a camera other than
+// exceptID. The console keeps one camera per venue (user decision,
+// 15 Oct 2026); the fakecam harness (provision -devices) is exempt.
+func (s *Server) venueHasCamera(r *http.Request, venueID, exceptID int64) (bool, error) {
+	devs, err := s.st.DevicesByVenue(r.Context(), venueID)
+	if err != nil {
+		return false, err
+	}
+	for _, d := range devs {
+		if d.ID != exceptID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (s *Server) loadDevice(w http.ResponseWriter, r *http.Request) (*store.Device, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
@@ -943,6 +994,13 @@ func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := s.st.VenueByID(r.Context(), venueID); err != nil {
 		s.flash(w, "That venue no longer exists.")
+		return
+	}
+	if has, err := s.venueHasCamera(r, venueID, d.ID); err != nil {
+		s.internal(w, "camera check", err)
+		return
+	} else if has {
+		s.flash(w, "That venue already has a camera. One camera per venue.")
 		return
 	}
 	if err := s.st.UpdateDevice(r.Context(), d.ID, serial, venueID); err != nil {

@@ -16,7 +16,7 @@
   <dl class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
     <div><dt class="lbl">Status</dt><dd class="font-semibold {{if eq .Device.Status "active"}}text-fresh{{else}}text-muted{{end}}">{{.Device.Status}}</dd></div>
     <div><dt class="lbl">Last seen</dt><dd>{{.SeenAge}}</dd></div>
-    <div><dt class="lbl">Signal</dt><dd class="tnum{{if .Weak}} text-accent{{end}}">{{if not .Seen}}—{{else}}{{.Device.RSSI}} dBm{{if .Weak}} (below −65, too weak){{end}}{{end}}</dd></div>
+    <div><dt class="lbl">Signal</dt><dd class="flex items-center gap-2">{{if not .Seen}}—{{else}}{{template "signal.html" dict "bars" .Bars "word" .SignalW "title" (printf "%d dBm" .Device.RSSI)}}<span{{if .Weak}} class="text-accent font-semibold"{{end}}>{{.SignalW}}</span> <span class="text-sm text-muted tnum">{{.Device.RSSI}} dBm</span>{{end}}</dd></div>
     <div><dt class="lbl">Firmware</dt><dd>{{if .Device.FW}}{{.Device.FW}}{{else}}—{{end}}</dd></div>
     <div><dt class="lbl">Camera profile</dt><dd>{{if .Device.Profile}}{{.Device.Profile}}{{else}}older firmware{{end}}</dd></div>
     <div><dt class="lbl">Last rejected picture</dt><dd>{{if .Reject}}{{.Reject}}, {{.RejectAge}}{{else}}none{{end}}</dd></div>
