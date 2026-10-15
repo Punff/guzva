@@ -54,7 +54,7 @@ qa_hasf_file "the hl span carries the caption scale" "$HTML" 'text-[1.75rem] lea
 qa_hasf_file "tabular figures (a clock must not jitter)" "$HTML" 'font-bold tnum" id="hl"'
 qa_hasnt "no monospace (tabular figures do the aligning)" "$(cat "$HTML")" 'class="[^"]*font-mono'
 # The h1 is the SAME two steps — that equality is the round-6 ruling.
-qa_hasf_file "the h1 type scale" "$HTML" '<h1 class="text-[2rem] leading-[1.1] font-extrabold tracking-tight'
+qa_hasf_file "the h1 type scale" "$HTML" '<h1 class="text-[1.5rem] leading-tight font-extrabold tracking-tight'
 
 qa_case "the clock sits below the print, inside the figure, with the state"
 qa_true "figcaption contains #hl" bash -c \
