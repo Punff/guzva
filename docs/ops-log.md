@@ -1183,3 +1183,22 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
 - Overnight: 293 `poster@6` frames 19:41 → 08:09 UTC, board on boot 41
   throughout (no reboots since it left the laptop's flaky USB), rssi
   −75, 0 "ingest aborted" lines. visits_hourly: 128 views recorded.
+
+### Deploy — `v0.9.0` (2026-10-15 08:28 UTC)
+
+- Public page: live "N osoba gleda" from an X-Watching header on the still
+  poll (memory only, no DB); compact venue name, picture higher on phones.
+- Admin: delete venue (slug-confirmed; rows cascade, files removed via
+  hook — proven on the local rig), edit/move/delete device, per-venue
+  picture-style presets (D11, schema v11 `look_json`), masks retired,
+  legibility pass (sentence-case labels, ink primary buttons, compact
+  hours editor).
+- Owner: three numbers over complete days vs the week before, readable
+  day/hour charts, tips/percentages/minutes removed.
+- Backup first; `make check` OK; schema 10 → 11; live probes: still
+  answers `x-watching`, page has the plural strings + compact h1, admin
+  and owner logins 200; board posted C41-1201 at 08:30:03 → `poster@6`.
+- Board health note: boot 41 since 2026-10-14 ~19:30 (no reboots), but
+  post_fail 54 over that time — uploads mostly succeed on retry; the
+  WiFi link at the bench spot is still marginal (rssi −73…−75).
+- QA run_all before deploy: 78 + 23 + 68 live checks pass; CI green.
