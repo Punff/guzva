@@ -722,10 +722,11 @@ func TestOwnerDashSummaryFromCatalog(t *testing.T) {
 	if err := f.st.SetOwnerHash(ctx, jadro.ID, mustHash(t, "owner-sekret-1")); err != nil {
 		t.Fatal(err)
 	}
-	// A frame two minutes old → the fresh branch of the summary (venue.Classify
-	// turns Late at 3 min).
+	// A frame five minutes old → the late branch (venue.Classify turns Late
+	// at 3 min). The summary sentence only renders when the picture is not
+	// fresh — a fresh chip needs no sentence repeating it.
 	if _, err := f.st.InsertFrame(ctx, store.Frame{
-		VenueID: jadro.ID, CaptureID: "C1-1-aaaa", ReceivedAt: time.Now().Add(-2 * time.Minute),
+		VenueID: jadro.ID, CaptureID: "C1-1-aaaa", ReceivedAt: time.Now().Add(-5 * time.Minute),
 		Preset: "poster", PresetVer: 2, Width: 160, Height: 120, Status: "ok",
 	}); err != nil {
 		t.Fatal(err)
@@ -747,8 +748,8 @@ func TestOwnerDashSummaryFromCatalog(t *testing.T) {
 			t.Fatalf("dash renders raw i18n key %q: %s", key, body[:400])
 		}
 	}
-	if !strings.Contains(body, "Slika je svježa") {
-		t.Fatalf("dash missing the fresh summary sentence: %s", body[:400])
+	if !strings.Contains(body, "Slika kasni — zadnja je objavljena u") {
+		t.Fatalf("dash missing the late summary sentence: %s", body[:400])
 	}
 }
 

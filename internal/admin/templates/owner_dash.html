@@ -12,75 +12,74 @@
 
 <div id="flash">{{if .Saved}}<div class="card card--inset text-sm mb-5" role="status">{{.Cat.Get "owner.saved"}}</div>{{end}}</div>
 
-{{/* 1. Right now: the picture guests see, its state, who is watching. */}}
+{{/* Right now: the picture guests see, its state, who is watching. */}}
 <section class="card card--raised mb-6">
-  <div class="grid gap-4 sm:grid-cols-2 sm:items-center">
-    <a href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer" class="block border-2 border-ink bg-s3">
-      {{if .HasFrame}}<img src="/{{.Venue.Slug}}/latest.png" alt="" width="320" height="240" class="block w-full h-auto [image-rendering:pixelated]">
-      {{else}}<div class="tx-dither aspect-[4/3]" aria-hidden="true"></div>{{end}}
+  <div class="grid gap-4 sm:grid-cols-[minmax(0,320px)_1fr] sm:items-center">
+    <a href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer" class="block w-fit max-w-full border-2 border-ink bg-s3">
+      {{if .HasFrame}}<img src="/{{.Venue.Slug}}/latest.png" alt="" width="320" height="240" class="block w-[320px] max-w-full h-auto [image-rendering:pixelated]">
+      {{else}}<div class="tx-dither aspect-[4/3] w-[320px] max-w-full" aria-hidden="true"></div>{{end}}
     </a>
     <div class="grid gap-3 content-start">
       <div class="flex flex-wrap items-center gap-2">
         {{template "chip.html" .State}}
-        {{if .Stats.Live}}<span class="chip"><span class="inline-block w-2.5 h-2.5 bg-fresh" aria-hidden="true"></span>{{.Cat.F "owner.live" .Stats.Live}}</span>{{end}}
+        {{if .Stats.Live}}<span class="text-sm font-semibold text-fresh">{{.Cat.F "owner.live" .Stats.Live}}</span>{{end}}
       </div>
-      <p class="text-sm">{{.Summary}}</p>
-      <a class="btn self-start" href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">{{.Cat.Get "owner.public"}} ↗</a>
+      {{if ne .State.Cls "fresh"}}<p class="text-sm">{{.Summary}}</p>{{end}}
+      <a class="text-sm underline self-start" href="/{{.Venue.Slug}}/" target="_blank" rel="noreferrer">{{.Cat.Get "owner.public"}} ↗</a>
     </div>
   </div>
 </section>
 
-{{/* 2. What the page earned this week. */}}
+{{/* This week, against last week: two plain numbers each. */}}
 <section class="mb-6" aria-labelledby="kpi-h">
-  <h2 id="kpi-h" class="lbl mb-2">{{.Cat.Get "owner.kpi.window"}}</h2>
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+  <h2 id="kpi-h" class="text-lg font-bold mb-3">{{.Cat.Get "owner.kpi.window"}}</h2>
+  {{/* Phones: one row per number (label left, numbers right); wider
+       screens: three cards side by side. */}}
+  <div class="grid gap-2 sm:grid-cols-3 sm:gap-3">
     {{range .Stats.KPIs}}
-    <div class="card card--inset">
+    <div class="card card--inset flex items-center justify-between gap-3 sm:block">
       <div class="lbl">{{.Label}}</div>
-      <div class="text-3xl font-bold tnum mt-1">{{.Value}}</div>
-      {{if .Trend}}<div class="text-xs mt-1 {{if .Up}}text-fresh{{else if .Down}}text-accent{{else}}text-muted{{end}}">{{.Trend}}</div>{{end}}
+      <div class="text-right sm:text-left">
+        <div class="text-2xl font-bold tnum sm:text-3xl sm:mt-1">{{.Value}}</div>
+        <div class="text-xs tnum text-muted sm:mt-1">{{$.Cat.F "owner.kpi.prev" .Prev}}</div>
+      </div>
     </div>
     {{end}}
   </div>
 </section>
 
-{{/* 3. Trends. SVG with attribute geometry: the console CSP has no inline styles. */}}
+{{/* Charts: SVG with attribute geometry (the console CSP has no inline styles). */}}
 <div class="grid gap-6 md:grid-cols-2 mb-6">
   <section class="card">
     <h2 class="text-lg font-bold">{{.Cat.Get "owner.chart.days"}}</h2>
     <p class="text-xs text-muted mb-3">{{.Cat.Get "owner.chart.days.note"}}</p>
     <svg viewBox="0 0 280 100" class="w-full h-auto" role="img" aria-label="{{.Cat.Get "owner.chart.days"}}">
-      {{range .Stats.Days}}
-      <rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" class="{{if .Hi}}fill-accent{{else}}fill-s1{{end}}"><title>{{.Title}}</title></rect>
-      {{if .Label}}<text x="{{.X}}" dx="8" y="98" text-anchor="middle" font-size="8" class="fill-muted">{{.Label}}</text>{{end}}
+      {{range .Stats.Week}}
+      {{if .HasPrev}}<rect x="{{.Prev.X}}" y="{{.Prev.Y}}" width="{{.Prev.W}}" height="{{.Prev.H}}" class="fill-s2"><title>{{.Prev.Title}}</title></rect>{{end}}
+      <rect x="{{.Cur.X}}" y="{{.Cur.Y}}" width="{{.Cur.W}}" height="{{.Cur.H}}" class="{{if .Today}}fill-ink{{else}}fill-s1{{end}}"><title>{{.Cur.Title}}</title></rect>
+      <text x="{{.ValueX}}" y="{{.ValueY}}" text-anchor="middle" font-size="8" font-weight="600" class="fill-ink">{{.Value}}</text>
+      <text x="{{.LabelX}}" y="96" text-anchor="middle" font-size="8"{{if .Today}} font-weight="700"{{end}} class="{{if .Today}}fill-ink{{else}}fill-muted{{end}}">{{.Label}}</text>
       {{end}}
-      <line x1="0" x2="280" y1="88.5" y2="88.5" stroke-width="1" class="stroke-ink"/>
+      <line x1="0" x2="280" y1="84.5" y2="84.5" stroke-width="1" class="stroke-ink"/>
     </svg>
   </section>
   <section class="card">
     <h2 class="text-lg font-bold">{{.Cat.Get "owner.chart.hours"}}</h2>
     <p class="text-xs text-muted mb-3">{{.Cat.Get "owner.chart.hours.note"}}</p>
-    <svg viewBox="0 0 240 70" class="w-full h-auto" role="img" aria-label="{{.Cat.Get "owner.chart.hours"}}">
+    <svg viewBox="0 0 240 72" class="w-full h-auto" role="img" aria-label="{{.Cat.Get "owner.chart.hours"}}">
       {{range .Stats.Hours}}
-      <rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" class="{{if .Hi}}fill-accent{{else}}fill-s1{{end}}"><title>{{.Title}}</title></rect>
-      {{if .Label}}<text x="{{.X}}" dx="4" y="68" text-anchor="middle" font-size="7" class="fill-muted">{{.Label}}</text>{{end}}
+      <rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" class="{{if .Peak}}fill-ink{{else}}fill-s1{{end}}"><title>{{.Title}}</title></rect>
+      {{if .Value}}<text x="{{.CX}}" y="{{.ValueY}}" text-anchor="middle" font-size="8" font-weight="600" class="fill-ink">{{.Value}}</text>{{end}}
+      {{if .Label}}<text x="{{.X}}" y="70" font-size="7" class="fill-muted">{{.Label}}</text>{{end}}
       {{end}}
-      <line x1="0" x2="240" y1="58.5" y2="58.5" stroke-width="1" class="stroke-ink"/>
+      <text x="240" y="70" text-anchor="end" font-size="7" class="fill-muted">24</text>
+      <line x1="0" x2="240" y1="60.5" y2="60.5" stroke-width="1" class="stroke-ink"/>
     </svg>
     {{if .Stats.Peak}}<p class="text-sm mt-2">{{.Stats.Peak}}</p>{{end}}
   </section>
 </div>
 
-{{/* 4. What to do next. */}}
-<section class="card card--inset mb-6">
-  <h2 class="text-lg font-bold mb-2">{{.Cat.Get "owner.insights"}}</h2>
-  <ul class="grid gap-2 text-sm">
-    {{range .Stats.Insights}}<li class="flex gap-2"><span aria-hidden="true" class="text-accent font-bold">→</span><span>{{.}}</span></li>{{end}}
-  </ul>
-  <p class="text-xs text-muted mt-3">{{.Cat.Get "owner.privacy"}}</p>
-</section>
-
-{{/* 5. Share: the link and the QR that brings guests in. */}}
+{{/* Share: the link and the QR that brings guests in. */}}
 <section class="card mb-6" id="share">
   <h2 class="text-lg font-bold">{{.Cat.Get "owner.share"}}</h2>
   <p class="text-sm text-muted mb-4">{{.Cat.Get "owner.share.note"}}</p>
@@ -96,7 +95,7 @@
   </div>
 </section>
 
-{{/* 6. Camera health, in plain words. */}}
+{{/* Camera health, in plain words. */}}
 <section class="card mb-6">
   <h2 class="text-lg font-bold mb-2">{{.Cat.Get "owner.camera"}}</h2>
   {{if .Devices}}
@@ -104,7 +103,7 @@
   <ul class="grid gap-1 text-sm">
     {{range .Devices}}
     <li class="flex flex-wrap gap-x-3 gap-y-1">
-      <span class="font-mono">{{.Serial}}</span>
+      <span class="font-semibold">{{.Serial}}</span>
       {{if .Off}}<span class="text-muted">{{$.Cat.Get "owner.device.off"}}</span>{{else}}<span>{{.Last}}</span>{{end}}
       {{if .Signal}}<span class="{{if .Weak}}text-accent{{else}}text-muted{{end}}">{{.Signal}}</span>{{end}}
     </li>
@@ -125,7 +124,7 @@
   {{end}}
 </section>
 
-{{/* 7. Settings: occasional, so folded. Opens after a save. */}}
+{{/* Settings: occasional, so folded. Opens after a save. */}}
 <details class="card"{{if .Saved}} open{{end}}>
   <summary class="cursor-pointer">
     <span class="text-lg font-bold">{{.Cat.Get "owner.settings"}}</span>

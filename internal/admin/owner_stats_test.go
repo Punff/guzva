@@ -33,32 +33,32 @@ func TestBuildOwnerStats(t *testing.T) {
 	cat := i18n.For(i18n.HR)
 	st := buildOwnerStats(now.UTC(), loc, hours, days, frames, now.Add(-48*time.Hour), 2, cat)
 
-	views := st.KPIs[0]
-	if views.Value != 15 || !views.Up || views.Trend != "+275 % od prošlog tjedna" {
-		t.Errorf("views kpi = %+v", views)
+	want := []kpi{
+		// Complete days only: today's 5 views / 3 visitors / 2 scans are
+		// excluded; the 7 days before hold the 8-days-ago numbers.
+		{Label: "Ljudi", Value: 0, Prev: 2, Down: true},
+		{Label: "Pregledi", Value: 10, Prev: 4, Up: true},
+		{Label: "QR skeniranja", Value: 0, Prev: 0},
 	}
-	if v := st.KPIs[1]; v.Value != 3 || v.Trend != "+50 % od prošlog tjedna" {
-		t.Errorf("visitors kpi = %+v", v)
+	for i, w := range want {
+		if st.KPIs[i] != w {
+			t.Errorf("kpi %d = %+v, want %+v", i, st.KPIs[i], w)
+		}
 	}
-	if m := st.KPIs[2]; m.Value != 2 || m.Trend != "Novo ovaj tjedan" {
-		t.Errorf("minutes kpi = %+v (4 polls × 30 s)", m)
+	if len(st.Week) != 7 || !st.Week[6].Today || st.Week[6].Value != "5" || st.Week[6].Label != "Sr" {
+		t.Errorf("today group = %+v", st.Week[6])
 	}
-	if q := st.KPIs[3]; q.Value != 2 {
-		t.Errorf("qr kpi = %+v", q)
+	if g := st.Week[3]; g.Value != "10" || g.Label != "Ne" || g.Today {
+		t.Errorf("3 days ago group = %+v", g)
 	}
-	if len(st.Days) != 14 || !st.Days[13].Hi || st.Days[13].H == 0 || st.Days[0].Hi {
-		t.Errorf("day bars: n=%d last=%+v", len(st.Days), st.Days[13])
+	if g := st.Week[5]; !g.HasPrev || g.Prev.H == 0 {
+		t.Errorf("8 days ago (yesterday's group, last week) missing: %+v", g)
 	}
-	if !st.Hours[17].Hi || st.Peak != "Najviše gledaju između 17 i 18 h." {
+	if !st.Hours[17].Peak || st.Hours[17].Value != "15" || st.Peak != "Najviše gledaju između 17 i 18 h." {
 		t.Errorf("peak = %q, hour17 = %+v", st.Peak, st.Hours[17])
 	}
 	if st.Uptime != 50 {
 		t.Errorf("uptime = %d, want 50 (12 h of 24)", st.Uptime)
-	}
-	joined := strings.Join(st.Insights, "|")
-	if !strings.Contains(joined, "2 gostiju je ovaj tjedan skeniralo QR kod.") ||
-		!strings.Contains(joined, "Najviše pregleda ovaj tjedan: Nedjelja (10).") {
-		t.Errorf("insights = %q", joined)
 	}
 	if st.Live != 2 || !st.HasData {
 		t.Errorf("live/hasData = %d/%v", st.Live, st.HasData)
@@ -78,7 +78,7 @@ func TestBuildOwnerStats(t *testing.T) {
 	}
 
 	empty := buildOwnerStats(now.UTC(), loc, nil, nil, nil, now.Add(-48*time.Hour), 0, cat)
-	if empty.HasData || empty.KPIs[0].Trend != "" || !strings.Contains(empty.Insights[0], "Još nema posjeta") {
+	if empty.HasData || empty.KPIs[0].Up || empty.KPIs[0].Down || empty.Peak != "" {
 		t.Errorf("empty = %+v", empty)
 	}
 }
@@ -117,12 +117,12 @@ func TestOwnerDashShareAndPoster(t *testing.T) {
 		return rec
 	}
 	dash := req("/owner/").Body.String()
-	for _, want := range []string{"Pregledi", ">7<", "http://guzva.example/jadro/", "<svg", "Ispiši plakat", "Odjava"} {
+	for _, want := range []string{"Pregledi", ">7<", "Tjedan prije: 0", "http://guzva.example/jadro/", "<svg", "Ispiši plakat", "Odjava"} {
 		if !strings.Contains(dash, want) {
 			t.Errorf("dash lacks %q", want)
 		}
 	}
-	for _, bad := range []string{"Sign out", "PLAN D1"} {
+	for _, bad := range []string{"Sign out", "PLAN D1", "Savjeti", "Minute gledanja", "od prošlog tjedna"} {
 		if strings.Contains(dash, bad) {
 			t.Errorf("dash contains %q", bad)
 		}
