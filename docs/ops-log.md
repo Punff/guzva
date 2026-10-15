@@ -1175,3 +1175,11 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
 - Lesson recorded: the bench link problem is physical (supply/cable/
   placement); diagnose with LAN ping + server journal + kernel USB log,
   never serial.
+
+### Deploy — `v0.8.2` (2026-10-14 19:40 UTC) + overnight check (2026-10-15 08:10 UTC)
+
+- `v0.8.2`: render v6 (σp 1.75, user decision), public page "four inks"
+  redesign, aborted-upload classification. Backup first; `make check` OK.
+- Overnight: 293 `poster@6` frames 19:41 → 08:09 UTC, board on boot 41
+  throughout (no reboots since it left the laptop's flaky USB), rssi
+  −75, 0 "ingest aborted" lines. visits_hourly: 128 views recorded.
