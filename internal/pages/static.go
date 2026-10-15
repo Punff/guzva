@@ -97,9 +97,9 @@ func Static(dir string, rec *stats.Recorder) http.Handler {
 		// ⚑7: a venue's interior should not surface in a search index.
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 
+		slug, _, _ := strings.Cut(strings.TrimPrefix(clean, "/"), "/")
 		if rec != nil && r.Method == http.MethodGet {
 			if k, ok := classify(r, filepath.Base(full)); ok {
-				slug, _, _ := strings.Cut(strings.TrimPrefix(clean, "/"), "/")
 				rec.Record(slug, k, auth.ClientIP(r), r.UserAgent(), r.URL.Query().Get("src") == "qr")
 			}
 		}
@@ -126,6 +126,13 @@ func Static(dir string, rec *stats.Recorder) http.Handler {
 		default:
 			http.NotFound(w, r)
 			return
+		}
+		// How many people have this page open right now, for the page's
+		// "N watching" line. It rides the still poll the open tab already
+		// makes every 30 s (also on a 304), so it costs no extra request and
+		// comes from memory only (D5). A count, never who.
+		if rec != nil {
+			w.Header().Set("X-Watching", strconv.Itoa(rec.Live(slug)))
 		}
 		http.ServeContent(w, r, filepath.Base(full), fi.ModTime(), f)
 	})

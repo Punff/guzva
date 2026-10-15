@@ -97,6 +97,9 @@ var hr = &Catalog{
 
 		"venue.about": "O salonu",
 		"venue.call":  "Nazovi",
+		"watch.one":   "{n} osoba upravo gleda",
+		"watch.few":   "{n} osobe upravo gledaju",
+		"watch.many":  "{n} osoba upravo gleda",
 
 		"owner.about": "Opis (javno)",
 		"owner.phone": "Telefon (javno)",
@@ -249,6 +252,9 @@ var en = &Catalog{
 
 		"venue.about": "About",
 		"venue.call":  "Call",
+		"watch.one":   "{n} person watching now",
+		"watch.few":   "{n} people watching now",
+		"watch.many":  "{n} people watching now",
 
 		"owner.about": "Description (public)",
 		"owner.phone": "Phone (public)",

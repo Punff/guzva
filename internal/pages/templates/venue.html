@@ -37,6 +37,7 @@
       data-tz="{{.TZName}}" data-still="{{.StillFile}}" data-lang="{{.Lang}}" data-poll="30"
       data-offline="{{.StrOffline}}" data-idle="{{.StrIdle}}" data-resume="{{.StrResume}}"
       data-newpic="{{.StrNewPic}}"
+      data-watch-one="{{.StrWatchOne}}" data-watch-few="{{.StrWatchFew}}" data-watch-many="{{.StrWatchMany}}"
       data-altprefix="{{.AltPrefix}}">
 <div class="mx-auto w-full max-w-[45rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
 
@@ -62,7 +63,7 @@
     <span class="ml-auto text-sm text-muted">{{.Tagline}}</span>
   </header>
 
-  <h1 class="text-[2rem] leading-[1.1] font-extrabold tracking-tight break-words sm:text-[2.5rem]">{{.Name}}</h1>
+  <h1 class="text-[1.5rem] leading-tight font-extrabold tracking-tight break-words sm:text-[1.75rem]">{{.Name}}</h1>
   {{if .OpenText}}<p class="-mt-2 text-base">{{.OpenText}}</p>{{end}}
 
   {{/* THE WINDOW (four-inks pass, 14 Oct 2026): the picture sits in a band
@@ -104,6 +105,10 @@
         <span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}
       </span>
     </figcaption>
+    {{/* Filled by the poller from the still's X-Watching header; shown only
+         when someone besides the guest is looking. Outside the live region
+         on purpose: a count changing every 30 s must not be announced. */}}
+    <p id="watch" class="hidden mx-auto max-w-full w-[320px] md:w-[640px] mt-2 text-sm"></p>
   </figure>
 
   <p id="banner" class="hidden text-sm border-2 border-ink bg-paper-2 px-3 py-2" role="alert"></p>
@@ -206,6 +211,22 @@
     offline: d.offline, idle: d.idle, resume: d.resume,
     newpic: d.newpic
   };
+  var watchEl = $('watch');
+
+  // "N people watching" with Croatian plural forms (1 osoba gleda,
+  // 2–4 osobe gledaju, 5+ osoba gleda; English uses one/other). Hidden
+  // below 2: one watcher is the guest themself.
+  function showWatching(n) {
+    if (!watchEl) return;
+    if (!(n >= 2)) { watchEl.classList.add('hidden'); return; }
+    var m10 = n % 10, m100 = n % 100, t;
+    if (lang === 'en-GB') t = d.watchMany;
+    else if (m10 === 1 && m100 !== 11) t = d.watchOne;
+    else if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) t = d.watchFew;
+    else t = d.watchMany;
+    watchEl.textContent = (t || '').replace('{n}', n);
+    watchEl.classList.remove('hidden');
+  }
   var ALT_PREFIX = d.altprefix || '';
   $('idletext').textContent = STR.idle;
   resume.textContent = STR.resume;
@@ -243,6 +264,7 @@
     fetch(stillURL, { cache: 'no-cache', credentials: 'omit' })
       .then(function (r) {
         if (!r.ok) throw new Error('still ' + r.status);
+        showWatching(parseInt(r.headers.get('x-watching') || '0', 10));
         var lm = r.headers.get('last-modified') || '';
         showBanner(false);
         backoff = poll;

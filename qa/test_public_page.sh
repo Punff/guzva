@@ -197,7 +197,7 @@ qa_has "back to 'Svježa slika'" "$(cat "$HTML")" 'Svježa slika'
 qa_case "semantic landmarks"
 qa_has "<header>" "$(cat "$HTML")" '<header'
 qa_has "<footer>" "$(cat "$HTML")" '<footer'
-qa_hasf_file "<h1> is the venue name, display-scale" "$HTML" '<h1 class="text-[2rem]'
+qa_hasf_file "<h1> is the venue name, kept compact so the picture is in the first screen" "$HTML" '<h1 class="text-[1.5rem]'
 qa_has "hours are a native disclosure (works without JS)" "$(cat "$HTML")" '<details'
 qa_has "the disclosure carries a visible label" "$(cat "$HTML")" '<summary'
 qa_has "<figure>/<figcaption> for the print" "$(cat "$HTML")" '<figcaption'

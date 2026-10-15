@@ -61,3 +61,35 @@ func TestVisitClassification(t *testing.T) {
 		t.Errorf("days = %+v, want 3 visitors", days)
 	}
 }
+
+// The still answers carry X-Watching: the distinct visitors with the page
+// open right now (including the asker), 304s included.
+func TestStillCarriesWatchingCount(t *testing.T) {
+	f := newFixture(t)
+	if err := f.w.OnFrame(t.Context(), f.vid); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.w.Root(), "jadro", "latest.png"), []byte("png"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec := stats.New(nil)
+	h := Static(f.w.Root(), rec)
+	get := func(ua string, hdr map[string]string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "/jadro/latest.png", nil)
+		r.Header.Set("User-Agent", ua)
+		r.Header.Set("Sec-Fetch-Dest", "empty")
+		for k, v := range hdr {
+			r.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if got := get("Mozilla/5.0 phone-a", nil).Header().Get("X-Watching"); got != "1" {
+		t.Errorf("first watcher sees %q, want 1", got)
+	}
+	w := get("Mozilla/5.0 phone-b", map[string]string{"If-Modified-Since": "Mon, 01 Jan 2099 00:00:00 GMT"})
+	if w.Code != http.StatusNotModified || w.Header().Get("X-Watching") != "2" {
+		t.Errorf("304 for a second watcher: code %d, X-Watching %q, want 304 / 2", w.Code, w.Header().Get("X-Watching"))
+	}
+}

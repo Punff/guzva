@@ -146,6 +146,8 @@ type view struct {
 	StrOffline, StrIdle, StrResume    string
 	StrNewPic, StrToday, StrYesterday string
 	StrCall                           string // "Nazovi" — the phone button's verb
+	// "N watching" plural forms, picked client-side (hr one/few/many).
+	StrWatchOne, StrWatchFew, StrWatchMany string
 
 	// DESIGN.md §3.2: a state is a SHAPE, a COLOUR and a SENTENCE. Colour is
 	// never the only signal, so all three travel together.
@@ -288,6 +290,9 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		StrNewPic:    cat.Get("live.newpic"),
 		StrToday:     cat.Get("when.today"),
 		StrCall:      cat.Get("venue.call"),
+		StrWatchOne:  cat.Get("watch.one"),
+		StrWatchFew:  cat.Get("watch.few"),
+		StrWatchMany: cat.Get("watch.many"),
 		StrYesterday: cat.Get("when.yesterday"),
 	}
 	if vw.HasFrame {
