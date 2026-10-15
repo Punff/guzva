@@ -1202,3 +1202,17 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   post_fail 54 over that time — uploads mostly succeed on retry; the
   WiFi link at the bench spot is still marginal (rssi −73…−75).
 - QA run_all before deploy: 78 + 23 + 68 live checks pass; CI green.
+
+### Deploy — `v0.9.1` (2026-10-15 11:09 UTC)
+
+- Watcher badge (others = X-Watching − 1, beside the clock), one camera per
+  venue (console rule), signal bars on every camera view, more detailed
+  owner charts (gridlines, dates, opening-hours band, 4-week trend, 24 h
+  uptime strip). No schema change.
+- `make check` OK; live: page carries the badge + n − 1 logic; board
+  posted C41-1329 at 11:09:28 through v0.9.1. QA run_all 169/169, CI green.
+- Requested cleanup NOT done: deleting the stale cameras `bd2a58` (id 1,
+  revoked, last seen 2026-10-12) and `guzvaCam_jadro` (id 2, revoked,
+  never seen) by SQL over ssh was blocked by the session's permission
+  guard (raw prod DB writes). Backup `guzva-20261015-1056` was taken for
+  it. Left for the user via the console's "Delete camera" button.
