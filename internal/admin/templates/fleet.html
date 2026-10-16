@@ -111,6 +111,15 @@
   </div>
 </details>
 
+<details class="mt-4">
+  <summary class="text-lg font-bold mb-3 cursor-pointer">Recent activity</summary>
+  {{if .Audit}}
+  <table class="card card--inset w-full max-w-2xl text-sm">
+    {{range .Audit}}<tr><td class="py-1 pr-3 tnum text-muted whitespace-nowrap">{{.At.Format "02.01. 15:04"}}</td><td class="py-1 pr-3">{{.Actor}}</td><td class="py-1 pr-3">{{.Action}}</td><td class="py-1 pr-3">{{.Venue}}</td><td class="py-1 text-muted">{{.Detail}}</td></tr>{{end}}
+  </table>
+  {{else}}<p class="text-sm text-muted">Nothing recorded yet.</p>{{end}}
+</details>
+
 <details class="mt-4"{{if and .Venues (not .Devices)}} open{{end}}>
   <summary class="text-lg font-bold mb-3 cursor-pointer">New device</summary>
   {{if .DeviceOpts}}

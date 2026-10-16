@@ -278,6 +278,20 @@ CREATE TABLE outbox (
 CREATE INDEX outbox_due ON outbox (status, next_at);
 `
 
+// schemaV16 adds the audit log (PLAN §11, business plan P1): who changed
+// what, when. Field names only — never values of secrets.
+const schemaV16 = `
+CREATE TABLE audit_log (
+  id       INTEGER PRIMARY KEY,
+  at       INTEGER NOT NULL,
+  actor    TEXT NOT NULL,
+  action   TEXT NOT NULL,
+  venue_id INTEGER NOT NULL DEFAULT 0,
+  detail   TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX audit_venue ON audit_log (venue_id, at);
+`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []struct {
 	sql  string
@@ -293,6 +307,7 @@ var migrations = []struct {
 	{sql: schemaV13},
 	{sql: schemaV14},
 	{sql: schemaV15},
+	{sql: schemaV16},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -1256,5 +1271,60 @@ func (s *Store) RecentMail(ctx context.Context, limit int) ([]OutMail, error) {
 // PruneOutbox drops send-log rows older than cutoff (90 days in the plan).
 func (s *Store) PruneOutbox(ctx context.Context, cutoff time.Time) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM outbox WHERE created_at < ? AND status != 'queued'`, ts(cutoff))
+	return err
+}
+
+// --- audit log (PLAN §11) -------------------------------------------------------
+
+// AuditEntry is one recorded change.
+type AuditEntry struct {
+	At      time.Time
+	Actor   string // "admin" | "owner"
+	Action  string // "venue.update", "device.revoke", …
+	VenueID int64  // 0 = not venue-scoped
+	Detail  string // changed field names, ids — never secret values
+}
+
+// AddAudit records one change.
+func (s *Store) AddAudit(ctx context.Context, e AuditEntry) error {
+	if len(e.Detail) > 500 {
+		e.Detail = e.Detail[:500]
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO audit_log (at, actor, action, venue_id, detail) VALUES (?, ?, ?, ?, ?)`,
+		ts(e.At), e.Actor, e.Action, e.VenueID, e.Detail)
+	return err
+}
+
+// RecentAudit lists the newest entries; venueID > 0 limits to one venue.
+func (s *Store) RecentAudit(ctx context.Context, venueID int64, limit int) ([]AuditEntry, error) {
+	q := `SELECT at, actor, action, venue_id, detail FROM audit_log`
+	args := []any{}
+	if venueID > 0 {
+		q += ` WHERE venue_id = ?`
+		args = append(args, venueID)
+	}
+	q += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AuditEntry
+	for rows.Next() {
+		var e AuditEntry
+		var at int64
+		if err := rows.Scan(&at, &e.Actor, &e.Action, &e.VenueID, &e.Detail); err != nil {
+			return nil, err
+		}
+		e.At = time.Unix(at, 0).UTC()
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// PruneAudit drops entries older than cutoff (two years in the plan).
+func (s *Store) PruneAudit(ctx context.Context, cutoff time.Time) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM audit_log WHERE at < ?`, ts(cutoff))
 	return err
 }

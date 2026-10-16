@@ -251,6 +251,7 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	s.sess.Issue(w, auth.SessionTTL, s.secure)
 	s.log.Info("admin: login", "ip", ip)
+	s.audit(r, "admin", "admin.login", 0, "")
 	redirect(w, r, "/admin/")
 }
 
@@ -265,6 +266,7 @@ func (s *Server) renderLogin(w http.ResponseWriter, status int, errMsg string) {
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	s.sess.Clear(w, s.secure)
 	s.log.Info("admin: logout", "ip", auth.ClientIP(r))
+	s.audit(r, "admin", "admin.logout", 0, "")
 	redirect(w, r, "/admin/login")
 }
 
@@ -368,6 +370,7 @@ type fleetModel struct {
 	Days        [7]venue.DayForm // create-form hours, Mo-Fr 09-17 prefilled
 	Alerts      []store.Alert    // open operator alerts (alert package ledger)
 	Mail        []store.OutMail  // latest outbox rows, no bodies
+	Audit       []auditView      // latest audit-log entries
 	MailOn      bool
 }
 
@@ -409,6 +412,15 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 	}
 	if mail, err := s.st.RecentMail(r.Context(), 8); err == nil {
 		model.Mail = mail
+	}
+	if entries, err := s.st.RecentAudit(r.Context(), 0, 20); err == nil {
+		names := map[int64]string{}
+		for _, v := range venues {
+			names[v.ID] = v.Name
+		}
+		for _, e := range entries {
+			model.Audit = append(model.Audit, auditView{e, names[e.VenueID]})
+		}
 	}
 	// Needs attention first (design-pass2 §6): the board is the "is
 	// everything OK" screen, so it must read top-down — no signal beats
@@ -643,6 +655,7 @@ func (s *Server) createVenue(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("admin: venue created", "slug", slug,
 		"name", strings.TrimSpace(r.FormValue("name")),
 		"tz", tz, "style", r.FormValue("style"), "actor", "admin")
+	s.audit(r, "admin", "venue.create", id, "slug "+slug)
 	redirect(w, r, "/admin/?created=1")
 }
 
@@ -684,6 +697,7 @@ func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("admin: device created", "venue_id", venueID, "serial", serial, "actor", "admin")
+	s.audit(r, "admin", "device.create", venueID, "serial "+serial)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.tmpl.ExecuteTemplate(w, "token.html", map[string]string{
 		"Serial": serial, "Token": token,
@@ -703,6 +717,7 @@ func (s *Server) revokeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("admin: device revoked", "device_id", id, "actor", "admin")
+	s.audit(r, "admin", "device.revoke", 0, fmt.Sprintf("device %d", id))
 	redirect(w, r, "/admin/")
 }
 
@@ -803,6 +818,9 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
+	oldHours, _ := s.st.Hours(r.Context(), v.ID)
+	listed := r.FormValue("listed") == "1"
+	changes := venueChanges(v, oldHours, name, style, tz, desc, phone, loc, maps, &listed, h)
 	if err := s.st.UpdateVenue(r.Context(), v.ID, name, style, tz, desc, phone, loc); err != nil {
 		s.internal(w, "update venue", err)
 		return
@@ -811,7 +829,7 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, "set maps url", err)
 		return
 	}
-	if err := s.st.SetListed(r.Context(), v.ID, r.FormValue("listed") == "1"); err != nil {
+	if err := s.st.SetListed(r.Context(), v.ID, listed); err != nil {
 		s.internal(w, "set listed", err)
 		return
 	}
@@ -821,6 +839,7 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("admin: venue updated", "venue_id", v.ID, "slug", v.Slug,
 		"name", name, "tz", tz, "style", style, "actor", "admin")
+	s.audit(r, "admin", "venue.update", v.ID, changes)
 	redirect(w, r, fmt.Sprintf("/admin/venues/%d?saved=1", v.ID))
 }
 
@@ -852,6 +871,7 @@ func (s *Server) setOwnerPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	// The password itself is never logged and never rendered back (§1).
 	s.log.Info("admin: owner password set", "venue_id", v.ID, "slug", v.Slug, "actor", "admin")
+	s.audit(r, "admin", "venue.owner_password", v.ID, "password set (value not recorded)")
 	redirect(w, r, fmt.Sprintf("/admin/venues/%d?owner=1", v.ID))
 }
 
@@ -1000,6 +1020,7 @@ func (s *Server) setStyle(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("admin: style set", "venue_id", v.ID, "style", style, "outline", look.Outline,
 		"blur", look.Blur, "contrast", look.Contrast, "actor", "admin")
+	s.audit(r, "admin", "venue.style", v.ID, "picture style changed")
 	redirect(w, r, fmt.Sprintf("/admin/venues/%d?style=1", v.ID))
 }
 
@@ -1027,6 +1048,7 @@ func (s *Server) deleteVenue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.log.Info("admin: venue deleted", "venue_id", v.ID, "slug", v.Slug, "actor", "admin")
+	s.audit(r, "admin", "venue.delete", v.ID, "slug "+v.Slug)
 	redirect(w, r, "/admin/?deleted="+v.Slug)
 }
 
@@ -1098,6 +1120,7 @@ func (s *Server) updateDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("admin: device updated", "device_id", d.ID, "serial", serial, "venue_id", venueID, "actor", "admin")
+	s.audit(r, "admin", "device.update", venueID, fmt.Sprintf("device %d serial %s", d.ID, serial))
 	redirect(w, r, fmt.Sprintf("/admin/devices/%d?saved=1", d.ID))
 }
 
@@ -1113,6 +1136,7 @@ func (s *Server) deleteDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("admin: device deleted", "device_id", d.ID, "serial", d.Serial, "actor", "admin")
+	s.audit(r, "admin", "device.delete", d.VenueID, fmt.Sprintf("device %d serial %s", d.ID, d.Serial))
 	redirect(w, r, fmt.Sprintf("/admin/venues/%d?devdeleted=1", d.VenueID))
 }
 
@@ -1133,9 +1157,51 @@ func (s *Server) mailTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("admin: test mail queued", "actor", "admin")
+	s.audit(r, "admin", "mail.test", 0, "")
 	if !s.MailOn {
 		s.flash(w, "Queued — but SMTP is not configured, so it waits until GUZVA_SMTP_HOST and GUZVA_MAIL_FROM are set.")
 		return
 	}
 	s.flash(w, "Queued. It is sent within 30 seconds; reload to see its status.")
+}
+
+// audit records a mutation in the audit log (PLAN §11). It never fails the
+// request: a lost audit row is logged loudly, the change itself stands.
+func (s *Server) audit(r *http.Request, actor, action string, venueID int64, detail string) {
+	if err := s.st.AddAudit(r.Context(), store.AuditEntry{At: s.now(), Actor: actor, Action: action,
+		VenueID: venueID, Detail: detail}); err != nil {
+		s.log.Error("audit: write failed", "action", action, "err", err.Error())
+	}
+}
+
+// venueChanges names the fields an edit form changed (names, not values).
+func venueChanges(old *store.Venue, oldHours venue.Hours, name, style, tz, desc, phone, loc, maps string, listed *bool, h venue.Hours) string {
+	var c []string
+	add := func(f string, changed bool) {
+		if changed {
+			c = append(c, f)
+		}
+	}
+	add("name", old.Name != name)
+	add("style", old.Style != style)
+	add("tz", old.TZ != tz)
+	add("description", old.Description != desc)
+	add("phone", old.Phone != phone)
+	add("address", old.Location != loc)
+	add("maps", old.MapsURL != maps)
+	if listed != nil {
+		add("listed", old.Listed != *listed)
+	}
+	add("hours", oldHours.Spec() != h.Spec())
+	if len(c) == 0 {
+		return "no changes"
+	}
+	return "changed: " + strings.Join(c, ", ")
+}
+
+// auditView is one audit row with its venue's name for display ("" when the
+// entry is not venue-scoped or the venue was deleted).
+type auditView struct {
+	store.AuditEntry
+	Venue string
 }

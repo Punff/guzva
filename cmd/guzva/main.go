@@ -282,6 +282,9 @@ func serveMain(args []string) int {
 				if _, err := ing.Prune(ctx); err != nil {
 					return err
 				}
+				if err := st.PruneAudit(ctx, time.Now().Add(-730*24*time.Hour)); err != nil {
+					return err
+				}
 				if err := st.PruneOutbox(ctx, time.Now().Add(-90*24*time.Hour)); err != nil {
 					return err
 				}

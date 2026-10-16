@@ -115,12 +115,14 @@ func (s *Server) ownerLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	s.ownerSess.IssueOwner(w, v.ID, auth.SessionTTL, s.secure)
 	s.log.Info("owner: login", "venue_id", v.ID, "slug", v.Slug, "ip", ip)
+	s.audit(r, "owner", "owner.login", v.ID, "")
 	redirect(w, r, "/owner/")
 }
 
 func (s *Server) ownerLogout(w http.ResponseWriter, r *http.Request, v *store.Venue) {
 	s.ownerSess.ClearOwner(w, s.secure)
 	s.log.Info("owner: logout", "venue_id", v.ID, "slug", v.Slug, "ip", auth.ClientIP(r))
+	s.audit(r, "owner", "owner.logout", v.ID, "")
 	redirect(w, r, "/owner/login")
 }
 
@@ -241,6 +243,8 @@ func (s *Server) ownerUpdateVenue(w http.ResponseWriter, r *http.Request, v *sto
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
+	oldHours, _ := s.st.Hours(r.Context(), v.ID)
+	changes := venueChanges(v, oldHours, name, r.FormValue("style"), tz, desc, phone, loc, maps, nil, h)
 	if err := s.st.UpdateVenue(r.Context(), v.ID, name, r.FormValue("style"), tz, desc, phone, loc); err != nil {
 		s.internal(w, "owner update venue", err)
 		return
@@ -255,6 +259,7 @@ func (s *Server) ownerUpdateVenue(w http.ResponseWriter, r *http.Request, v *sto
 	}
 	s.log.Info("owner: venue updated", "venue_id", v.ID, "slug", v.Slug,
 		"name", name, "tz", tz, "style", r.FormValue("style"), "actor", "owner")
+	s.audit(r, "owner", "venue.update", v.ID, changes)
 	redirect(w, r, "/owner/?saved=1")
 }
 
