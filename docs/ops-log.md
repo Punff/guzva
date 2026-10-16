@@ -1428,3 +1428,19 @@ still not in the journal.
   window closed" body; `/api/status` 200 throughout. Prod journal: 14 × 201
   from boot 47 in the next 20 min. Q-10 closed in docs/qa-findings.md. The
   privacy policy's "sent only to the server" now holds on the bench board.
+
+### Deploy — `v0.11.0` (2026-10-16 ~18:10 UTC) — admin redesign + business plan P2
+
+- Admin console redesign (side rail, Overview / Venues / Leads / Cameras /
+  Alerts & email / Activity); client intake (/prijava/ form, personal
+  invite links, Leads inbox, create-venue-from-lead); venue lifecycle
+  (onboarding / active / paused / offboarded); owner invite + reset links;
+  legal pack (camera notice, draft odluka + terms). Schema 16 → 18
+  (leads, lead_invites; venues.status/owner_email, owner_tokens).
+- Backup first: `guzva-20261016-1807.db.gz`. `make check` OK, healthz
+  `v0.11.0`. Live probe from the laptop: /prijava/ 200, /admin/login 200,
+  / 200.
+- Links handed out (invites, owner links) are built from the request host
+  until `GUZVA_PUBLIC_URL` is set — set it to https://guzva.ba when the
+  domain lands. Owner emails queue until SMTP is configured; the admin
+  sees every link once on screen meanwhile.
