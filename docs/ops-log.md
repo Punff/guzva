@@ -1387,3 +1387,13 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
 - P1 now waits only on configuration, not code: Telegram token/chat
   (works today), SMTP + sender (needs the domain for SPF/DKIM), and the
   domain + autocert itself (Q-08). Live probe owed (permission guard).
+
+### Telegram alerts switched on (2026-10-16 ~17:20 UTC)
+
+- Bot @GuzvaAdminBot; operator chat id found via getUpdates after the user
+  messaged the bot; test message delivered. `GUZVA_TELEGRAM_TOKEN` and
+  `GUZVA_TELEGRAM_CHAT` added to /etc/guzva/guzva.env (backup of the file
+  taken first, mode 600), service restarted: active, v0.10.1, no
+  "not configured" / send-failure lines → startup message sent.
+- The token was shared in the agent chat; rotate with BotFather /revoke if
+  that is ever a concern (then update the env file). Not stored in the repo.
