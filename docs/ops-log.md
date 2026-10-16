@@ -1460,3 +1460,20 @@ still not in the journal.
   console (operator password) — the user presses "Restart camera" and
   "Open focusing window", then the timeline must show "sent: reboot" and
   a new "boot … reason sw", and /jpg must answer 200 again on the LAN.
+
+### P4 on hardware: install_window proven, reboot lost to a design bug, fixed in `v0.12.1` (2026-10-16 19:29–19:45 UTC)
+
+- User pressed "Restart camera" (19:29:11) then "Open focusing window"
+  (19:29:48, 19:33:37). Audit + timeline: the single pending-command slot
+  let install_window REPLACE the undelivered reboot → the board got
+  install_window twice (19:30:37, 19:34:38) and never restarted. Fixed in
+  `v0.12.1`: an ordered queue, one command per reply, duplicates skipped,
+  Cancel clears all (store test pins the 19:29 sequence). Deployed, CI green.
+- install_window proven: at uptime 1181 s (boot window long closed) LAN
+  `/jpg` answered 200.
+- Self-report proven on a real outage: the board went silent 19:35:47 →
+  19:39:50, same boot 48 (no crash); wifi_reconnects 0 → 1, last_err
+  `tcp:noack`, timeline "error tcp:noack". LAN ping 1.5–2 s afterwards —
+  the bench link remains the reliability problem.
+- Reboot command still to prove on hardware: needs one more press after
+  v0.12.1 (operator password).
