@@ -139,15 +139,57 @@ func (r *Recorder) Record(slug string, k Kind, ip, ua string, qr bool) {
 	case Poll:
 		h.Polls++
 	}
+}
+
+// liveCap bounds the per-venue watcher set: tab ids come from the client,
+// so a flood of made-up ids must not grow memory without limit.
+const liveCap = 1000
+
+// Watch marks one open tab as watching. tab is the page's per-load random
+// id (the poll's X-Viewer header): IP + User-Agent cannot tell apart two
+// guests on the same café WiFi or carrier NAT with the same phone — every
+// iPhone on one iOS version sends the same UA — so they collapsed into one
+// and the "others watching" badge never showed. The id lives in that tab's
+// memory only, is hashed with the daily salt like a visitor, and is
+// forgotten LiveWindow after its last poll. An absent or malformed id
+// (a page from before the header existed) falls back to IP + UA.
+//
+// Only the still poll calls this, never the page load: one guest would
+// otherwise count twice — once by IP + UA, once by tab id.
+func (r *Recorder) Watch(slug, tab, ip, ua string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	t := r.now()
+	r.rotate(t)
+	id := r.visitor(ip, ua)
+	if validTab(tab) {
+		id = r.visitor("tab", tab)
+	}
 	lv := r.live[slug]
 	if lv == nil {
 		lv = map[uint64]time.Time{}
 		r.live[slug] = lv
 	}
+	if _, ok := lv[id]; !ok && len(lv) >= liveCap {
+		return
+	}
 	lv[id] = t
 }
 
-// Live is how many distinct visitors have the venue page open right now.
+// validTab accepts the page's id shape: 16 lowercase hex digits.
+func validTab(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// Live is how many open tabs polled the venue's still within LiveWindow.
 func (r *Recorder) Live(slug string) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()

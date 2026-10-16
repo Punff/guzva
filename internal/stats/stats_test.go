@@ -2,6 +2,7 @@ package stats
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,9 +24,20 @@ func TestRecordDrainLive(t *testing.T) {
 	r.Record("jadro", View, "2.2.2.2", "phone-b", false)
 	r.Record("jadro", Poll, "1.1.1.1", "phone-a", false)
 	r.Record("other", View, "3.3.3.3", "phone-c", false)
+	// Watching comes from the still polls only, one per open tab: two
+	// identical iPhones behind one café IP are two watchers; a page load
+	// never counts (it would double the guest who then polls).
+	r.Watch("jadro", "00112233aabbccdd", "1.1.1.1", "iphone")
+	r.Watch("jadro", "00112233aabbccdd", "1.1.1.1", "iphone") // same tab, next poll
+	r.Watch("jadro", "ffeeddccbbaa9988", "1.1.1.1", "iphone") // same IP+UA, other tab
+	r.Watch("jadro", "", "2.2.2.2", "old-page")               // pre-header page: IP+UA
+	r.Watch("jadro", "NOT-HEX!", "2.2.2.2", "old-page")       // malformed → same fallback
 
-	if n := r.Live("jadro"); n != 2 {
-		t.Errorf("live = %d, want 2", n)
+	if n := r.Live("jadro"); n != 3 {
+		t.Errorf("live = %d, want 3", n)
+	}
+	if n := r.Live("other"); n != 0 {
+		t.Errorf("a page load alone counted as watching: live = %d", n)
 	}
 	c.t = c.t.Add(LiveWindow + time.Second)
 	if n := r.Live("jadro"); n != 0 {
@@ -132,5 +144,16 @@ func TestFlushToStore(t *testing.T) {
 		if strings.Contains(raw, leak) {
 			t.Errorf("database contains %q", leak)
 		}
+	}
+}
+
+// TestWatchIsCapped: client-chosen tab ids cannot grow memory without bound.
+func TestWatchIsCapped(t *testing.T) {
+	r := New(nil)
+	for i := 0; i < liveCap+50; i++ {
+		r.Watch("jadro", fmt.Sprintf("%016x", i), "1.1.1.1", "ua")
+	}
+	if n := r.Live("jadro"); n != liveCap {
+		t.Errorf("live = %d, want the cap %d", n, liveCap)
 	}
 }

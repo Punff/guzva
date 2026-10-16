@@ -101,6 +101,9 @@ func Static(dir string, rec *stats.Recorder) http.Handler {
 		if rec != nil && r.Method == http.MethodGet {
 			if k, ok := classify(r, filepath.Base(full)); ok {
 				rec.Record(slug, k, auth.ClientIP(r), r.UserAgent(), r.URL.Query().Get("src") == "qr")
+				if k == stats.Poll {
+					rec.Watch(slug, r.Header.Get("X-Viewer"), auth.ClientIP(r), r.UserAgent())
+				}
 			}
 		}
 
