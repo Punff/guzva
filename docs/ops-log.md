@@ -1313,3 +1313,14 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
 - Backup first: `guzva-20261016-1103.db.gz`. `make check` OK, healthz
   `v0.9.7` (server started on the v12 DB → 13 applied).
 - Live probe still owed (permission guard).
+
+### Deploy — `v0.9.8` (2026-10-16 ~11:30 UTC)
+
+- Homepage redesign (user: header, footer, sections for salons, privacy,
+  about, contact): site header with nav, print-blue hero with a live
+  picture from the first open listed salon, Saloni / O nama + Kako radi /
+  Privatnost / Kontakt sections, a real footer on every public page.
+  Contact shows "Kontakt podaci uskoro." until `GUZVA_CONTACT` is set.
+- No schema change. `make check` OK, healthz `v0.9.8`. (The first
+  tag+deploy command was interrupted after the tag was pushed; deploy
+  re-run by hand.) Live probe owed (permission guard).
