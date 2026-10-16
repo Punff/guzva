@@ -33,6 +33,7 @@ import (
 	"guzva/internal/alert"
 	"guzva/internal/auth"
 	"guzva/internal/frames"
+	"guzva/internal/mail"
 	"guzva/internal/pages"
 	"guzva/internal/proto"
 	"guzva/internal/render"
@@ -252,6 +253,19 @@ func serveMain(args []string) int {
 		log.Info("alert: Telegram not configured (GUZVA_TELEGRAM_TOKEN/GUZVA_TELEGRAM_CHAT); alerts are logged only")
 	}
 	jobs := []sched.Job{{Name: "alerts", Every: time.Minute, Run: mon.Tick}}
+
+	// Outgoing email (business plan P1): SMTP submission from env only.
+	mcfg := mail.Config{Host: os.Getenv("GUZVA_SMTP_HOST"), User: os.Getenv("GUZVA_SMTP_USER"),
+		Pass: os.Getenv("GUZVA_SMTP_PASS"), From: os.Getenv("GUZVA_MAIL_FROM")}
+	if p, err := strconv.Atoi(os.Getenv("GUZVA_SMTP_PORT")); err == nil {
+		mcfg.Port = p
+	}
+	adm.MailOn = mcfg.Configured()
+	if !mcfg.Configured() {
+		log.Info("mail: SMTP not configured (GUZVA_SMTP_HOST/GUZVA_MAIL_FROM); outbox queues only")
+	}
+	sender := &mail.Sender{Cfg: mcfg, St: st, Log: log, Now: time.Now}
+	jobs = append(jobs, sched.Job{Name: "mail", Every: 30 * time.Second, Run: sender.Tick})
 	if u := os.Getenv("GUZVA_DEADMAN_URL"); u != "" {
 		jobs = append(jobs, sched.Job{Name: "deadman", Every: 5 * time.Minute,
 			Run: func(ctx context.Context) error { return alert.Ping(ctx, nil, u) }})
@@ -266,6 +280,9 @@ func serveMain(args []string) int {
 			Every: time.Hour,
 			Run: func(ctx context.Context) error {
 				if _, err := ing.Prune(ctx); err != nil {
+					return err
+				}
+				if err := st.PruneOutbox(ctx, time.Now().Add(-90*24*time.Hour)); err != nil {
 					return err
 				}
 				return st.PruneVisits(ctx, time.Now().Add(-stats.Retention))

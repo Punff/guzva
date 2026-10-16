@@ -31,6 +31,9 @@ pages, the admin console, the owner panels (PLAN §2). Flags:
 | `-contact` | env `GUZVA_CONTACT` | homepage contact: emails/phones, comma-separated (first email → the "Javi nam se" button); empty = "Kontakt podaci uskoro." |
 | — | env `GUZVA_TELEGRAM_TOKEN` | Telegram bot token for operator alerts (env only — never a flag) |
 | — | env `GUZVA_TELEGRAM_CHAT` | chat id the alerts go to; both unset = alerts logged only |
+| — | env `GUZVA_SMTP_HOST` / `GUZVA_SMTP_PORT` (587) | SMTP submission server for outgoing email (STARTTLS required off loopback) |
+| — | env `GUZVA_SMTP_USER` / `GUZVA_SMTP_PASS` | SMTP login (env only) |
+| — | env `GUZVA_MAIL_FROM` | sender, e.g. `guzva.ba <kontakt@guzva.ba>`; host+from unset = mail queues only |
 | — | env `GUZVA_DEADMAN_URL` | external heartbeat URL pinged every 5 min (e.g. healthchecks.io); unset = off |
 
 Env fallbacks exist for the two secrets only — they belong in

@@ -257,6 +257,27 @@ CREATE TABLE alerts (
 );
 `
 
+// schemaV15 adds the email outbox (business plan P1). Bodies are wiped once
+// a message is sent (invite/reset links must not sit at rest); the row stays
+// as the send log. status: queued | sent | failed.
+const schemaV15 = `
+CREATE TABLE outbox (
+  id         INTEGER PRIMARY KEY,
+  to_addr    TEXT NOT NULL,
+  subject    TEXT NOT NULL,
+  body_text  TEXT NOT NULL DEFAULT '',
+  body_html  TEXT NOT NULL DEFAULT '',
+  template   TEXT NOT NULL DEFAULT '',
+  status     TEXT NOT NULL DEFAULT 'queued',
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  next_at    INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  sent_at    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX outbox_due ON outbox (status, next_at);
+`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []struct {
 	sql  string
@@ -271,6 +292,7 @@ var migrations = []struct {
 	{sql: schemaV12},
 	{sql: schemaV13},
 	{sql: schemaV14},
+	{sql: schemaV15},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -1139,5 +1161,100 @@ func (s *Store) RaiseAlert(ctx context.Context, key, message string, at time.Tim
 // ClearAlert marks an open alert resolved.
 func (s *Store) ClearAlert(ctx context.Context, key string, at time.Time) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE alerts SET cleared_at = ? WHERE key = ? AND cleared_at = 0`, ts(at), key)
+	return err
+}
+
+// --- outbox (business plan P1) ------------------------------------------------
+
+// OutMail is one queued email.
+type OutMail struct {
+	ID                int64
+	To, Subject       string
+	Text, HTML        string
+	Template          string
+	Status            string
+	Attempts          int
+	LastError         string
+	CreatedAt, SentAt time.Time
+}
+
+// EnqueueMail queues a message for the sender job and returns its id.
+func (s *Store) EnqueueMail(ctx context.Context, m OutMail, now time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `INSERT INTO outbox (to_addr, subject, body_text, body_html, template, next_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, m.To, m.Subject, m.Text, m.HTML, m.Template, ts(now), ts(now))
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// DueMail returns queued messages whose next attempt is due, oldest first.
+func (s *Store) DueMail(ctx context.Context, now time.Time, limit int) ([]OutMail, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, to_addr, subject, body_text, body_html, template, attempts
+		FROM outbox WHERE status = 'queued' AND next_at <= ? ORDER BY id LIMIT ?`, ts(now), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []OutMail
+	for rows.Next() {
+		var m OutMail
+		if err := rows.Scan(&m.ID, &m.To, &m.Subject, &m.Text, &m.HTML, &m.Template, &m.Attempts); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// MarkMailSent records delivery and wipes the bodies.
+func (s *Store) MarkMailSent(ctx context.Context, id int64, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE outbox SET status = 'sent', sent_at = ?, body_text = '', body_html = '',
+		last_error = '' WHERE id = ?`, ts(at), id)
+	return err
+}
+
+// MarkMailFailed records a failed attempt; final gives up (and wipes bodies).
+func (s *Store) MarkMailFailed(ctx context.Context, id int64, attempts int, next time.Time, errText string, final bool) error {
+	if len(errText) > 300 {
+		errText = errText[:300]
+	}
+	if final {
+		_, err := s.db.ExecContext(ctx, `UPDATE outbox SET status = 'failed', attempts = ?, last_error = ?,
+			body_text = '', body_html = '' WHERE id = ?`, attempts, errText, id)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE outbox SET attempts = ?, next_at = ?, last_error = ? WHERE id = ?`,
+		attempts, ts(next), errText, id)
+	return err
+}
+
+// RecentMail lists the latest outbox rows for the admin (no bodies).
+func (s *Store) RecentMail(ctx context.Context, limit int) ([]OutMail, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, to_addr, subject, template, status, attempts, last_error, created_at, sent_at
+		FROM outbox ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []OutMail
+	for rows.Next() {
+		var m OutMail
+		var c, sent int64
+		if err := rows.Scan(&m.ID, &m.To, &m.Subject, &m.Template, &m.Status, &m.Attempts, &m.LastError, &c, &sent); err != nil {
+			return nil, err
+		}
+		m.CreatedAt = time.Unix(c, 0).UTC()
+		if sent > 0 {
+			m.SentAt = time.Unix(sent, 0).UTC()
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// PruneOutbox drops send-log rows older than cutoff (90 days in the plan).
+func (s *Store) PruneOutbox(ctx context.Context, cutoff time.Time) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM outbox WHERE created_at < ? AND status != 'queued'`, ts(cutoff))
 	return err
 }

@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -49,9 +50,12 @@ type Server struct {
 	// Stats is the live visit recorder ("watching right now"); nil in
 	// tests that don't care.
 	Stats *stats.Recorder
-	tmpl  *template.Template
-	log   *slog.Logger
-	now   func() time.Time
+	// MailOn says whether SMTP is configured (the outbox sends); the
+	// fleet page shows it and the test form queues regardless.
+	MailOn bool
+	tmpl   *template.Template
+	log    *slog.Logger
+	now    func() time.Time
 }
 
 // New builds the admin server. passHash is the bcrypt hash from
@@ -123,6 +127,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	sub.HandleFunc("POST /admin/devices/{id}", s.require(s.updateDevice))
 	sub.HandleFunc("POST /admin/devices/{id}/delete", s.require(s.deleteDevice))
 	sub.HandleFunc("POST /admin/devices", s.require(s.createDevice))
+	sub.HandleFunc("POST /admin/mail/test", s.require(s.mailTest))
 	sub.HandleFunc("GET /admin/devices/{id}", s.require(s.devicePage))
 	sub.HandleFunc("POST /admin/devices/{id}/revoke", s.require(s.revokeDevice))
 	sub.HandleFunc("GET /admin/_kit", s.require(s.kit))
@@ -361,6 +366,9 @@ type fleetModel struct {
 	Deleted     string           // slug of a venue just deleted, for the confirmation line
 	Devices     int              // fleet-wide count: opens "New device" when 0
 	Days        [7]venue.DayForm // create-form hours, Mo-Fr 09-17 prefilled
+	Alerts      []store.Alert    // open operator alerts (alert package ledger)
+	Mail        []store.OutMail  // latest outbox rows, no bodies
+	MailOn      bool
 }
 
 func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
@@ -392,7 +400,16 @@ func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	model := fleetModel{DeviceOpts: free, Devices: len(devices), Deleted: r.URL.Query().Get("deleted"), ShowCreated: r.URL.Query().Get("created") != "",
-		Days: venue.EditModel(defHours, i18n.For(i18n.EN).DayNames())}
+		Days: venue.EditModel(defHours, i18n.For(i18n.EN).DayNames()), MailOn: s.MailOn}
+	if open, err := s.st.OpenAlerts(r.Context()); err == nil {
+		for _, a := range open {
+			model.Alerts = append(model.Alerts, a)
+		}
+		sort.Slice(model.Alerts, func(i, j int) bool { return model.Alerts[i].RaisedAt.Before(model.Alerts[j].RaisedAt) })
+	}
+	if mail, err := s.st.RecentMail(r.Context(), 8); err == nil {
+		model.Mail = mail
+	}
 	// Needs attention first (design-pass2 §6): the board is the "is
 	// everything OK" screen, so it must read top-down — no signal beats
 	// late, late beats fresh; a venue with no frame yet is last (it is
@@ -1097,4 +1114,28 @@ func (s *Server) deleteDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("admin: device deleted", "device_id", d.ID, "serial", d.Serial, "actor", "admin")
 	redirect(w, r, fmt.Sprintf("/admin/venues/%d?devdeleted=1", d.VenueID))
+}
+
+// mailTest queues one test email (business plan P1) so the operator can
+// prove the SMTP account works before any client email depends on it.
+func (s *Server) mailTest(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	to := strings.TrimSpace(r.FormValue("to"))
+	if len(to) > 254 || !strings.Contains(to, "@") || strings.ContainsAny(to, " \t\r\n<>,;") {
+		s.flash(w, "Enter one email address.")
+		return
+	}
+	now := s.now()
+	if _, err := s.st.EnqueueMail(r.Context(), store.OutMail{To: to, Subject: "guzva.ba test email",
+		Text:     "This is a test email from the guzva.ba server, sent " + now.UTC().Format(time.RFC1123) + ".",
+		Template: "test"}, now); err != nil {
+		s.internal(w, "enqueue test mail", err)
+		return
+	}
+	s.log.Info("admin: test mail queued", "actor", "admin")
+	if !s.MailOn {
+		s.flash(w, "Queued — but SMTP is not configured, so it waits until GUZVA_SMTP_HOST and GUZVA_MAIL_FROM are set.")
+		return
+	}
+	s.flash(w, "Queued. It is sent within 30 seconds; reload to see its status.")
 }

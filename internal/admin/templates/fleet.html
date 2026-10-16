@@ -84,6 +84,33 @@
   </form>
 </details>
 
+<details class="mt-4"{{if .Alerts}} open{{end}}>
+  <summary class="text-lg font-bold mb-3 cursor-pointer">Alerts &amp; email{{if .Alerts}} — {{len .Alerts}} open{{end}}</summary>
+  <div class="grid gap-4 max-w-2xl">
+    <section class="card card--inset">
+      <h3 class="font-bold mb-2">Open alerts</h3>
+      {{if .Alerts}}<ul class="grid gap-1 text-sm">{{range .Alerts}}<li>⚠ {{.Message}} <span class="text-muted">since {{.RaisedAt.Format "02.01. 15:04"}} UTC</span></li>{{end}}</ul>
+      {{else}}<p class="text-sm text-muted">None. Telegram messages go out when one opens and when it is resolved.</p>{{end}}
+    </section>
+    <section class="card card--inset">
+      <h3 class="font-bold mb-2">Email</h3>
+      <p class="text-sm mb-3">{{if .MailOn}}SMTP configured — the outbox sends every 30 s.{{else}}<span class="text-muted">SMTP not configured (GUZVA_SMTP_HOST, GUZVA_MAIL_FROM). Messages wait in the queue.</span>{{end}}</p>
+      <form class="flex flex-wrap items-end gap-3" method="post" action="/admin/mail/test" hx-post="/admin/mail/test" hx-target="#flash" hx-swap="innerHTML">
+        <div class="fieldset">
+          <label class="lbl" for="m-to">Send a test email to</label>
+          <input class="inp" id="m-to" name="to" type="email" required placeholder="you@example.com">
+        </div>
+        <button class="btn" type="submit">Send test</button>
+      </form>
+      {{if .Mail}}
+      <table class="mt-3 w-full text-sm">
+        {{range .Mail}}<tr><td class="py-1 pr-3 tnum text-muted">{{.CreatedAt.Format "02.01. 15:04"}}</td><td class="py-1 pr-3">{{.Template}}</td><td class="py-1 pr-3 break-all">{{.To}}</td><td class="py-1">{{.Status}}{{if .LastError}} <span class="text-muted">({{.Attempts}}× — {{.LastError}})</span>{{end}}</td></tr>{{end}}
+      </table>
+      {{end}}
+    </section>
+  </div>
+</details>
+
 <details class="mt-4"{{if and .Venues (not .Devices)}} open{{end}}>
   <summary class="text-lg font-bold mb-3 cursor-pointer">New device</summary>
   {{if .DeviceOpts}}

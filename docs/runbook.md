@@ -92,6 +92,20 @@ venue without a picture >15 min while open (or always, if it has no hours),
 ≥3 venues at once, a camera rebooting ≥3×/hour, a brownout, WiFi below
 −72 dBm for an hour, server disk <15 %. Closed venues never alert.
 
+## Outgoing email (one-time setup, needs the domain)
+
+1. Create a free Brevo account → Senders & domains → add `guzva.ba`, publish
+   the DNS records it shows (SPF, DKIM, DMARC) at the registrar.
+2. SMTP & API → SMTP: copy server (`smtp-relay.brevo.com`), port 587, login
+   and the SMTP key.
+3. `/etc/guzva/guzva.env`: `GUZVA_SMTP_HOST=smtp-relay.brevo.com`,
+   `GUZVA_SMTP_USER=…`, `GUZVA_SMTP_PASS=…`,
+   `GUZVA_MAIL_FROM=guzva.ba <kontakt@guzva.ba>` → `systemctl restart guzva`.
+4. Admin → "Alerts & email" → send a test to yourself; the table shows
+   `sent`, or the error after each retry (1, 2, 4 … 128 min; gives up after 8).
+5. Inbound `kontakt@guzva.ba`: forward it to your own mailbox at the registrar
+   or with Cloudflare Email Routing (free).
+
 ## Venue owners (the /owner/ panel)
 
 - Each venue has its own password, set by you on its admin page
