@@ -1216,3 +1216,21 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   never seen) by SQL over ssh was blocked by the session's permission
   guard (raw prod DB writes). Backup `guzva-20261015-1056` was taken for
   it. Left for the user via the console's "Delete camera" button.
+
+### Solo pass — pre-pilot items (2026-10-16, no deploy)
+
+- `b2475b8` `make soak` / `tools/soak`: Phase 1 exit numbers from the ingest
+  journal (fresh-minute % by the page's StaleAfter rule, longest gap, status
+  mix, rssi, heap, boots, counter deltas across reboots, render p50/p95).
+  **Not run against prod:** the session's permission guard blocked
+  `ssh root@guzva journalctl` (prod reads). The user runs `make soak`;
+  numbers go here when they exist. Connect/handshake ms is not in the
+  journal, so that one exit number still has no source.
+- `1b7c437` `/privatnost/` privacy page + footer link (PLAN §14 item).
+  Served from memory, slug reserved, CSP/304/gzip like a venue page.
+  Writing it surfaced **Q-10**: the firmware LAN `/jpg` served raw frames
+  to anyone on the venue WiFi, forever.
+- `ec2838f` Q-10 fix: `/jpg` + LAN factory reset only in the first 15 min
+  after boot. `pio run` SUCCESS; **not flashed** (bench board mid-run).
+- `8dbff01` no-JS: clock hidden instead of aging under a fresh still.
+- Prod untouched (still v0.9.1). Next deploy v0.9.2 carries the page work.

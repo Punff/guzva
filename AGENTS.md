@@ -57,9 +57,23 @@ proven setup. History of the team mode lives in docs/ops-log.md.)
 
 ## Open queue (docs/qa-findings.md is the tracker)
 
-- **Deploy v0.8.0** (owner statistics, QR/poster, UI polish; schema v10,
-  additive) once the user's Profile v1 soak allows a server restart.
-- **Profile v1 soak** (48 h) on the bench board, v0.7.0 server — running.
+Prod is **v0.9.1** (2026-10-15). In the tree, not deployed: `/privatnost/`
+page + footer link, no-JS clock hide, `make soak`; firmware Q-10 install
+window (built, NOT flashed). Next deploy = v0.9.2 with those.
+
+**Pilot blockers (PLAN §15 Phase 2 exit):**
+- **Domain + autocert (Q-08)** — needs the user: is `guzva.ba` registered?
+  The QR poster on a bare IP + self-signed cert is unusable for guests.
+- **Ingest host in NVS** (§14) — pair with the domain change.
+- **Q-10 flash + proof** — `/jpg` 200 after boot, 403 after 15 min.
+- **Venue site survey** — RSSI ≥ −65 at the mount, camera on a network
+  guests can't join (Q-10 belt-and-braces); camera-notice sign; legal
+  read of `/privatnost/` + a controller contact (the page has none yet).
+- **Phase 1 exit numbers** — `make soak` (prod journal read; the agent's
+  permission guard blocks prod reads, so the user runs it) → ops-log.
+- Dead-man alert channel — needs the user to pick one (email/ntfy/…).
+
+**Then:**
 - **S0/S1 real corpus:** v4 constants were picked on the synthetic hard
   scene. Capture 30–40 local raw frames (never committed, `corpus/`), run
   `go run ./tools/styleproof -sweep -out /tmp/sheet corpus/*.jpg`, re-freeze

@@ -14,6 +14,14 @@ missing product plan on top. The current state is *messy but sound*: the hard
 part (device → TLS → ingest → render → static page, idempotent, private) works
 end to end; what is missing is polish, management and automation.
 
+Status (16 Oct 2026): **v0.9.1 live** (public watchers, admin CRUD +
+per-venue style presets D11, owner panel rework). The repo is pushed to
+`Punff/guzva` with CI on every push — the "push is blocked" gap below is
+closed. Pilot blockers are tracked in AGENTS.md "Open queue": domain +
+autocert, ingest host in NVS, Q-10 (raw `/jpg` on the venue LAN, fix built
+not flashed), venue survey + camera sign + legal read, Phase 1 numbers
+(`make soak`).
+
 Status (14 Oct 2026): **Print v4 landed in the tree** (docs/print-v4.md) —
 320×240 band-pass render (`poster@4`/`mono@4`), masks-only venue render
 state, the remote device-config plane (`desired_cfg`, `guzva cfg`, the
@@ -591,10 +599,10 @@ that dominate the risk list.
 | libvips | p95 render >200 ms sustained |
 | Three-tier paging / on-call | Second person on support |
 | Paid VPS | (subsumed by the EU-VPS trigger above) |
-| Git remote + history scrub (secrets burned in `settings.h` + a styleproof blob) | Before ANY push — the CI/PR gate, collaboration and offsite backup all wait on it; scrub is orchestrator-owned and mandatory, not optional |
+| ~~Git remote + history scrub~~ | Done — remote `Punff/guzva`, CI gates every push |
 | Poster/threshold tuning from real frames | W8.1 bench session: bright-room captures from the real sensor (all 138 stored frames are fakecam synthetic — no safer default can be evidenced today) |
-| Privacy route + "O privatnosti" link on the public page | First guest asks about privacy, or before the pilot — the caption is deliberately link-less until a real route exists |
-| no-JS page clock refresh (the meta-refresh gap) | First no-JS guest matters, or before the pilot — the burned-in stamp was removed at v0.4.0; meta-refresh re-renders state, but the displayed clock ages between reloads without JS |
+| ~~Privacy route + "O privatnosti" link~~ | Done 16 Oct 2026 — `/privatnost/` (in memory, slug reserved), linked from every venue footer; legal read + controller contact still owed (§13) |
+| ~~no-JS page clock refresh~~ | Done 16 Oct 2026 — without JS the clock is hidden; the state chip carries freshness |
 | Admin-console localisation (catalog) | A non-Croatian admin actually needs it — calibration labels and console copy are English by decision today |
 
 **Open questions to close (§14 → decisions):** is `guzva.ba` registered, and was
