@@ -30,6 +30,7 @@ import (
 	_ "time/tzdata" // venue tz names resolve without a system zone db (§2)
 
 	"guzva/internal/admin"
+	"guzva/internal/alert"
 	"guzva/internal/auth"
 	"guzva/internal/frames"
 	"guzva/internal/pages"
@@ -233,11 +234,34 @@ func serveMain(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Operator alerts on Telegram (business plan P1, PLAN §6.6). Secrets come
+	// from the environment only. Without a bot the ledger is still kept and
+	// every change logged, so adding the bot later loses nothing.
+	tg := &alert.Telegram{Token: os.Getenv("GUZVA_TELEGRAM_TOKEN"), Chat: os.Getenv("GUZVA_TELEGRAM_CHAT")}
+	mon := &alert.Monitor{St: st, Engine: alert.NewEngine(), TG: tg, Log: log, Now: time.Now,
+		DiskFree: func() (float64, error) { return frames.DiskFreePct(*dataDir) }, Started: time.Now()}
+	if tg.Configured() {
+		go func() {
+			sctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			if err := tg.Send(sctx, "guzva "+version+" started"); err != nil {
+				log.Warn("alert: startup message failed", "err", err.Error())
+			}
+		}()
+	} else {
+		log.Info("alert: Telegram not configured (GUZVA_TELEGRAM_TOKEN/GUZVA_TELEGRAM_CHAT); alerts are logged only")
+	}
+	jobs := []sched.Job{{Name: "alerts", Every: time.Minute, Run: mon.Tick}}
+	if u := os.Getenv("GUZVA_DEADMAN_URL"); u != "" {
+		jobs = append(jobs, sched.Job{Name: "deadman", Every: 5 * time.Minute,
+			Run: func(ctx context.Context) error { return alert.Ping(ctx, nil, u) }})
+	}
+
 	// One ticker goroutine (§2/§3): pruner ~1 s after boot then hourly;
 	// page refresh every 30 s re-derives STALE/open flips a static file
 	// cannot notice on its own (§6.4).
-	go sched.Run(ctx, log,
-		sched.Job{
+	go sched.Run(ctx, log, append([]sched.Job{
+		{
 			Name:  "prune",
 			Every: time.Hour,
 			Run: func(ctx context.Context) error {
@@ -247,17 +271,17 @@ func serveMain(args []string) int {
 				return st.PruneVisits(ctx, time.Now().Add(-stats.Retention))
 			},
 		},
-		sched.Job{
+		{
 			Name:  "visits",
 			Every: time.Minute,
 			Run:   func(ctx context.Context) error { return rec.Flush(ctx, st) },
 		},
-		sched.Job{
+		{
 			Name:  "pages",
 			Every: 30 * time.Second,
 			Run:   pub.RefreshAll,
 		},
-	)
+	}, jobs...)...)
 
 	errCh := make(chan error, 1)
 	go func() {

@@ -245,6 +245,18 @@ const schemaV13 = `
 ALTER TABLE venues ADD COLUMN listed INTEGER NOT NULL DEFAULT 1;
 `
 
+// schemaV14 adds the open-alert ledger (business plan P1): one row per alert
+// key, so a restart or deploy neither re-sends an open alert nor reports a
+// false "resolved". cleared_at 0 = still open.
+const schemaV14 = `
+CREATE TABLE alerts (
+  key        TEXT PRIMARY KEY,
+  message    TEXT NOT NULL,
+  raised_at  INTEGER NOT NULL,
+  cleared_at INTEGER NOT NULL DEFAULT 0
+);
+`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []struct {
 	sql  string
@@ -258,6 +270,7 @@ var migrations = []struct {
 	{sql: schemaV11},
 	{sql: schemaV12},
 	{sql: schemaV13},
+	{sql: schemaV14},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -1083,4 +1096,48 @@ func (s *Store) FrameTimes(ctx context.Context, venueID int64, since time.Time) 
 		out = append(out, fromTS(at))
 	}
 	return out, rows.Err()
+}
+
+// --- alerts (business plan P1) ------------------------------------------------
+
+// Alert is one open alert: its rule key, the message that was sent, and when.
+type Alert struct {
+	Key      string
+	Message  string
+	RaisedAt time.Time
+}
+
+// OpenAlerts returns every alert not yet cleared, keyed by rule key.
+func (s *Store) OpenAlerts(ctx context.Context) (map[string]Alert, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key, message, raised_at FROM alerts WHERE cleared_at = 0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]Alert{}
+	for rows.Next() {
+		var a Alert
+		var at int64
+		if err := rows.Scan(&a.Key, &a.Message, &at); err != nil {
+			return nil, err
+		}
+		a.RaisedAt = time.Unix(at, 0).UTC()
+		out[a.Key] = a
+	}
+	return out, rows.Err()
+}
+
+// RaiseAlert records an alert as open (re-opening a cleared key resets it).
+func (s *Store) RaiseAlert(ctx context.Context, key, message string, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO alerts (key, message, raised_at, cleared_at) VALUES (?, ?, ?, 0)
+		ON CONFLICT (key) DO UPDATE SET message = excluded.message,
+			raised_at = excluded.raised_at, cleared_at = 0`, key, message, ts(at))
+	return err
+}
+
+// ClearAlert marks an open alert resolved.
+func (s *Store) ClearAlert(ctx context.Context, key string, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE alerts SET cleared_at = ? WHERE key = ? AND cleared_at = 0`, ts(at), key)
+	return err
 }

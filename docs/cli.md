@@ -28,7 +28,10 @@ pages, the admin console, the owner panels (PLAN §2). Flags:
 | `-tls-cert` / `-tls-key` | — | PEM pair; both or neither. Enables TLS |
 | `-admin-hash` | env `GUZVA_ADMIN_HASH` | bcrypt hash; empty = console locked |
 | `-cookie-secret` | env `GUZVA_COOKIE_SECRET` | HMAC secret; empty = sessions reset per restart |
-| `-contact` | env `GUZVA_CONTACT` | homepage "Za salone" contact, email (→ mailto) or phone (→ tel); empty hides the line |
+| `-contact` | env `GUZVA_CONTACT` | homepage contact: emails/phones, comma-separated (first email → the "Javi nam se" button); empty = "Kontakt podaci uskoro." |
+| — | env `GUZVA_TELEGRAM_TOKEN` | Telegram bot token for operator alerts (env only — never a flag) |
+| — | env `GUZVA_TELEGRAM_CHAT` | chat id the alerts go to; both unset = alerts logged only |
+| — | env `GUZVA_DEADMAN_URL` | external heartbeat URL pinged every 5 min (e.g. healthchecks.io); unset = off |
 
 Env fallbacks exist for the two secrets only — they belong in
 `/etc/guzva/guzva.env` (systemd `EnvironmentFile`), never in shell history.

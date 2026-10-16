@@ -74,6 +74,24 @@ firmware. A picture problem is fixed by focus/mounting at the venue (use the
 LAN `/jpg`) or by a new firmware build — never by a server setting. Firmware
 before Profile v1 keeps running on whatever config it last stored in NVS.
 
+## Alerts on Telegram (one-time setup)
+
+1. In Telegram, open **@BotFather** → `/newbot` → pick a name → copy the token.
+2. Send any message to your new bot, then open
+   `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and copy
+   `"chat":{"id": …}` — that number is the chat id.
+3. On the VPS add to `/etc/guzva/guzva.env`:
+   `GUZVA_TELEGRAM_TOKEN=…` and `GUZVA_TELEGRAM_CHAT=…`, then
+   `systemctl restart guzva`. You get "guzva vX started" within seconds.
+4. Optional dead-man (tells you when the whole server is down): create a free
+   check at healthchecks.io (period 5 min, grace 10 min), connect it to the
+   same Telegram, and add `GUZVA_DEADMAN_URL=<ping url>`.
+
+What you get (one message when it starts, one "✓ Resolved" when it ends):
+venue without a picture >15 min while open (or always, if it has no hours),
+≥3 venues at once, a camera rebooting ≥3×/hour, a brownout, WiFi below
+−72 dBm for an hour, server disk <15 %. Closed venues never alert.
+
 ## Venue owners (the /owner/ panel)
 
 - Each venue has its own password, set by you on its admin page

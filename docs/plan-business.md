@@ -1,6 +1,6 @@
 # Business operations plan — intake, billing, fleet control
 
-Status: **plan, not approved** (16 Oct 2026). Nothing here is built. Triggers:
+Status: **approved 16 Oct 2026** (decisions in §5); P1 in progress. Triggers:
 the user set a price (20–30 KM/venue/month, PLAN D8's "first venue that must
 pay"), and asked for (1) a form to send to clients that becomes a venue,
 (2) a communication system for bills and camera logs, (3) any other additions.
@@ -168,3 +168,14 @@ once the domain exists.
    transfer only to start.
 6. **Who owns the camera** (rent included in the price vs. one-time install
    fee) — goes into the terms.
+
+### Decisions recorded (16 Oct 2026, user)
+
+1. Email: a free small provider — **Brevo free tier (300/day) for SMTP
+   sending**, inbound `kontakt@guzva.ba` forwarded to the user's mailbox
+   (registrar forwarding or Cloudflare Email Routing). Both need the domain.
+2. Alerts: **Telegram bot**.
+3. Business form / PDV / fiscalisation: open — accountant, before P3.
+4. Form: **both** public and personal invite links.
+5. Billing: **monthly** only.
+6. Camera: **included** in the monthly price (stays ours; swapped if broken).
