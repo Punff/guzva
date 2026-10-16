@@ -1285,3 +1285,18 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   Tailwind utility); my local `make test` had flagged it but I grepped
   its output and ignored the exit code. Fixed in the next commit; tag cut
   only after CI green. Live probe still owed (guard).
+
+### Deploy — `v0.9.6` (2026-10-16 ~10:37 UTC)
+
+- O salonu card (user ruling): phone demoted from the full-width ink bar to
+  a quiet button beside "Otvori u Google Kartama"; address with a pin.
+  Owner/admin forms get a validated Google Maps link field (schema v12,
+  `venues.maps_url`, additive); without a link the button searches the
+  address. `/privatnost/` rewritten as a formal numbered "Politika
+  privatnosti", visit-counting detail removed (user ruling).
+- Backup first: `guzva-20261016-1035.db.gz`. `make check` OK, healthz
+  `v0.9.6` (the server started on prod's v11 DB, so 11 → 12 applied).
+- Owed: live probe (guard); the policy's section 2 ("sent only to the
+  service's server") is only fully true once the Q-10 firmware is flashed
+  — the bench board still serves LAN `/jpg`; controller identity/contact
+  for the policy; legal read.

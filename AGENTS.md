@@ -57,9 +57,9 @@ proven setup. History of the team mode lives in docs/ops-log.md.)
 
 ## Open queue (docs/qa-findings.md is the tracker)
 
-Prod is **v0.9.1** (2026-10-15). In the tree, not deployed: `/privatnost/`
-page + footer link, no-JS clock hide, `make soak`; firmware Q-10 install
-window (built, NOT flashed). Next deploy = v0.9.2 with those.
+Prod is **v0.9.6** (2026-10-16; schema v12). Firmware Q-10 install window
+is built, NOT flashed — until it is, the privacy policy's "sent only to the
+server" is not fully true on the bench board (LAN `/jpg`).
 
 **Pilot blockers (PLAN §15 Phase 2 exit):**
 - **Domain + autocert (Q-08)** — needs the user: is `guzva.ba` registered?
@@ -68,7 +68,8 @@ window (built, NOT flashed). Next deploy = v0.9.2 with those.
 - **Q-10 flash + proof** — `/jpg` 200 after boot, 403 after 15 min.
 - **Venue site survey** — RSSI ≥ −65 at the mount, camera on a network
   guests can't join (Q-10 belt-and-braces); camera-notice sign; legal
-  read of `/privatnost/` + a controller contact (the page has none yet).
+  read of the `/privatnost/` policy + the controller's name and contact
+  (the policy names none; it points complaints to the BiH agency).
 - **Phase 1 exit numbers** — `make soak` (prod journal read; the agent's
   permission guard blocks prod reads, so the user runs it) → ops-log.
 - Dead-man alert channel — needs the user to pick one (email/ntfy/…).
