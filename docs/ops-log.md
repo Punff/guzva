@@ -1324,3 +1324,11 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
 - No schema change. `make check` OK, healthz `v0.9.8`. (The first
   tag+deploy command was interrupted after the tag was pushed; deploy
   re-run by hand.) Live probe owed (permission guard).
+
+### Deploy — `v0.9.9` (2026-10-16 ~12:00 UTC)
+
+- Homepage Kontakt: owners' pitch line + "Javi nam se" button (mailto the
+  first email in `GUZVA_CONTACT`, subject prefilled); hidden until an email
+  is configured — the guzva.ba mailbox doesn't exist yet. Privatnost
+  section redone as a framed panel with three pixel-icon promises.
+- No schema change. `make check` OK, healthz `v0.9.9`. Live probe owed.
