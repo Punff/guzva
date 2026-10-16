@@ -1247,3 +1247,19 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   `/bench/` footer carries `href="/privatnost/"`, and the no-JS style is
   present. No backup was taken first this time (no schema change; the
   nightly backup stands).
+
+### Deploy — `v0.9.3` (2026-10-16 ~09:50 UTC)
+
+- Watcher badge fix (user report: mispositioned, often not seen): counted
+  per open tab via a random X-Viewer id instead of IP+UA (same-WiFi /
+  same-phone guests had collapsed into one), and moved onto the picture's
+  corner. `make check` OK, healthz `v0.9.3`.
+- Correction to v0.9.2: it shipped with one red QA check (the `<noscript>`
+  byte-match, broken by the no-JS clock style) because qa/run_all.sh was
+  not re-run after that change. Behaviour was right; the check was fixed
+  in `6f0a134`. Lesson: run qa/run_all.sh before every tag, not just once
+  per session.
+- Open tabs from before the deploy keep polling without X-Viewer → counted
+  by IP+UA until they reload (the page reloads itself on the deploy's
+  Last-Modified change within 60 s, so this is brief).
+- Live probe of the public page still owed (permission guard, see v0.9.2).
