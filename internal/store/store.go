@@ -351,6 +351,27 @@ CREATE TABLE owner_tokens (
 );
 `
 
+// schemaV19 adds device self-reporting and remote commands (business plan
+// P4): why the board last rebooted, uptime, WiFi reconnects and its last
+// error (all from meta, additive), one pending command the next upload
+// response carries, and a 30-day timeline of what changed.
+const schemaV19 = `
+ALTER TABLE devices ADD COLUMN reset_reason TEXT NOT NULL DEFAULT '';
+ALTER TABLE devices ADD COLUMN uptime_s INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE devices ADD COLUMN wifi_reconnects INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE devices ADD COLUMN last_err TEXT NOT NULL DEFAULT '';
+ALTER TABLE devices ADD COLUMN pending_cmd TEXT NOT NULL DEFAULT '';
+ALTER TABLE devices ADD COLUMN cmd_at INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE device_events (
+  id        INTEGER PRIMARY KEY,
+  device_id INTEGER NOT NULL,
+  at        INTEGER NOT NULL,
+  kind      TEXT NOT NULL,
+  detail    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX device_events_dev ON device_events (device_id, at);
+`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []struct {
 	sql  string
@@ -369,6 +390,7 @@ var migrations = []struct {
 	{sql: schemaV16},
 	{sql: schemaV17},
 	{sql: schemaV18},
+	{sql: schemaV19},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -708,19 +730,31 @@ type Device struct {
 	LastSeenAt time.Time
 	LastReason string
 	CreatedAt  time.Time
+	// Self-reported by firmware ≥ P4 (empty/zero from older boards).
+	ResetReason    string
+	UptimeS        uint32
+	WiFiReconnects uint32
+	LastErr        string
+	PendingCmd     string    // carried by the next upload response, then cleared
+	CmdAt          time.Time // when the last command was queued or delivered
 }
 
 const deviceCols = `id, venue_id, serial, status, fw, rssi, free_heap,
 	boot, brownout, join_fail, post_fail, tls_fail, capture_fail,
-	profile, last_seen_at, last_reason, created_at`
+	profile, last_seen_at, last_reason, created_at,
+	reset_reason, uptime_s, wifi_reconnects, last_err, pending_cmd, cmd_at`
 
 func scanDevice(row interface{ Scan(...any) error }) (*Device, error) {
 	var d Device
-	var seen, created int64
+	var seen, created, cmdAt int64
 	err := row.Scan(&d.ID, &d.VenueID, &d.Serial, &d.Status, &d.FW, &d.RSSI, &d.FreeHeap,
 		&d.Counters.Boot, &d.Counters.Brownout, &d.Counters.JoinFail, &d.Counters.PostFail,
 		&d.Counters.TLSFail, &d.Counters.CaptureFail,
-		&d.Profile, &seen, &d.LastReason, &created)
+		&d.Profile, &seen, &d.LastReason, &created,
+		&d.ResetReason, &d.UptimeS, &d.WiFiReconnects, &d.LastErr, &d.PendingCmd, &cmdAt)
+	if cmdAt > 0 {
+		d.CmdAt = time.Unix(cmdAt, 0).UTC()
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -786,6 +820,13 @@ type Beat struct {
 	Profile  string
 	Reason   string
 	At       time.Time
+	// P4 self-report (zero values from older firmware keep the columns as
+	// they were — an old board must not blank what a new one reported).
+	ResetReason    string
+	UptimeS        uint32
+	WiFiReconnects uint32
+	LastErr        string
+	SelfReport     bool // the meta carried the P4 fields at all
 }
 
 // UpdateDeviceBeat records the health headers of one ingest.
@@ -799,6 +840,11 @@ func (s *Store) UpdateDeviceBeat(ctx context.Context, deviceID int64, b Beat) er
 		b.Counters.Boot, b.Counters.Brownout, b.Counters.JoinFail,
 		b.Counters.PostFail, b.Counters.TLSFail, b.Counters.CaptureFail,
 		b.Profile, ts(b.At), b.Reason, deviceID)
+	if err != nil || !b.SelfReport {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE devices SET reset_reason = ?, uptime_s = ?, wifi_reconnects = ?, last_err = ?
+		WHERE id = ?`, b.ResetReason, b.UptimeS, b.WiFiReconnects, b.LastErr, deviceID)
 	return err
 }
 
@@ -1667,4 +1713,82 @@ func (s *Store) UseOwnerToken(ctx context.Context, t *OwnerToken, now time.Time)
 func (s *Store) RevokeVenueDevices(ctx context.Context, venueID int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE devices SET status = 'revoked' WHERE venue_id = ?`, venueID)
 	return err
+}
+
+// --- device events + remote commands (business plan P4) ------------------------
+
+// DeviceEvent is one line of a camera's timeline.
+type DeviceEvent struct {
+	At     time.Time
+	Kind   string // boot | brownout | firmware | error | cmd
+	Detail string
+}
+
+// AddDeviceEvent appends to a camera's timeline.
+func (s *Store) AddDeviceEvent(ctx context.Context, deviceID int64, at time.Time, kind, detail string) error {
+	if len(detail) > 200 {
+		detail = detail[:200]
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO device_events (device_id, at, kind, detail) VALUES (?, ?, ?, ?)`,
+		deviceID, ts(at), kind, detail)
+	return err
+}
+
+// DeviceEvents lists a camera's newest events.
+func (s *Store) DeviceEvents(ctx context.Context, deviceID int64, limit int) ([]DeviceEvent, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT at, kind, detail FROM device_events WHERE device_id = ?
+		ORDER BY id DESC LIMIT ?`, deviceID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DeviceEvent
+	for rows.Next() {
+		var e DeviceEvent
+		var at int64
+		if err := rows.Scan(&at, &e.Kind, &e.Detail); err != nil {
+			return nil, err
+		}
+		e.At = time.Unix(at, 0).UTC()
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// PruneDeviceEvents drops timeline rows older than cutoff (30 days).
+func (s *Store) PruneDeviceEvents(ctx context.Context, cutoff time.Time) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM device_events WHERE at < ?`, ts(cutoff))
+	return err
+}
+
+// SetPendingCommand queues one command for the camera's next upload reply
+// ("" cancels). A newer command replaces an undelivered one.
+func (s *Store) SetPendingCommand(ctx context.Context, deviceID int64, cmd string, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE devices SET pending_cmd = ?, cmd_at = ? WHERE id = ?`, cmd, ts(at), deviceID)
+	return err
+}
+
+// TakePendingCommand returns and clears the camera's pending command. The
+// clear is conditional on the value read, so two concurrent uploads cannot
+// both deliver it (the loser sees RowsAffected 0 and sends nothing).
+func (s *Store) TakePendingCommand(ctx context.Context, deviceID int64, at time.Time) (string, error) {
+	var cmd string
+	if err := s.db.QueryRowContext(ctx, `SELECT pending_cmd FROM devices WHERE id = ?`, deviceID).Scan(&cmd); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	if cmd == "" {
+		return "", nil
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE devices SET pending_cmd = '', cmd_at = ? WHERE id = ? AND pending_cmd = ?`,
+		ts(at), deviceID, cmd)
+	if err != nil {
+		return "", err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return "", nil
+	}
+	return cmd, nil
 }

@@ -53,7 +53,11 @@ Connection: keep-alive
     "boot": 7, "brownout": 0, "join_fail": 1,
     "post_fail": 3, "tls_fail": 0, "capture_fail": 0
   },
-  "reason": "camera-degraded"
+  "reason": "camera-degraded",
+  "reset_reason": "brownout",
+  "uptime_s": 3721,
+  "wifi_reconnects": 2,
+  "last_err": "tls:-0x7280"
 }
 ```
 
@@ -68,6 +72,15 @@ Connection: keep-alive
   `cfg_ver_applied` instead; the server ignores it.
 - `reason` — set only in degraded modes (`camera-degraded`, `401-hold`),
   empty otherwise.
+- Self-report (additive, firmware from 16 Oct 2026; business plan P4) —
+  `reset_reason`: why the board last booted (`power_on`, `sw`, `panic`,
+  `int_wdt`, `task_wdt`, `wdt`, `brownout`, `deepsleep`, `ext`, `unknown`);
+  `uptime_s`: seconds since boot; `wifi_reconnects`: since boot;
+  `last_err`: the most recent error code since boot (`tls:<code>`,
+  `post:<status|timeout>`, `cam:init`, `cam:capture`), empty when none. The
+  server keeps the latest values per device and writes changes (reboot +
+  reason, brownout, firmware change, new error) to a 30-day timeline. A beat
+  without these fields leaves the stored values alone.
 - Unknown additive fields are ignored by the server.
 
 ### Responses
@@ -108,6 +121,12 @@ stamped per reply, so it differs between a store and a later retry):
   leaves those boards on their stored settings.
 - `server_time` — canonical; the device clock is advisory only and must never
   be used for freshness.
+- `cmd` (optional, additive; P4) — one operator command, sent in exactly one
+  201/409/422 reply and then cleared on the server: `reboot` (restart after
+  handling the reply) or `install_window` (reopen the 15-minute LAN `/jpg`
+  window). The device executes a known value once and ignores anything else;
+  older firmware ignores the field. The server never connects to the device —
+  a command waits for the next upload.
 
 422 body:
 

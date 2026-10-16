@@ -530,3 +530,25 @@ func TestSetMapsURL(t *testing.T) {
 		t.Fatalf("MapsURL = %q, err %v", v.MapsURL, err)
 	}
 }
+
+func TestPendingCommandDeliveredOnce(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	vid, _ := s.CreateVenue(ctx, Venue{Slug: "jadro", Name: "Jadro", Style: "poster"})
+	did, _ := s.CreateDevice(ctx, Device{VenueID: vid, Serial: "cam1"}, "h1")
+	now := time.Now()
+	if cmd, _ := s.TakePendingCommand(ctx, did, now); cmd != "" {
+		t.Fatalf("empty queue gave %q", cmd)
+	}
+	s.SetPendingCommand(ctx, did, "reboot", now)
+	if cmd, _ := s.TakePendingCommand(ctx, did, now); cmd != "reboot" {
+		t.Fatalf("take = %q", cmd)
+	}
+	if cmd, _ := s.TakePendingCommand(ctx, did, now); cmd != "" {
+		t.Fatalf("delivered twice: %q", cmd)
+	}
+	s.AddDeviceEvent(ctx, did, now, "boot", "reason=sw")
+	if ev, _ := s.DeviceEvents(ctx, did, 5); len(ev) != 1 || ev[0].Kind != "boot" {
+		t.Fatalf("events = %+v", ev)
+	}
+}

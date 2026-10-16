@@ -287,6 +287,9 @@ func serveMain(args []string) int {
 				if _, err := ing.Prune(ctx); err != nil {
 					return err
 				}
+				if err := st.PruneDeviceEvents(ctx, time.Now().Add(-30*24*time.Hour)); err != nil {
+					return err
+				}
 				if err := st.PruneLostLeads(ctx, time.Now().Add(-365*24*time.Hour)); err != nil {
 					return err
 				}

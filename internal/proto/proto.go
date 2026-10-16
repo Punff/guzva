@@ -93,7 +93,19 @@ type Meta struct {
 	Profile   string   `json:"profile,omitempty"` // frozen camera profile id (print v4)
 	Counters  Counters `json:"counters"`
 	Reason    string   `json:"reason,omitempty"`
+	// Self-report (business plan P4, additive; absent from older firmware).
+	ResetReason    string `json:"reset_reason,omitempty"`    // why the board last booted
+	UptimeS        uint32 `json:"uptime_s,omitempty"`        // seconds since boot
+	WiFiReconnects uint32 `json:"wifi_reconnects,omitempty"` // since boot
+	LastErr        string `json:"last_err,omitempty"`        // most recent error code since boot
 }
+
+// Commands the server may put in Response.Cmd (business plan P4). The device
+// executes a known one once and ignores anything else.
+const (
+	CmdReboot        = "reboot"
+	CmdInstallWindow = "install_window" // reopen the 15-min LAN /jpg window
+)
 
 // Response is the body of 201, 409 and 422 (422 adds Reason). 201 and 409
 // carry exactly these fields; server_time is stamped per reply. There is no
@@ -103,6 +115,7 @@ type Response struct {
 	NextS      int       `json:"next_s"`
 	ServerTime time.Time `json:"server_time"`
 	Reason     string    `json:"reason,omitempty"`
+	Cmd        string    `json:"cmd,omitempty"` // one pending command, delivered once (P4)
 }
 
 // ErrorBody is the body of 401/413/429/507.

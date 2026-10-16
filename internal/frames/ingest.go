@@ -117,7 +117,11 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// is invisible to whoever is on support.
 	respond := func(status int, reason string, meanLuma float64) {
 		s.logOutcome(status, dev, meta, r.TLS, renderMS, reason, meanLuma)
-		s.writeResp(w, status, s.response(reason))
+		resp := s.response(reason)
+		if dev != nil {
+			resp.Cmd = s.takeCommand(ctx, dev)
+		}
+		s.writeResp(w, status, resp)
 	}
 
 	// Per-IP floor first — a deliberate refinement of the §6.1 order:
@@ -186,7 +190,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 			// zeros, and a zero beat would overwrite good readings with lies
 			// on the fleet board (the meta-parsed check, not field sniffing).
 			if reason == proto.ReasonBadCaptureID {
-				if berr := s.st.UpdateDeviceBeat(ctx, dev.ID, beatOf(meta, s.now().UTC())); berr != nil {
+				if berr := s.recordBeat(ctx, dev, beatOf(meta, s.now().UTC())); berr != nil {
 					s.log.Error("beat update failed", "err", berr.Error())
 				}
 			}
@@ -255,7 +259,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if exists {
-		if err := s.st.UpdateDeviceBeat(ctx, dev.ID, beat); err != nil {
+		if err := s.recordBeat(ctx, dev, beat); err != nil {
 			s.log.Error("beat update failed", "err", err.Error())
 		}
 		s.m.add("duplicate")
@@ -270,7 +274,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 	// (readMultipart leaves frameRaw nil when the part is absent;
 	// io.ReadAll returns non-nil for an empty part.)
 	if frameRaw == nil {
-		if err := s.st.UpdateDeviceBeat(ctx, dev.ID, beat); err != nil {
+		if err := s.recordBeat(ctx, dev, beat); err != nil {
 			s.internal(w, "beat update", err)
 			return
 		}
@@ -317,7 +321,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 				respond(proto.StatusDuplicate, "", 0)
 				return
 			}
-			if err := s.st.UpdateDeviceBeat(ctx, dev.ID, beat); err != nil {
+			if err := s.recordBeat(ctx, dev, beat); err != nil {
 				s.log.Error("beat update failed", "err", err.Error())
 			}
 			s.m.add("quarantined")
@@ -367,7 +371,7 @@ func (s *Server) HandleIngest(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, "publish render", err)
 		return
 	}
-	if err := s.st.UpdateDeviceBeat(ctx, dev.ID, beat); err != nil {
+	if err := s.recordBeat(ctx, dev, beat); err != nil {
 		s.log.Error("beat update failed", "err", err.Error())
 	}
 	if s.OnStored != nil {
@@ -522,7 +526,64 @@ func beatOf(meta proto.Meta, at time.Time) store.Beat {
 	return store.Beat{
 		FW: meta.FW, RSSI: meta.RSSI, FreeHeap: int(meta.FreeHeap),
 		Counters: meta.Counters, Profile: meta.Profile, Reason: meta.Reason, At: at,
+		ResetReason: meta.ResetReason, UptimeS: meta.UptimeS, WiFiReconnects: meta.WiFiReconnects,
+		LastErr:    meta.LastErr,
+		SelfReport: meta.ResetReason != "" || meta.UptimeS > 0,
 	}
+}
+
+// recordBeat stores one upload's health headers and writes what changed
+// since the previous one to the camera's timeline (business plan P4): a
+// reboot (with the board's own reason), a brownout, a firmware change, a new
+// error. dev is the row as it was before this upload.
+func (s *Server) recordBeat(ctx context.Context, dev *store.Device, b store.Beat) error {
+	if err := s.st.UpdateDeviceBeat(ctx, dev.ID, b); err != nil {
+		return err
+	}
+	if dev.LastSeenAt.IsZero() {
+		_ = s.st.AddDeviceEvent(ctx, dev.ID, b.At, "boot", "first contact, fw "+b.FW)
+		return nil
+	}
+	var ev [][2]string
+	if b.Counters.Boot != dev.Counters.Boot {
+		d := fmt.Sprintf("boot %d", b.Counters.Boot)
+		if b.ResetReason != "" {
+			d += ", reason " + b.ResetReason
+		}
+		if b.Counters.Boot < dev.Counters.Boot {
+			d += " (counters reset — reflash or NVS wipe)"
+		}
+		ev = append(ev, [2]string{"boot", d})
+	}
+	if b.Counters.Brownout > dev.Counters.Brownout {
+		ev = append(ev, [2]string{"brownout", fmt.Sprintf("brownout #%d — power dipped", b.Counters.Brownout)})
+	}
+	if b.FW != "" && dev.FW != "" && b.FW != dev.FW {
+		ev = append(ev, [2]string{"firmware", dev.FW + " → " + b.FW})
+	}
+	if b.LastErr != "" && b.LastErr != dev.LastErr {
+		ev = append(ev, [2]string{"error", b.LastErr})
+	}
+	for _, e := range ev {
+		if err := s.st.AddDeviceEvent(ctx, dev.ID, b.At, e[0], e[1]); err != nil {
+			s.log.Warn("device event write failed", "device_id", dev.ID, "err", err.Error())
+		}
+	}
+	return nil
+}
+
+// takeCommand delivers the camera's pending command (if any) in this reply.
+func (s *Server) takeCommand(ctx context.Context, dev *store.Device) string {
+	if dev.PendingCmd == "" {
+		return ""
+	}
+	cmd, err := s.st.TakePendingCommand(ctx, dev.ID, s.now().UTC())
+	if err != nil || cmd == "" {
+		return ""
+	}
+	_ = s.st.AddDeviceEvent(ctx, dev.ID, s.now().UTC(), "cmd", "sent: "+cmd)
+	s.log.Info("ingest: command delivered", "serial", dev.Serial, "cmd", cmd)
+	return cmd
 }
 
 // response builds the canonical ingest body (§4). 201 and 409 share this

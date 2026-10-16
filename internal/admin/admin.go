@@ -148,6 +148,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	sub.HandleFunc("POST /admin/mail/test", s.require(s.mailTest))
 	sub.HandleFunc("GET /admin/devices/{id}", s.require(s.devicePage))
 	sub.HandleFunc("POST /admin/devices/{id}/revoke", s.require(s.revokeDevice))
+	sub.HandleFunc("POST /admin/devices/{id}/cmd", s.require(s.deviceCommand))
 	sub.HandleFunc("GET /admin/_kit", s.require(s.kit))
 	sub.HandleFunc("GET /admin/leads", s.require(s.leadsPage))
 	sub.HandleFunc("POST /admin/leads/invite", s.require(s.createInvite))
@@ -822,8 +823,11 @@ type deviceModel struct {
 	Venue     string        // the venue's name, for the page header
 	Venues    []store.Venue // "move to venue" choices
 	Saved     bool
-	Bars      int    // signal bars 1–4 (when Seen)
-	SignalW   string // "excellent" … "very weak"
+	Bars      int                 // signal bars 1–4 (when Seen)
+	SignalW   string              // "excellent" … "very weak"
+	Events    []store.DeviceEvent // timeline, newest first (P4)
+	Uptime    string              // "3 h 12 min" from the board's own uptime
+	CmdQueued bool
 }
 
 func (s *Server) devicePage(w http.ResponseWriter, r *http.Request) {
@@ -852,6 +856,11 @@ func (s *Server) devicePage(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	m.Events, _ = s.st.DeviceEvents(r.Context(), d.ID, 40)
+	m.CmdQueued = d.PendingCmd != ""
+	if d.UptimeS > 0 {
+		m.Uptime = (time.Duration(d.UptimeS) * time.Second).Round(time.Minute).String()
+	}
 	m.Nav = s.nav(r.Context())
 	if err := s.tmpl.ExecuteTemplate(w, "device.html", m); err != nil {
 		s.log.Error("admin: render device", "err", err.Error())
@@ -1150,4 +1159,33 @@ func formKey(secret []byte) []byte {
 	m := hmac.New(sha256.New, secret)
 	m.Write([]byte("guzva intake form"))
 	return m.Sum(nil)
+}
+
+// deviceCommand queues a remote command for the camera's next upload reply
+// (business plan P4). Push-only: the server never connects to the board; the
+// command waits until the board next posts (≤ a minute when healthy).
+func (s *Server) deviceCommand(w http.ResponseWriter, r *http.Request) {
+	d, ok := s.loadDevice(w, r)
+	if !ok {
+		return
+	}
+	r.ParseForm()
+	cmd := r.FormValue("cmd")
+	switch cmd {
+	case proto.CmdReboot, proto.CmdInstallWindow, "cancel":
+	default:
+		s.flash(w, "Unknown command.")
+		return
+	}
+	queued := cmd
+	if cmd == "cancel" {
+		queued = ""
+	}
+	if err := s.st.SetPendingCommand(r.Context(), d.ID, queued, s.now()); err != nil {
+		s.internal(w, "queue command", err)
+		return
+	}
+	s.log.Info("admin: device command", "device_id", d.ID, "cmd", cmd, "actor", "admin")
+	s.audit(r, "admin", "device.cmd", d.VenueID, fmt.Sprintf("device %d: %s", d.ID, cmd))
+	redirect(w, r, fmt.Sprintf("/admin/devices/%d?saved=1", d.ID))
 }

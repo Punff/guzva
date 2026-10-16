@@ -33,6 +33,39 @@
 </section>
 
 <section class="card mb-6">
+  <h2 class="text-lg font-bold">What the camera reports</h2>
+  {{if or .Device.ResetReason .Uptime}}
+  <dl class="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+    <div><dt class="lbl">Running for</dt><dd class="tnum font-semibold">{{or .Uptime "—"}}</dd></div>
+    <div><dt class="lbl">Last restart because</dt><dd class="font-semibold">{{or .Device.ResetReason "—"}}</dd></div>
+    <div><dt class="lbl">WiFi reconnects</dt><dd class="tnum font-semibold">{{.Device.WiFiReconnects}}</dd></div>
+    <div><dt class="lbl">Last error</dt><dd class="font-semibold break-all">{{or .Device.LastErr "none"}}</dd></div>
+  </dl>
+  {{else}}<p class="text-sm text-muted mt-2">This firmware doesn't report its own state yet — flash a build from 16 Oct 2026 or later.</p>{{end}}
+</section>
+
+<section class="card mb-6">
+  <h2 class="text-lg font-bold">Remote commands</h2>
+  <p class="text-sm text-muted mb-3">The server can't reach the camera; a command rides the reply to its next upload (within a minute when it is healthy) and is sent once.</p>
+  {{if .CmdQueued}}<p class="mb-3 border-l-4 border-late pl-3 text-sm">Waiting to send: <b>{{.Device.PendingCmd}}</b> (queued {{.Device.CmdAt.Format "15:04"}} UTC).</p>{{end}}
+  <div class="flex flex-wrap gap-3">
+    <form method="post" action="/admin/devices/{{.Device.ID}}/cmd"><input type="hidden" name="cmd" value="reboot"><button class="btn" type="submit">Restart camera</button></form>
+    <form method="post" action="/admin/devices/{{.Device.ID}}/cmd"><input type="hidden" name="cmd" value="install_window"><button class="btn" type="submit">Open focusing window (15 min)</button></form>
+    {{if .CmdQueued}}<form method="post" action="/admin/devices/{{.Device.ID}}/cmd"><input type="hidden" name="cmd" value="cancel"><button class="btn btn--quiet" type="submit">Cancel</button></form>{{end}}
+  </div>
+</section>
+
+<section class="card mb-6">
+  <h2 class="text-lg font-bold mb-3">Timeline</h2>
+  {{if .Events}}
+  <table class="tbl tbl--bare">
+    <thead><tr><th>When (UTC)</th><th>What</th><th>Detail</th></tr></thead>
+    <tbody>{{range .Events}}<tr><td class="tnum whitespace-nowrap">{{.At.Format "02.01. 15:04"}}</td><td>{{.Kind}}</td><td class="break-all">{{.Detail}}</td></tr>{{end}}</tbody>
+  </table>
+  {{else}}<p class="text-sm text-muted">Nothing yet. Restarts, power dips, firmware changes, errors and sent commands appear here (kept 30 days).</p>{{end}}
+</section>
+
+<section class="card mb-6">
   <h2 class="text-lg font-bold mb-4">Name and venue</h2>
   <form class="grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end" method="post" action="/admin/devices/{{.Device.ID}}"
         hx-post="/admin/devices/{{.Device.ID}}" hx-target="#flash" hx-swap="innerHTML">
