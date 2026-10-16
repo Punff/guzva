@@ -57,8 +57,8 @@ func TestHomeListsListedVenues(t *testing.T) {
 	if strings.Contains(body, "/bench/") || strings.Contains(body, "Bench rig") {
 		t.Error("an unlisted venue appears on the homepage")
 	}
-	if strings.Contains(body, "Javi nam se") {
-		t.Error("contact line shown without a configured contact")
+	if strings.Contains(body, "Javi nam se") || !strings.Contains(body, "Imaš salon ili brijačnicu?") {
+		t.Error("without a contact: no button, but the owners line must stay")
 	}
 	if strings.Contains(body, "<script") || hdr.Get("X-Robots-Tag") != "" || strings.Contains(body, "noindex") {
 		t.Error("homepage must be script-free and indexable")
@@ -69,8 +69,9 @@ func TestHomeListsListedVenues(t *testing.T) {
 
 	f.w.SetContact("info@example.ba, +387 61 000 000")
 	_, body, _ = homeBody(t, f)
-	if !strings.Contains(body, `href="mailto:info@example.ba"`) || !strings.Contains(body, `href="tel:&#43;38761000000"`) {
-		t.Error("configured contacts not shown as mailto/tel links")
+	if !strings.Contains(body, `href="mailto:info@example.ba?subject=Guzva%20u%20mom%20salonu"`) ||
+		!strings.Contains(body, ">Javi nam se</a>") || !strings.Contains(body, `href="tel:&#43;38761000000"`) {
+		t.Error("contact button (mailto with subject) or phone line missing")
 	}
 	if strings.Contains(body, "Kontakt podaci uskoro.") {
 		t.Error("'coming soon' shown alongside real contacts")

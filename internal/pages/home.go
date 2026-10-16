@@ -6,6 +6,7 @@ import (
 	"errors"
 	"html/template"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -122,6 +123,17 @@ func (w *Writer) buildHome(ctx context.Context, vs []store.Venue) error {
 			break
 		}
 	}
+	// The contact section's button mails the first configured address with
+	// the subject filled in; the other lines (phones) are listed under it.
+	var mail template.URL
+	var rest []contactItem
+	for _, c := range contactItems(w.contact) {
+		if mail == "" && strings.HasPrefix(string(c.Href), "mailto:") {
+			mail = template.URL(string(c.Href) + "?subject=" + url.PathEscape(cat.Get("contact.subject")))
+			continue
+		}
+		rest = append(rest, c)
+	}
 	var buf bytes.Buffer
 	if err := w.tmpl.ExecuteTemplate(&buf, "home.html", struct {
 		Lang     string
@@ -129,8 +141,9 @@ func (w *Writer) buildHome(ctx context.Context, vs []store.Venue) error {
 		CSS      template.CSS
 		Cards    []homeCard
 		Featured *homeCard
+		MailHref template.URL
 		Contacts []contactItem
-	}{string(cat.Lang), cat, template.CSS(webui.Public()), cards, featured, contactItems(w.contact)}); err != nil {
+	}{string(cat.Lang), cat, template.CSS(webui.Public()), cards, featured, mail, rest}); err != nil {
 		return err
 	}
 	w.home.mu.Lock()

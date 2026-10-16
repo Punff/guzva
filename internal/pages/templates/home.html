@@ -92,25 +92,53 @@
     </div>
   </section>
 
-  <section class="flex flex-col gap-3 border-t-2 border-ink pt-8" id="privatnost" aria-labelledby="priv-h">
-    <h2 class="text-[1.5rem] leading-tight font-extrabold tracking-tight" id="priv-h">{{.Cat.Get "privsec.title"}}</h2>
-    <ul class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <li class="border-l-4 border-s1 pl-3 font-semibold">{{.Cat.Get "privsec.1"}}</li>
-      <li class="border-l-4 border-s1 pl-3 font-semibold">{{.Cat.Get "privsec.2"}}</li>
-      <li class="border-l-4 border-s1 pl-3 font-semibold">{{.Cat.Get "privsec.3"}}</li>
+  {{/* Privatnost: a framed panel on the second paper — the intro and the
+       policy link on one side, three promises with pixel icons (the
+       logomark's crisp 16-cell grid) on the other. Each promise is a fact
+       the code enforces (privacy policy §2–§6). */}}
+  <section class="grid grid-cols-1 gap-6 border-2 border-ink bg-paper-2 p-5 sm:p-8 md:grid-cols-[1fr_2fr]" id="privatnost" aria-labelledby="priv-h">
+    <div class="flex flex-col gap-3">
+      <h2 class="text-[1.5rem] leading-tight font-extrabold tracking-tight" id="priv-h">{{.Cat.Get "privsec.title"}}</h2>
+      <p>{{.Cat.Get "privsec.lead"}}</p>
+      <p><a class="btn btn--quiet" href="/privatnost/">{{.Cat.Get "privsec.more"}}</a></p>
+    </div>
+    <ul class="grid grid-cols-1 gap-5 sm:grid-cols-3">
+      <li class="flex flex-col gap-2">
+        <svg viewBox="0 0 16 16" width="32" height="32" shape-rendering="crispEdges" aria-hidden="true">
+          <rect width="16" height="16" fill="var(--ink)"/><rect x="2" y="2" width="4" height="4" fill="var(--s2)"/><rect x="6" y="2" width="4" height="4" fill="var(--s1)"/><rect x="10" y="2" width="4" height="4" fill="var(--s2)"/><rect x="2" y="6" width="4" height="4" fill="var(--s1)"/><rect x="6" y="6" width="4" height="4" fill="var(--paper)"/><rect x="10" y="6" width="4" height="4" fill="var(--s1)"/><rect x="2" y="10" width="4" height="4" fill="var(--s2)"/><rect x="6" y="10" width="4" height="4" fill="var(--s1)"/><rect x="10" y="10" width="4" height="4" fill="var(--s2)"/>
+        </svg>
+        <span class="font-bold">{{.Cat.Get "privsec.1.h"}}</span>
+        <span class="text-sm">{{.Cat.Get "privsec.1"}}</span>
+      </li>
+      <li class="flex flex-col gap-2">
+        <svg viewBox="0 0 16 16" width="32" height="32" shape-rendering="crispEdges" aria-hidden="true">
+          <rect width="16" height="16" fill="var(--ink)"/><rect x="2" y="3" width="12" height="10" fill="var(--paper)"/><rect x="3" y="9" width="3" height="3" fill="var(--s1)"/><rect x="6" y="7" width="3" height="5" fill="var(--s2)"/><rect x="10" y="4" width="2" height="2" fill="var(--s1)"/><path d="M2 13h2v-2h2V9h2V7h2V5h2V3h2v2h-2v2h-2v2H8v2H6v2H4v2H2z" fill="var(--accent)"/>
+        </svg>
+        <span class="font-bold">{{.Cat.Get "privsec.2.h"}}</span>
+        <span class="text-sm">{{.Cat.Get "privsec.2"}}</span>
+      </li>
+      <li class="flex flex-col gap-2">
+        <svg viewBox="0 0 16 16" width="32" height="32" shape-rendering="crispEdges" aria-hidden="true">
+          <rect width="16" height="16" fill="var(--ink)"/><path d="M4 6h8v1h2v2h-2v1H4V9H2V7h2z" fill="var(--paper)"/><rect x="7" y="6" width="2" height="4" fill="var(--s1)"/><path d="M2 13h2v-2h2V9h2V7h2V5h2V3h2v2h-2v2h-2v2H8v2H6v2H4v2H2z" fill="var(--accent)"/>
+        </svg>
+        <span class="font-bold">{{.Cat.Get "privsec.3.h"}}</span>
+        <span class="text-sm">{{.Cat.Get "privsec.3"}}</span>
+      </li>
     </ul>
-    <p><a class="underline font-semibold" href="/privatnost/">{{.Cat.Get "privsec.more"}}</a></p>
   </section>
 
   <section class="flex flex-col gap-3 border-t-2 border-ink pt-8" id="kontakt" aria-labelledby="contact-h">
     <h2 class="text-[1.5rem] leading-tight font-extrabold tracking-tight" id="contact-h">{{.Cat.Get "contact.title"}}</h2>
+    <p class="max-w-[38rem] text-lg">{{.Cat.Get "contact.owners"}}</p>
+    {{if .MailHref}}
+    <p><a class="btn btn--primary" href="{{.MailHref}}">{{.Cat.Get "contact.button"}}</a></p>
+    {{else}}
+    <p class="text-muted">{{.Cat.Get "contact.none"}}</p>
+    {{end}}
     {{if .Contacts}}
-    <p>{{.Cat.Get "contact.p"}}</p>
     <ul class="flex flex-col gap-1">
       {{range .Contacts}}<li><a class="underline font-semibold" href="{{.Href}}">{{.Text}}</a></li>{{end}}
     </ul>
-    {{else}}
-    <p class="text-muted">{{.Cat.Get "contact.none"}}</p>
     {{end}}
     <p class="text-sm text-muted">{{.Cat.Get "home.biz.owner"}} <a class="underline" href="/owner/">{{.Cat.Get "home.biz.login"}}</a></p>
   </section>
