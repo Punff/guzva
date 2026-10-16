@@ -1234,3 +1234,16 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   after boot. `pio run` SUCCESS; **not flashed** (bench board mid-run).
 - `8dbff01` no-JS: clock hidden instead of aging under a fresh still.
 - Prod untouched (still v0.9.1). Next deploy v0.9.2 carries the page work.
+
+### Deploy — `v0.9.2` (2026-10-16 ~09:17 UTC)
+
+- Carries `/privatnost/` + footer link, the no-JS clock hide, `make soak`
+  (tool only). No schema change, no firmware (Q-10 build is NOT flashed).
+- `make deploy`: `active`, `make check` OK — healthz `version v0.9.2`,
+  page + admin answer.
+- **Live probe of the changed behaviour NOT done:** after the deploy the
+  session's permission guard blocked the public `curl` of `/privatnost/` and
+  `/bench/` (classified as a prod action). Owed: `/privatnost/` 200, the
+  `/bench/` footer carries `href="/privatnost/"`, and the no-JS style is
+  present. No backup was taken first this time (no schema change; the
+  nightly backup stands).
