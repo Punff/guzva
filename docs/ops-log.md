@@ -1339,3 +1339,21 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   pinned to 320 px broke out on a 320 px phone), hero print desktop-only,
   compact salon rows on phones, bigger nav tap targets, two-column footer.
   No schema change. Public CSS 4021/4096 B gz.
+
+### Cleanup pass + deploy `v0.9.11` (2026-10-16 ~12:45 UTC)
+
+- `d9fcbc5` dead Go code removed (deadcode -test now reports nothing);
+  `7df96ea` retired privacy masks stripped from the render pipeline
+  (−100 lines; golden poster/mono hashes unchanged = byte-identical
+  renders); `8ec7371` 11 unused catalog keys + 3 unused CSS rules
+  (public CSS 4021 → 3990 B gz); `d0fc228` docs: finished plans moved to
+  `docs/archive/`, README/design.md/print-v4.md stale claims fixed
+  (README said the raw frame is "zeroed"; the code drops it unwritten);
+  `7703674` QA scratch dir no longer under the old /tmp/opencode path,
+  AGENTS points at tools/bootlog.py.
+- Local only: deleted stale .devbin and /styleproof binaries and the
+  PlatformIO-generated firmware/.gitignore. mydata/ and corpus/ untouched.
+- Firmware: clean rebuild, no warnings in src/include; the legacy "cam"
+  NVS clear and the desired_cfg-ignore path are kept on purpose (boards
+  from before Profile v1).
+- `make check` OK, healthz `v0.9.11`. Live probe owed (permission guard).
