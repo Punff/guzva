@@ -94,7 +94,7 @@ qa_case "no-JS fallback: the meta refresh is inside <noscript> only"
 # time, so a bare <meta http-equiv=refresh> would reload the document every
 # 30 s even with the in-place swap running (3 navigations in 95 s).
 qa_true "noscript wraps a meta refresh" bash -c \
-  "tr -d '\n' < '$HTML' | grep -q '<noscript><meta http-equiv=\"refresh\" content=\"60\"></noscript>'"
+  "tr -d '\n' < '$HTML' | grep -q '<noscript><meta http-equiv=\"refresh\" content=\"60\">[^<]*\(<style>[^<]*</style>\)\?</noscript>'"
 qa_hasnt "no unconditional meta refresh (would double-navigate with JS on)" \
   "$(tr '\n' ' ' <"$HTML" | sed 's/<noscript>.*<\/noscript>//g')" 'http-equiv="refresh"'
 
