@@ -319,7 +319,7 @@ func TestMigrationV8BackfillsMasks(t *testing.T) {
 	var am, bm string
 	_ = s.db.QueryRow(`SELECT masks_json FROM venues WHERE slug = 'a'`).Scan(&am)
 	_ = s.db.QueryRow(`SELECT masks_json FROM venues WHERE slug = 'b'`).Scan(&bm)
-	if am != MarshalMasks([]render.Rect{{X0: 20, Y0: 40, X1: 60, Y1: 80}}) || bm != "" {
+	if am != MarshalMasks([]v3Mask{{X0: 20, Y0: 40, X1: 60, Y1: 80}}) || bm != "" {
 		t.Errorf("masks_json a=%q b=%q, want one rect scaled ×2 and none", am, bm)
 	}
 }

@@ -316,7 +316,7 @@ func backfillMasks(ctx context.Context, tx *sql.Tx) error {
 			return err
 		}
 		var doc struct {
-			Masks []render.Rect `json:"masks"`
+			Masks []v3Mask `json:"masks"`
 		}
 		if json.Unmarshal([]byte(raw), &doc) != nil || len(doc.Masks) == 0 {
 			continue
@@ -939,9 +939,19 @@ func (s *Store) PruneMeta(ctx context.Context, metaCutoff time.Time) error {
 	return err
 }
 
-// MarshalMasks writes the masks_json format ("" for none). Masks left the
-// product in v11; this remains for the v8 backfill migration.
-func MarshalMasks(m []render.Rect) string {
+// v3Mask is one retired privacy mask as the v3 calib_json and v8 masks_json
+// documents stored it (cells, half-open). Masks left the product in v11
+// (D11); only the v8 backfill migration still reads and writes them.
+type v3Mask struct {
+	X0 int `json:"x0"`
+	Y0 int `json:"y0"`
+	X1 int `json:"x1"`
+	Y1 int `json:"y1"`
+}
+
+// MarshalMasks writes the masks_json format ("" for none), for the v8
+// backfill only.
+func MarshalMasks(m []v3Mask) string {
 	if len(m) == 0 {
 		return ""
 	}

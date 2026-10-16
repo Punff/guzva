@@ -71,7 +71,7 @@ func pngChunks(t *testing.T, b []byte) []string {
 func TestPipelineInvariants(t *testing.T) {
 	img := hardScene(t)
 	for _, levels := range []int{4, 2} {
-		b, err := Pipeline(img, levels, nil, Defaults)
+		b, err := Pipeline(img, levels, Defaults)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -100,7 +100,7 @@ func TestPipelineInvariants(t *testing.T) {
 // at least three tones, and the lighting gradient alone must not create
 // bands — a smooth ramp with no objects renders (almost) flat s2.
 func TestLightingDoesNotDecideTones(t *testing.T) {
-	b, err := Pipeline(hardScene(t), 4, nil, Defaults)
+	b, err := Pipeline(hardScene(t), 4, Defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestLightingDoesNotDecideTones(t *testing.T) {
 	}
 
 	ramp := gray(320, 240, func(x, y int) uint8 { return uint8(30 + x*150/320 + y*40/240) })
-	b, err = Pipeline(ramp, 4, nil, Defaults)
+	b, err = Pipeline(ramp, 4, Defaults)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,8 +142,8 @@ func TestToneIsRelative(t *testing.T) {
 			return uint8(v * scale / 3)
 		})
 	}
-	bright, _ := Pipeline(scene(3), 4, nil, Defaults)
-	dim, _ := Pipeline(scene(1), 4, nil, Defaults)
+	bright, _ := Pipeline(scene(3), 4, Defaults)
+	dim, _ := Pipeline(scene(1), 4, Defaults)
 	pb, _ := decodeLevels(t, bright)
 	pd, _ := decodeLevels(t, dim)
 	if got := pb.Pix[140*GW+80]; got != 0 {
@@ -175,7 +175,7 @@ func TestFinestDetailDies(t *testing.T) {
 		}
 		return 130
 	})
-	b, _ := Pipeline(img, 4, nil, Defaults)
+	b, _ := Pipeline(img, 4, Defaults)
 	p, _ := decodeLevels(t, b)
 	for y := 80; y < 160; y++ {
 		for x := 120; x < 200; x++ {
@@ -195,7 +195,7 @@ func TestThinShapesSurvive(t *testing.T) {
 		}
 		return 140
 	})
-	b, _ := Pipeline(img, 4, nil, Defaults)
+	b, _ := Pipeline(img, 4, Defaults)
 	p, _ := decodeLevels(t, b)
 	for y := 50; y < 190; y++ {
 		if p.Pix[y*GW+101] > 1 {
@@ -204,37 +204,9 @@ func TestThinShapesSurvive(t *testing.T) {
 	}
 }
 
-// Mask cells are exactly level 0, and what is under a mask cannot leak
-// out: changing the masked content changes no visible cell.
-func TestMasks(t *testing.T) {
-	m := []Rect{{X0: 100, Y0: 60, X1: 200, Y1: 160}, {X0: -10, Y0: -10, X1: 5, Y1: 5}}
-	under := func(v uint8) image.Image {
-		return gray(320, 240, func(x, y int) uint8 {
-			if x >= 100 && x < 200 && y >= 60 && y < 160 {
-				return v
-			}
-			return uint8(80 + x/4)
-		})
-	}
-	a, _ := Pipeline(under(0), 4, m, Defaults)
-	b, _ := Pipeline(under(255), 4, m, Defaults)
-	if !bytes.Equal(a, b) {
-		t.Error("masked content leaked into visible cells")
-	}
-	p, _ := decodeLevels(t, a)
-	for y := 0; y < GH; y++ {
-		for x := 0; x < GW; x++ {
-			in := (x >= 100 && x < 200 && y >= 60 && y < 160) || (x < 5 && y < 5)
-			if in && p.Pix[y*GW+x] != 0 {
-				t.Fatalf("mask cell (%d,%d) = s%d", x, y, p.Pix[y*GW+x])
-			}
-		}
-	}
-}
-
 func TestNon43IsDimsReject(t *testing.T) {
 	for _, r := range []image.Rectangle{image.Rect(0, 0, 240, 240), image.Rect(0, 0, 320, 180)} {
-		if _, err := Pipeline(image.NewGray(r), 4, nil, Defaults); err == nil {
+		if _, err := Pipeline(image.NewGray(r), 4, Defaults); err == nil {
 			t.Errorf("%v: want dims reject", r)
 		} else if reason, _ := IsReject(err); reason != "dims" {
 			t.Errorf("%v: reason %q", r, reason)
@@ -273,7 +245,7 @@ func TestOutlineIsThinAndContinuous(t *testing.T) {
 		}
 		return 100
 	})
-	b, _ := Pipeline(img, 4, nil, Defaults)
+	b, _ := Pipeline(img, 4, Defaults)
 	p, _ := decodeLevels(t, b)
 	for y := 20; y < 220; y++ {
 		n := 0
@@ -288,7 +260,7 @@ func TestOutlineIsThinAndContinuous(t *testing.T) {
 	}
 	off := Defaults
 	off.Edge = 0
-	b, _ = Pipeline(img, 4, nil, off)
+	b, _ = Pipeline(img, 4, off)
 	q, _ := decodeLevels(t, b)
 	for i := range p.Pix {
 		x := i % GW
@@ -304,7 +276,6 @@ func TestOutlineIsThinAndContinuous(t *testing.T) {
 func TestOutlineColourOnInk(t *testing.T) {
 	lp := make([]int64, GW*GH)
 	bg := make([]int64, GW*GH)
-	vis := maskGrid(nil)
 	for i := range lp {
 		bg[i] = 100 * 16
 		if i%GW >= 160 {
@@ -322,7 +293,7 @@ func TestOutlineColourOnInk(t *testing.T) {
 		for i := range q {
 			q[i] = c.under
 		}
-		outline(q, lp, bg, vis, c.levels, Defaults)
+		outline(q, lp, bg, c.levels, Defaults)
 		lines := 0
 		for i, v := range q {
 			if v != c.under {

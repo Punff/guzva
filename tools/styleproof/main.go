@@ -36,7 +36,6 @@ func main() {
 	out := flag.String("out", "", "output directory for the contact sheet")
 	sweep := flag.Bool("sweep", false, "sweep σp × σb × thresholds instead of Defaults only")
 	synth := flag.String("synthetic", "", "write the procedural hard scene JPEG to this path and exit")
-	masks := flag.String("masks", "", "static masks x0,y0,x1,y1 in 320×240 cells, ';'-separated")
 	flag.Func("p", "extra variant σp,σb,k,dark2,dark1,light[,edge] (repeatable)", func(v string) error {
 		p := render.Defaults
 		n, err := fmt.Sscanf(v, "%g,%g,%d,%d,%d,%d,%d", &p.SigmaP, &p.SigmaB, &p.K, &p.Dark2, &p.Dark1, &p.Light, &p.Edge)
@@ -51,7 +50,7 @@ func main() {
 	if *synth != "" {
 		err = writeSynthetic(*synth)
 	} else {
-		err = run(*out, *masks, *sweep, flag.Args())
+		err = run(*out, *sweep, flag.Args())
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "styleproof:", err)
@@ -92,13 +91,9 @@ type result struct {
 	q     []uint8
 }
 
-func run(out, masksRaw string, sweep bool, ins []string) error {
+func run(out string, sweep bool, ins []string) error {
 	if out == "" || len(ins) == 0 {
-		return fmt.Errorf("usage: styleproof -out DIR [-sweep] [-masks ...] frame.jpg...")
-	}
-	ms, err := parseMasks(masksRaw)
-	if err != nil {
-		return err
+		return fmt.Errorf("usage: styleproof -out DIR [-sweep] frame.jpg...")
 	}
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err
@@ -116,7 +111,7 @@ func run(out, masksRaw string, sweep bool, ins []string) error {
 			return fmt.Errorf("%s: %w", in, err)
 		}
 		for vi, v := range vs {
-			b, err := render.Pipeline(img, v.levels, ms, v.p)
+			b, err := render.Pipeline(img, v.levels, v.p)
 			if err != nil {
 				return fmt.Errorf("%s/%s: %w", in, v.name, err)
 			}
@@ -196,21 +191,6 @@ small{color:#33607f}</style>
 	}
 	b.WriteString("</table>")
 	return os.WriteFile(filepath.Join(out, "index.html"), []byte(b.String()), 0o644)
-}
-
-func parseMasks(raw string) ([]render.Rect, error) {
-	var ms []render.Rect
-	if raw == "" {
-		return nil, nil
-	}
-	for _, m := range strings.Split(raw, ";") {
-		var r render.Rect
-		if _, err := fmt.Sscanf(m, "%d,%d,%d,%d", &r.X0, &r.Y0, &r.X1, &r.Y1); err != nil {
-			return nil, fmt.Errorf("masks: %q: %w", m, err)
-		}
-		ms = append(ms, r)
-	}
-	return ms, nil
 }
 
 // writeSynthetic renders the procedural hard scene: a dim room lit unevenly

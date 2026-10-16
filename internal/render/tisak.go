@@ -5,8 +5,8 @@
 //
 //  1. luma only, area-averaged to 320×240 (identity for QVGA) — colour dies
 //     first and is never reconstructed; EXIF never survives the decode.
-//  2. privacy masks: masked cells get zero WEIGHT in every filter below, so
-//     nothing inside a mask leaks outward and a mask casts no halo.
+//  2. (retired) privacy masks — removed from the product in v11 (D11); the
+//     stage numbers below keep print-v4.md's.
 //  3. privacy low-pass P, Gaussian σp — the privacy dial. Features smaller
 //     than about a third of a head are gone after this stage.
 //  4. lighting field B, Gaussian σb on a ×8 downsample — the room's light.
@@ -17,10 +17,10 @@
 //     brighter → s3). The same constants for every venue, never per frame.
 //  7. isolated-cell cleanup: a cell none of whose 8 neighbours agree with it
 //     takes their majority. Unlike v3's mode filter this keeps thin shapes.
-//  8. masks forced to level 0; paletted 2-bit PNG with the fixed ramp.
+//  8. paletted 2-bit PNG with the fixed ramp.
 //
 // Privacy rule for installers (print-v4 §4): head width in cells ÷ blur FWHM
-// (2.355·σp) ≤ ~4 at the nearest seat; otherwise move the camera or mask it.
+// (2.355·σp) ≤ ~4 at the nearest seat; otherwise move the camera.
 package render
 
 import (
@@ -74,49 +74,6 @@ var Defaults = Params{
 	Dark2: -90, Dark1: -28, Light: 36,
 	Cleanup: true,
 	Edge:    20,
-}
-
-// Rect is a privacy mask in grid cells, half-open [X0,X1)×[Y0,Y1).
-// Installer-drawn, static geometry only — never detection output (D9).
-type Rect struct {
-	X0 int `json:"x0"`
-	Y0 int `json:"y0"`
-	X1 int `json:"x1"`
-	Y1 int `json:"y1"`
-}
-
-// MaxMasks bounds the installer-drawn geometry.
-const MaxMasks = 4
-
-// clampRect clips a mask to the grid; degenerate rects vanish.
-func clampRect(r Rect) (Rect, bool) {
-	r.X0, r.Y0 = max(r.X0, 0), max(r.Y0, 0)
-	r.X1, r.Y1 = min(r.X1, GW), min(r.Y1, GH)
-	return r, r.X0 < r.X1 && r.Y0 < r.Y1
-}
-
-// maskGrid returns 1 for visible cells and 0 under a mask. Masks beyond
-// MaxMasks are ignored.
-func maskGrid(masks []Rect) []uint8 {
-	w := make([]uint8, GW*GH)
-	for i := range w {
-		w[i] = 1
-	}
-	for i, m := range masks {
-		if i >= MaxMasks {
-			break
-		}
-		r, ok := clampRect(m)
-		if !ok {
-			continue
-		}
-		for y := r.Y0; y < r.Y1; y++ {
-			for x := r.X0; x < r.X1; x++ {
-				w[y*GW+x] = 0
-			}
-		}
-	}
-	return w
 }
 
 // lumaGrid decodes to luminance and area-averages onto the grid (stage 1).
@@ -186,8 +143,7 @@ func kernel(sigma float64) []int64 {
 
 // blurSep is a separable convolution over a w×h plane. Out-of-range taps
 // contribute nothing (zero weight, not edge-clamped), which together with
-// normalized convolution (blur(v·w) / blur(w)) means borders and masks bias
-// nothing.
+// normalized convolution (blur(v·w) / blur(w)) means borders bias nothing.
 func blurSep(v []int64, w, h int, k []int64) []int64 {
 	r := len(k) - 1
 	tmp := make([]int64, len(v))
@@ -225,8 +181,8 @@ func blurSep(v []int64, w, h int, k []int64) []int64 {
 }
 
 // normBlur is a normalized convolution: the weighted mean of the visible
-// cells under the kernel, in Q4 luma (×16). Where no visible cell is in
-// reach the result is mid-grey; those cells are masked anyway.
+// cells under the kernel, in Q4 luma (×16). A zero weight sum (impossible
+// with every cell visible) falls back to mid-grey.
 func normBlur(vals []int64, wts []int64, w, h int, k []int64) []int64 {
 	num := blurSep(vals, w, h, k)
 	den := blurSep(wts, w, h, k)
@@ -251,18 +207,16 @@ func normBlur(vals []int64, wts []int64, w, h int, k []int64) []int64 {
 // (m[−i] = 2·m[0] − m[i]) continues a linear gradient straight past the
 // edge. It is linear per axis, so padding x then y handles the corners.
 // Block means average 64 cells, so the reflection does not amplify noise.
-func background(g, vis []uint8, sigmaB float64) []int64 {
+func background(g []uint8, sigmaB float64) []int64 {
 	const f = 8
 	bw, bh := GW/f, GH/f
 	sum := make([]int64, bw*bh)
 	cnt := make([]int64, bw*bh)
 	for y := 0; y < GH; y++ {
 		for x := 0; x < GW; x++ {
-			if vis[y*GW+x] == 1 {
-				i := (y/f)*bw + x/f
-				sum[i] += int64(g[y*GW+x])
-				cnt[i]++
-			}
+			i := (y/f)*bw + x/f
+			sum[i] += int64(g[y*GW+x])
+			cnt[i]++
 		}
 	}
 	mean := make([]int64, bw*bh) // Q4
@@ -329,7 +283,7 @@ func background(g, vis []uint8, sigmaB float64) []int64 {
 
 // padAxis copies n strided samples of (m, c) into the n+2r strided output
 // with r samples of odd reflection on each side. Weights reflect evenly,
-// capped by the edge weight, so a masked edge block stays weightless.
+// capped by the edge weight.
 func padAxis(m, c, om, oc []int64, in, out, n, r int) {
 	for i := -r; i < n+r; i++ {
 		j, e := i, 0
@@ -350,17 +304,14 @@ func padAxis(m, c, om, oc []int64, in, out, n, r int) {
 }
 
 // tones runs stages 2–7 over the luma grid and returns the level grid.
-func tones(g []uint8, levels int, masks []Rect, p Params) []uint8 {
-	vis := maskGrid(masks)
+func tones(g []uint8, levels int, p Params) []uint8 {
 	vals := make([]int64, len(g))
 	wts := make([]int64, len(g))
 	for i, v := range g {
-		if vis[i] == 1 {
-			vals[i], wts[i] = int64(v), 1
-		}
+		vals[i], wts[i] = int64(v), 1
 	}
 	lp := normBlur(vals, wts, GW, GH, kernel(p.SigmaP))
-	bg := background(g, vis, p.SigmaB)
+	bg := background(g, p.SigmaB)
 
 	q := make([]uint8, len(g))
 	for i := range q {
@@ -384,26 +335,20 @@ func tones(g []uint8, levels int, masks []Rect, p Params) []uint8 {
 		q = despeckle(q, levels)
 	}
 	if p.Edge > 0 {
-		outline(q, lp, bg, vis, levels, p)
-	}
-	for i := range q {
-		if vis[i] == 0 {
-			q[i] = 0
-		}
+		outline(q, lp, bg, levels, p)
 	}
 	return q
 }
 
 // outline inks object boundaries (stage 7b): a Weber-normalised central-
 // difference gradient of P, thinned by non-maximum suppression along its
-// dominant axis so lines stay one cell wide, kept where ≥ p.Edge. Cells
-// beside a mask are skipped (the mask edge is not an object).
+// dominant axis so lines stay one cell wide, kept where ≥ p.Edge.
 //
 // Lines are ink, except inside ink: two dark things touching (dark clothes
 // on a dark sofa) is exactly how a person melts into the background, and
 // an ink line there is invisible — so on s0 the line is drawn light (s2,
 // or paper in Šablon).
-func outline(q []uint8, lp, bg []int64, vis []uint8, levels int, p Params) {
+func outline(q []uint8, lp, bg []int64, levels int, p Params) {
 	light := uint8(2)
 	if levels == 2 {
 		light = 1
@@ -413,9 +358,6 @@ func outline(q []uint8, lp, bg []int64, vis []uint8, levels int, p Params) {
 	for y := 1; y < GH-1; y++ {
 		for x := 1; x < GW-1; x++ {
 			i := y*GW + x
-			if vis[i-1] == 0 || vis[i+1] == 0 || vis[i-GW] == 0 || vis[i+GW] == 0 {
-				continue
-			}
 			gx, gy := lp[i+1]-lp[i-1], lp[i+GW]-lp[i-GW]
 			ax, ay := max(gx, -gx), max(gy, -gy)
 			mag[i] = (ax + ay) * 256 / (bg[i] + int64(p.K)*16)
@@ -506,10 +448,10 @@ func encode(q []uint8, levels int) ([]byte, error) {
 
 // Pipeline renders img with the given parameters (styleproof's entry
 // point; the Engine always passes Defaults).
-func Pipeline(img image.Image, levels int, masks []Rect, p Params) ([]byte, error) {
+func Pipeline(img image.Image, levels int, p Params) ([]byte, error) {
 	g, err := lumaGrid(img)
 	if err != nil {
 		return nil, err
 	}
-	return encode(tones(g, levels, masks, p), levels)
+	return encode(tones(g, levels, p), levels)
 }

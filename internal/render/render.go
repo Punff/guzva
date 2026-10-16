@@ -163,9 +163,7 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 		return Output{}, Reject(proto.ReasonTruncated)
 	}
 
-	// --- normalize to the luma grid, computing dark/dead-sensor stats on the
-	// unmasked grid in the same pass (masks must not move the mean: a venue
-	// with a big mask over a bright window is not a dark room). ---
+	// --- normalize to the luma grid, then the dark/dead-sensor stats. ---
 	g, err := lumaGrid(img)
 	if err != nil {
 		return Output{}, err
@@ -177,7 +175,7 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 	}
 
 	// --- the print (tisak.go).
-	pngBytes, err := encode(tones(g, style.Levels, nil, in.Look.Params()), style.Levels)
+	pngBytes, err := encode(tones(g, style.Levels, in.Look.Params()), style.Levels)
 	if err != nil {
 		return Output{}, err
 	}
@@ -187,7 +185,6 @@ func (e *Engine) Process(ctx context.Context, in FrameIn) (Output, error) {
 }
 
 // gridStats returns the mean luma and whether every cell is identical.
-// Computed on the unmasked grid so installer masks cannot fake a dark room.
 func gridStats(g []uint8) (mean float64, uniform bool) {
 	var sum uint64
 	first := g[0]
