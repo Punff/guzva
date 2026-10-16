@@ -33,7 +33,7 @@ include Makefile.web.mk
 .PHONY: test build tag deploy rollback drill logs ssh backup help
 
 help: ## this list
-	@grep -E '^[a-z]+:.*?##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?##"}{printf "  %-10s %s\n",$$1,$$2}'
+	@grep -hE '^[a-z]+:.*?##' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?##"}{printf "  %-10s %s\n",$$1,$$2}'
 
 test: css-check ## gofmt + vet + unit tests (fails on stale UI or build drift)
 	gofmt -l cmd internal tools | grep . && exit 1 || true
@@ -91,6 +91,10 @@ check: ## verify what is actually serving (used by deploy/rollback)
 
 logs: ## follow the ingest journal on the VPS
 	ssh $(SSH) 'journalctl -u guzva -f | grep ingest'
+
+soak: ## Phase 1 exit numbers from the ingest journal: make soak [SINCE=-48h] [SERIAL=bd2a58b]
+	ssh $(SSH) 'journalctl -u guzva -o cat --no-pager --since "$(or $(SINCE),-48h)"' \
+	  | go run ./tools/soak -serial "$(or $(SERIAL),bd2a58b)"
 
 ssh: ## shell on the VPS
 	ssh $(SSH)
