@@ -56,7 +56,7 @@ proven setup. History of the team mode lives in docs/ops-log.md.)
 
 ## Open queue (docs/qa-findings.md is the tracker)
 
-Prod is **v0.9.7** (2026-10-16; schema v13; homepage venue list, D12). Firmware Q-10 install window
+Prod is **v0.10.1** (2026-10-16; schema v16). Business plan: docs/plan-business.md — P1 code done (Telegram alerts, outbox, audit log); needs config.
 is built, NOT flashed — until it is, the privacy policy's "sent only to the
 server" is not fully true on the bench board (LAN `/jpg`).
 

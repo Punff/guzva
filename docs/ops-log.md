@@ -1377,3 +1377,13 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
 - Not yet active on prod: needs `GUZVA_TELEGRAM_TOKEN` + `GUZVA_TELEGRAM_CHAT`
   (and optionally `GUZVA_DEADMAN_URL`) in /etc/guzva/guzva.env — runbook
   "Alerts on Telegram". Until then changes are logged and kept in the ledger.
+
+### Deploy — `v0.10.1` (2026-10-16 ~17:05 UTC) — business plan P1 code complete
+
+- Email outbox + SMTP sender (schema v15) and the audit log (schema v16),
+  plus the admin "Alerts & email" and "Recent activity" panels. Backup
+  first: `guzva-20261016-1703.db.gz`. `make check` OK, healthz `v0.10.1`
+  (server started on the v14 DB → 15, 16 applied).
+- P1 now waits only on configuration, not code: Telegram token/chat
+  (works today), SMTP + sender (needs the domain for SPF/DKIM), and the
+  domain + autocert itself (Q-08). Live probe owed (permission guard).
