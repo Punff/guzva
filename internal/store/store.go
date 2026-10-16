@@ -79,9 +79,6 @@ func Open(path string) (*Store, error) {
 // Close closes the underlying database.
 func (s *Store) Close() error { return s.db.Close() }
 
-// DB exposes the handle for tests only (same package).
-func (s *Store) dbh() *sql.DB { return s.db }
-
 // --- migrations -----------------------------------------------------------
 
 // schema v1: the full v3 table set from PLAN §6.2. Tables whose features
@@ -462,15 +459,6 @@ func (s *Store) ListVenues(ctx context.Context) ([]Venue, error) {
 	return out, rows.Err()
 }
 
-// SetLastFrameAt advances canonical freshness for the venue. Only called for
-// stored (ok) frames: quarantined frames and health beats never make a venue
-// look fresh (§1 never publish a failure).
-func (s *Store) SetLastFrameAt(ctx context.Context, venueID int64, at time.Time) error {
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE venues SET last_frame_at = ? WHERE id = ?`, ts(at), venueID)
-	return err
-}
-
 // --- hours (JSON on the venue row, §6.2) ----------------------------------
 
 // SetHours replaces the venue's weekly schedule as one JSON document on the
@@ -651,8 +639,9 @@ func (s *Store) CreateDevice(ctx context.Context, d Device, tokenHash string) (i
 	return res.LastInsertId()
 }
 
-// DeviceBySerial resolves a device by its serial (admin label, §4). Used by
-// the offline CLI; ingest never sees a serial.
+// DeviceBySerial resolves a device by its serial (the admin label, §4).
+// Production code addresses devices by id or token hash; the store, admin
+// and migration tests look boards up by the serial they provisioned.
 func (s *Store) DeviceBySerial(ctx context.Context, serial string) (*Device, error) {
 	return scanDevice(s.db.QueryRowContext(ctx,
 		`SELECT `+deviceCols+` FROM devices WHERE serial = ?`, serial))

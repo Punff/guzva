@@ -22,7 +22,7 @@ func TestAppPathIsContentHashed(t *testing.T) {
 		t.Errorf("hash %q is %d chars, want 8", sum, len(sum))
 	}
 	// The bytes must actually be the ones served.
-	if len(App()) == 0 {
+	if len(appCSS) == 0 {
 		t.Fatal("embedded stylesheet is empty — the build did not run")
 	}
 }
@@ -35,7 +35,7 @@ func TestAppPathIsContentHashed(t *testing.T) {
 // the public page and the consoles share the same vocabulary.
 func TestStateColourClassesShip(t *testing.T) {
 	states := []string{"fresh", "late", "stale", "nosignal", "closed", "waiting", "unknown"}
-	for name, css := range map[string]string{"app.css": string(App()), "public.css": string(Public())} {
+	for name, css := range map[string]string{"app.css": string(appCSS), "public.css": string(Public())} {
 		for _, s := range states {
 			if !strings.Contains(css, "text-"+s) {
 				t.Errorf("%s lacks .text-%s — the %s chip would render in ink (W2/B1)", name, s, s)

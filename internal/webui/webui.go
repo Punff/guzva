@@ -28,9 +28,6 @@ var appCSS []byte
 //go:embed public.css
 var publicCSS []byte
 
-// App returns the compiled console stylesheet.
-func App() []byte { return appCSS }
-
 var appHash = func() string {
 	sum := sha256.Sum256(appCSS)
 	return hex.EncodeToString(sum[:])[:8]
