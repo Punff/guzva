@@ -1,0 +1,62 @@
+{{define "lead.html"}}<!doctype html>
+<html lang="en">
+<head>
+{{template "shell-head.html" .}}
+<title>{{.L.SalonName}} — guzva admin</title>
+<script src="/admin/static/htmx.min.js" defer></script>
+</head>
+{{template "admin-open" dict "nav" .Nav "active" "leads" "title" .L.SalonName "trailHref" "/admin/leads" "trailText" "Leads"}}
+<div id="flash">{{if .Saved}}<p class="card card--inset text-sm mb-5" role="status">Saved.</p>{{end}}</div>
+
+<div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+<section aria-labelledby="ap-h">
+  <h2 class="text-lg font-bold mb-3" id="ap-h">Application</h2>
+  <dl class="grid grid-cols-[9rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+    <dt class="text-muted">Received</dt><dd class="tnum">{{.L.CreatedAt.Format "02.01.2006 15:04"}} UTC · {{.L.Source}}</dd>
+    <dt class="text-muted">Type</dt><dd>{{.L.SalonType}}</dd>
+    <dt class="text-muted">Address</dt><dd>{{.L.Address}}{{if .L.MapsURL}} · <a class="underline" href="{{.L.MapsURL}}" target="_blank" rel="noreferrer">map ↗</a>{{end}}</dd>
+    <dt class="text-muted">Contact</dt><dd>{{.L.ContactName}}</dd>
+    <dt class="text-muted">Phone</dt><dd><a class="underline tnum" href="tel:{{.L.Phone}}">{{.L.Phone}}</a></dd>
+    <dt class="text-muted">Email</dt><dd><a class="underline break-all" href="mailto:{{.L.Email}}">{{.L.Email}}</a></dd>
+    <dt class="text-muted">Hours</dt><dd>{{if .HoursSpec}}<code>{{.HoursSpec}}</code>{{else}}<span class="text-muted">not given</span>{{end}}</dd>
+    <dt class="text-muted">Chairs</dt><dd>{{if .L.Chairs}}{{.L.Chairs}}{{else}}—{{end}}</dd>
+    <dt class="text-muted">WiFi</dt><dd>{{if eq .L.HasWiFi 1}}yes{{else if eq .L.HasWiFi 2}}<b>no</b> — bring a hotspot or skip{{else}}not sure{{end}}</dd>
+    <dt class="text-muted">Install when</dt><dd>{{or .L.InstallWindow "—"}}</dd>
+    <dt class="text-muted">Heard from</dt><dd>{{or .L.HeardFrom "—"}}</dd>
+    <dt class="text-muted">Message</dt><dd class="whitespace-pre-wrap">{{or .L.Message "—"}}</dd>
+  </dl>
+</section>
+
+<section aria-labelledby="pl-h">
+  <h2 class="text-lg font-bold mb-3" id="pl-h">Pipeline</h2>
+  <form class="card grid gap-3" method="post" action="/admin/leads/{{.L.ID}}" hx-post="/admin/leads/{{.L.ID}}" hx-target="#flash" hx-swap="innerHTML">
+    <div class="fieldset"><label class="lbl" for="l-status">Status</label>
+      <select class="inp" id="l-status" name="status">{{range .Statuses}}<option value="{{.}}"{{if eq . $.L.Status}} selected{{end}}{{if and (eq . "won") (not $.L.VenueID)}} disabled{{end}}>{{.}}</option>{{end}}</select></div>
+    <fieldset class="grid gap-2">
+      <legend class="lbl mb-1">Install checklist</legend>
+      {{range .Items}}<label class="flex items-start gap-2 text-sm"><input type="checkbox" name="c_{{.Key}}" value="1" class="mt-0.5 w-5 h-5 shrink-0 accent-[var(--ink)]"{{if index $.Check .Key}} checked{{end}}> {{.Label}}</label>{{end}}
+    </fieldset>
+    <div class="fieldset"><label class="lbl" for="l-notes">Notes (only you see these)</label>
+      <textarea class="inp" id="l-notes" name="notes" rows="4">{{.L.Notes}}</textarea></div>
+    <button class="btn btn--primary justify-self-start" type="submit">Save</button>
+  </form>
+
+  {{if .Venue}}
+  <p class="mt-6 border-l-4 border-fresh pl-3">Venue created: <a class="underline font-semibold" href="/admin/venues/{{.Venue.ID}}">{{.Venue.Name}}</a> (/{{.Venue.Slug}}/).</p>
+  {{else}}
+  <form class="card card--inset mt-6 grid gap-3" method="post" action="/admin/leads/{{.L.ID}}/venue" hx-post="/admin/leads/{{.L.ID}}/venue" hx-target="#flash" hx-swap="innerHTML">
+    <h3 class="font-bold">Create the venue</h3>
+    <p class="text-sm text-muted">Copies name, address, phone, Maps link and hours. The venue starts off the homepage list until its camera sends pictures.</p>
+    <div class="fieldset"><label class="lbl" for="l-slug">Slug (guzva.ba/<b>slug</b>/)</label>
+      <input class="inp" id="l-slug" name="slug" value="{{.Slug}}" required pattern="[a-z0-9][a-z0-9-]{0,39}"></div>
+    <button class="btn btn--primary justify-self-start" type="submit">Create venue from this application</button>
+  </form>
+  {{end}}
+
+  <form class="mt-6 flex flex-wrap items-center gap-3" method="post" action="/admin/leads/{{.L.ID}}/delete">
+    <label class="inline-flex items-center gap-2 text-sm"><input type="checkbox" name="confirm" value="1" required class="w-5 h-5 accent-[var(--ink)]"> Yes, delete this application and its personal data</label>
+    <button class="btn btn--danger" type="submit">Delete</button>
+  </form>
+</section>
+</div>
+{{template "admin-close" .}}{{end}}

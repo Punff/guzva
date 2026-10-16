@@ -466,7 +466,7 @@ var ErrBadSlug = errors.New("store: bad slug")
 
 // reservedSlugs are first path segments the server answers itself; a venue
 // with one of these slugs would be unreachable (pages.PrivacyPath).
-var reservedSlugs = map[string]bool{"privatnost": true}
+var reservedSlugs = map[string]bool{"privatnost": true, "prijava": true, "uvjeti": true, "leave": true}
 
 // ValidSlug reports whether s is a legal public slug.
 func ValidSlug(s string) bool { return slugRe.MatchString(s) && !reservedSlugs[s] }
@@ -1381,4 +1381,199 @@ func (s *Store) CountLeads(ctx context.Context, status string) (int, error) {
 	}
 	err := s.db.QueryRowContext(ctx, q, args...).Scan(&n)
 	return n, err
+}
+
+// --- leads + invite links (business plan P2) ----------------------------------
+
+// Lead is one application from the public form or a personal invite link.
+type Lead struct {
+	ID                   int64
+	CreatedAt, UpdatedAt time.Time
+	Status               string // new | contacted | survey | surveyed | won | lost
+	Source               string // public | invite
+	InviteID             int64
+	SalonName, SalonType string
+	Address, MapsURL     string
+	ContactName          string
+	Phone, Email         string
+	HoursJSON            string // venue.Hours JSON, "" = not given
+	Chairs               int
+	HasWiFi              int // 0 unknown, 1 yes, 2 no
+	InstallWindow        string
+	HeardFrom, Message   string
+	Notes                string // admin only
+	ChecklistJSON        string // admin install checklist
+	VenueID              int64  // set when won
+}
+
+// LeadStatuses in pipeline order.
+var LeadStatuses = []string{"new", "contacted", "survey", "surveyed", "won", "lost"}
+
+const leadCols = `id, created_at, updated_at, status, source, invite_id, salon_name, salon_type, address, maps_url,
+	contact_name, phone, email, hours_json, chairs, has_wifi, install_window, heard_from, message, notes,
+	checklist_json, venue_id`
+
+func scanLead(row interface{ Scan(...any) error }) (*Lead, error) {
+	var l Lead
+	var c, u int64
+	err := row.Scan(&l.ID, &c, &u, &l.Status, &l.Source, &l.InviteID, &l.SalonName, &l.SalonType, &l.Address,
+		&l.MapsURL, &l.ContactName, &l.Phone, &l.Email, &l.HoursJSON, &l.Chairs, &l.HasWiFi, &l.InstallWindow,
+		&l.HeardFrom, &l.Message, &l.Notes, &l.ChecklistJSON, &l.VenueID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	l.CreatedAt, l.UpdatedAt = time.Unix(c, 0).UTC(), time.Unix(u, 0).UTC()
+	return &l, nil
+}
+
+// CreateLead stores a new application and returns its id.
+func (s *Store) CreateLead(ctx context.Context, l Lead, now time.Time) (int64, error) {
+	if l.Status == "" {
+		l.Status = "new"
+	}
+	if l.Source == "" {
+		l.Source = "public"
+	}
+	res, err := s.db.ExecContext(ctx, `INSERT INTO leads (created_at, updated_at, status, source, invite_id,
+		salon_name, salon_type, address, maps_url, contact_name, phone, email, hours_json, chairs, has_wifi,
+		install_window, heard_from, message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		ts(now), ts(now), l.Status, l.Source, l.InviteID, l.SalonName, l.SalonType, l.Address, l.MapsURL,
+		l.ContactName, l.Phone, l.Email, l.HoursJSON, l.Chairs, l.HasWiFi, l.InstallWindow, l.HeardFrom, l.Message)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// LeadByID loads one lead.
+func (s *Store) LeadByID(ctx context.Context, id int64) (*Lead, error) {
+	return scanLead(s.db.QueryRowContext(ctx, `SELECT `+leadCols+` FROM leads WHERE id = ?`, id))
+}
+
+// ListLeads lists leads newest first; status "" = all open (not won/lost),
+// "all" = everything.
+func (s *Store) ListLeads(ctx context.Context, status string) ([]Lead, error) {
+	q, args := `SELECT `+leadCols+` FROM leads`, []any{}
+	switch status {
+	case "":
+		q += ` WHERE status NOT IN ('won', 'lost')`
+	case "all":
+	default:
+		q += ` WHERE status = ?`
+		args = append(args, status)
+	}
+	rows, err := s.db.QueryContext(ctx, q+` ORDER BY created_at DESC, id DESC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Lead
+	for rows.Next() {
+		l, err := scanLead(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *l)
+	}
+	return out, rows.Err()
+}
+
+// UpdateLeadAdmin saves the admin-side fields.
+func (s *Store) UpdateLeadAdmin(ctx context.Context, id int64, status, notes, checklist string, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE leads SET status = ?, notes = ?, checklist_json = ?, updated_at = ? WHERE id = ?`,
+		status, notes, checklist, ts(now), id)
+	return err
+}
+
+// MarkLeadWon links the lead to the venue created from it.
+func (s *Store) MarkLeadWon(ctx context.Context, id, venueID int64, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE leads SET status = 'won', venue_id = ?, updated_at = ? WHERE id = ?`,
+		venueID, ts(now), id)
+	return err
+}
+
+// DeleteLead removes a lead (privacy: on request, or a junk submission).
+func (s *Store) DeleteLead(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM leads WHERE id = ?`, id)
+	return err
+}
+
+// PruneLostLeads deletes lost leads not touched since cutoff (12 months).
+func (s *Store) PruneLostLeads(ctx context.Context, cutoff time.Time) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM leads WHERE status = 'lost' AND updated_at < ?`, ts(cutoff))
+	return err
+}
+
+// Invite is a personal application link (token stored as sha256 only).
+type Invite struct {
+	ID                   int64
+	CreatedAt, ExpiresAt time.Time
+	UsedAt               time.Time
+	Label, PrefillJSON   string
+}
+
+// CreateInvite stores a new invite link.
+func (s *Store) CreateInvite(ctx context.Context, tokenHash, label, prefill string, now, expires time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `INSERT INTO lead_invites (token_hash, created_at, expires_at, label, prefill_json)
+		VALUES (?, ?, ?, ?, ?)`, tokenHash, ts(now), ts(expires), label, prefill)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// InviteByHash resolves a token hash; ErrNotFound when unknown.
+func (s *Store) InviteByHash(ctx context.Context, tokenHash string) (*Invite, error) {
+	var i Invite
+	var c, e, u int64
+	err := s.db.QueryRowContext(ctx, `SELECT id, created_at, expires_at, used_at, label, prefill_json
+		FROM lead_invites WHERE token_hash = ?`, tokenHash).Scan(&i.ID, &c, &e, &u, &i.Label, &i.PrefillJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	i.CreatedAt, i.ExpiresAt = time.Unix(c, 0).UTC(), time.Unix(e, 0).UTC()
+	if u > 0 {
+		i.UsedAt = time.Unix(u, 0).UTC()
+	}
+	return &i, nil
+}
+
+// UseInvite marks an invite used; false if it was already used (race-safe).
+func (s *Store) UseInvite(ctx context.Context, id int64, now time.Time) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE lead_invites SET used_at = ? WHERE id = ? AND used_at = 0`, ts(now), id)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
+// ListInvites lists invite links newest first.
+func (s *Store) ListInvites(ctx context.Context, limit int) ([]Invite, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, created_at, expires_at, used_at, label, prefill_json
+		FROM lead_invites ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Invite
+	for rows.Next() {
+		var i Invite
+		var c, e, u int64
+		if err := rows.Scan(&i.ID, &c, &e, &u, &i.Label, &i.PrefillJSON); err != nil {
+			return nil, err
+		}
+		i.CreatedAt, i.ExpiresAt = time.Unix(c, 0).UTC(), time.Unix(e, 0).UTC()
+		if u > 0 {
+			i.UsedAt = time.Unix(u, 0).UTC()
+		}
+		out = append(out, i)
+	}
+	return out, rows.Err()
 }

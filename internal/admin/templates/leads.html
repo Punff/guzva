@@ -1,0 +1,62 @@
+{{define "leads.html"}}<!doctype html>
+<html lang="en">
+<head>
+{{template "shell-head.html" .}}
+<title>guzva admin — leads</title>
+<script src="/admin/static/htmx.min.js" defer></script>
+</head>
+{{template "admin-open" dict "nav" .Nav "active" "leads" "title" "Leads"}}
+<div id="flash"></div>
+<nav class="mb-4 flex flex-wrap gap-2 text-sm" aria-label="Filter">
+  <a class="px-3 py-1 border-2 border-ink {{if eq .Filter ""}}bg-ink text-paper{{end}}" href="/admin/leads">Open</a>
+  {{range .Statuses}}<a class="px-3 py-1 border-2 border-ink {{if eq . $.Filter}}bg-ink text-paper{{end}}" href="/admin/leads?s={{.}}">{{.}}{{with index $.Counts .}} <span class="tnum">{{.}}</span>{{end}}</a>{{end}}
+  <a class="px-3 py-1 border-2 border-ink {{if eq .Filter "all"}}bg-ink text-paper{{end}}" href="/admin/leads?s=all">all</a>
+</nav>
+{{if .Rows}}
+<div class="overflow-x-auto mb-8">
+<table class="tbl">
+  <thead><tr><th>Salon</th><th>Contact</th><th>Status</th><th>Source</th><th>Received</th></tr></thead>
+  <tbody>
+  {{range .Rows}}
+  <tr>
+    <td><a class="font-semibold underline" href="/admin/leads/{{.ID}}">{{.SalonName}}</a><br><span class="text-muted">{{.Address}}</span></td>
+    <td>{{.ContactName}}<br><a class="tnum underline" href="tel:{{.Phone}}">{{.Phone}}</a></td>
+    <td>{{.Status}}</td>
+    <td>{{.Source}}</td>
+    <td class="tnum whitespace-nowrap">{{.Age}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{else}}
+<p class="mb-8 border-l-4 border-s1 pl-3">No applications here. Share <a class="underline" href="/prijava/" target="_blank" rel="noreferrer">/prijava/</a>, or send a personal link below.</p>
+{{end}}
+
+<section class="max-w-2xl" aria-labelledby="inv-h">
+  <h2 class="text-lg font-bold mb-1" id="inv-h">Personal application link</h2>
+  <p class="text-sm text-muted mb-3">For a salon you have already talked to: the form opens pre-filled. Single use, valid 14 days.</p>
+  <form class="card card--inset grid gap-3" method="post" action="/admin/leads/invite" hx-post="/admin/leads/invite" hx-target="#inv-out" hx-swap="innerHTML">
+    <div class="fieldset"><label class="lbl" for="iv-label">Salon name</label><input class="inp" id="iv-label" name="label" required maxlength="80"></div>
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div class="fieldset"><label class="lbl" for="iv-contact">Contact (optional)</label><input class="inp" id="iv-contact" name="contact_name"></div>
+      <div class="fieldset"><label class="lbl" for="iv-phone">Phone (optional)</label><input class="inp tnum" id="iv-phone" name="phone"></div>
+      <div class="fieldset"><label class="lbl" for="iv-email">Email (optional)</label><input class="inp" id="iv-email" name="email" type="email"></div>
+      <div class="fieldset"><label class="lbl" for="iv-addr">Address (optional)</label><input class="inp" id="iv-addr" name="address"></div>
+    </div>
+    <button class="btn btn--primary justify-self-start" type="submit">Create link</button>
+  </form>
+  <div id="inv-out" class="mt-3"></div>
+  {{if .Invites}}
+  <table class="tbl mt-4">
+    <thead><tr><th>For</th><th>Created</th><th>State</th></tr></thead>
+    <tbody>{{range .Invites}}<tr><td>{{.Label}}</td><td class="tnum">{{.CreatedAt.Format "02.01."}}</td><td>{{.State}}</td></tr>{{end}}</tbody>
+  </table>
+  {{end}}
+</section>
+{{template "admin-close" .}}{{end}}
+
+{{define "invite-link"}}<div class="card card--inset text-sm" role="status">
+  <p class="mb-2 font-semibold">Link created — copy it now, it is not shown again:</p>
+  <p class="break-all tnum"><a class="underline" href="{{.}}">{{.}}</a></p>
+</div>{{end}}

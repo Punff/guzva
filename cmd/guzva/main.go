@@ -261,6 +261,11 @@ func serveMain(args []string) int {
 		mcfg.Port = p
 	}
 	adm.MailOn = mcfg.Configured()
+	adm.PublicURL = os.Getenv("GUZVA_PUBLIC_URL")
+	admin.Version = version
+	if tg.Configured() {
+		adm.Notify = tg.Send
+	}
 	if !mcfg.Configured() {
 		log.Info("mail: SMTP not configured (GUZVA_SMTP_HOST/GUZVA_MAIL_FROM); outbox queues only")
 	}
@@ -280,6 +285,9 @@ func serveMain(args []string) int {
 			Every: time.Hour,
 			Run: func(ctx context.Context) error {
 				if _, err := ing.Prune(ctx); err != nil {
+					return err
+				}
+				if err := st.PruneLostLeads(ctx, time.Now().Add(-365*24*time.Hour)); err != nil {
 					return err
 				}
 				if err := st.PruneAudit(ctx, time.Now().Add(-730*24*time.Hour)); err != nil {

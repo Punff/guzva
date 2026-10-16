@@ -7,7 +7,10 @@
 package admin
 
 import (
+	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -51,9 +54,16 @@ type Server struct {
 	// MailOn says whether SMTP is configured (the outbox sends); the
 	// fleet page shows it and the test form queues regardless.
 	MailOn bool
-	tmpl   *template.Template
-	log    *slog.Logger
-	now    func() time.Time
+	// Notify sends the operator a message (Telegram); nil = off. Set by main.
+	Notify func(ctx context.Context, text string) error
+	// PublicURL is the site's own base URL for links we hand out
+	// (GUZVA_PUBLIC_URL); empty = derived from the request.
+	PublicURL string
+	formKey   []byte        // signs the application form's timestamp
+	intakeLim *auth.Limiter // per-IP application limit
+	tmpl      *template.Template
+	log       *slog.Logger
+	now       func() time.Time
 }
 
 // New builds the admin server. passHash is the bcrypt hash from
@@ -83,6 +93,8 @@ func New(st *store.Store, passHash string, secret []byte, secure bool, log *slog
 		loginLim:  auth.NewLimiter(0.1, 5, 0.2, 4, time.Now), // 0.1/s, burst 5 per IP
 		passHash:  passHash,
 		secure:    secure,
+		formKey:   formKey(secret),
+		intakeLim: auth.NewLimiter(0.002, 3, 1, 1, time.Now), // ~7/hour per IP, burst 3
 		tmpl:      tmpl,
 		log:       log,
 		now:       time.Now,
@@ -134,6 +146,15 @@ func (s *Server) Register(mux *http.ServeMux) {
 	sub.HandleFunc("GET /admin/devices/{id}", s.require(s.devicePage))
 	sub.HandleFunc("POST /admin/devices/{id}/revoke", s.require(s.revokeDevice))
 	sub.HandleFunc("GET /admin/_kit", s.require(s.kit))
+	sub.HandleFunc("GET /admin/leads", s.require(s.leadsPage))
+	sub.HandleFunc("POST /admin/leads/invite", s.require(s.createInvite))
+	sub.HandleFunc("GET /admin/leads/{id}", s.require(s.leadPage))
+	sub.HandleFunc("POST /admin/leads/{id}", s.require(s.saveLead))
+	sub.HandleFunc("POST /admin/leads/{id}/venue", s.require(s.leadToVenue))
+	sub.HandleFunc("POST /admin/leads/{id}/delete", s.require(s.deleteLead))
+	sub.HandleFunc("GET /prijava/{$}", s.intakePage)
+	sub.HandleFunc("POST /prijava/{$}", s.intakeSubmit)
+	sub.HandleFunc("GET /prijava/{token}", s.invitePage)
 	s.registerOwner(sub)
 	// Method-scoped mounts, the same discipline the ingest route uses: a
 	// bare "/admin/" would conflict with the root's "GET /" static catch-all
@@ -143,6 +164,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.Handle("POST /admin/", s.secureHeaders(sub))
 	mux.Handle("GET /owner/", s.secureHeaders(sub))
 	mux.Handle("POST /owner/", s.secureHeaders(sub))
+	mux.Handle("GET /prijava/", s.secureHeaders(sub))
+	mux.Handle("POST /prijava/", s.secureHeaders(sub))
 }
 
 // secureHeaders is the consoles' side of the C1 contract. The public pages
@@ -1113,4 +1136,12 @@ func venueChanges(old *store.Venue, oldHours venue.Hours, name, style, tz, desc,
 type auditView struct {
 	store.AuditEntry
 	Venue string
+}
+
+// formKey derives the application-form signing key from the session secret,
+// so the two never share a value.
+func formKey(secret []byte) []byte {
+	m := hmac.New(sha256.New, secret)
+	m.Write([]byte("guzva intake form"))
+	return m.Sum(nil)
 }

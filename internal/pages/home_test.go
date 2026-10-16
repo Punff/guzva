@@ -47,7 +47,7 @@ func TestHomeListsListedVenues(t *testing.T) {
 		`<html lang="hr">`, "Ima li gužve?", `href="/jadro/"`, ">Jadro</span>",
 		"Obala Kulina bana 3", "Svježa slika", `src="/jadro/latest.jpg?v=`,
 		`id="saloni"`, `id="o-nama"`, `id="privatnost"`, `id="kontakt"`,
-		`href="/owner/"`, `href="/privatnost/"`, "Kontakt podaci uskoro.",
+		`href="/owner/"`, `href="/privatnost/"`, `href="/prijava/">Prijavite salon</a>`,
 		// the hero's live print is the one open listed venue
 		`justify-self-center w-full max-w-[320px]" href="/jadro/">`,
 	} {
@@ -80,9 +80,7 @@ func TestHomeListsListedVenues(t *testing.T) {
 		!strings.Contains(body, ">Javi nam se</a>") || !strings.Contains(body, `href="tel:&#43;38761000000"`) {
 		t.Error("contact button (mailto with subject) or phone line missing")
 	}
-	if strings.Contains(body, "Kontakt podaci uskoro.") {
-		t.Error("'coming soon' shown alongside real contacts")
-	}
+
 }
 
 // TestHomeClosedVenueShowsNoPicture: §5.6 holds on the list too.

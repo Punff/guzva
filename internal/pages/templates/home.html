@@ -142,11 +142,10 @@
   <section class="flex flex-col gap-3 border-t-2 border-ink pt-8" id="kontakt" aria-labelledby="contact-h">
     <h2 class="text-[1.5rem] leading-tight font-extrabold tracking-tight" id="contact-h">{{.Cat.Get "contact.title"}}</h2>
     <p class="max-w-[38rem] text-lg">{{.Cat.Get "contact.owners"}}</p>
-    {{if .MailHref}}
-    <p><a class="btn btn--primary" href="{{.MailHref}}">{{.Cat.Get "contact.button"}}</a></p>
-    {{else}}
-    <p class="text-muted">{{.Cat.Get "contact.none"}}</p>
-    {{end}}
+    <p class="flex flex-wrap gap-3">
+      <a class="btn btn--primary" href="/prijava/">{{.Cat.Get "intake.home.cta"}}</a>
+      {{if .MailHref}}<a class="btn" href="{{.MailHref}}">{{.Cat.Get "contact.button"}}</a>{{end}}
+    </p>
     {{if .Contacts}}
     <ul class="flex flex-col gap-1">
       {{range .Contacts}}<li><a class="underline font-semibold" href="{{.Href}}">{{.Text}}</a></li>{{end}}

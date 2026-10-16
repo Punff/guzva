@@ -1,0 +1,111 @@
+{{define "intake.html"}}<!doctype html>
+<html lang="hr">
+<head>
+{{template "shell-head.html" .}}
+<title>{{.Cat.Get "intake.title"}} · guzva.ba</title>
+<meta name="robots" content="noindex">
+</head>
+<body class="bg-paper text-ink font-sans">
+{{/* The public application form (business plan P2). Rendered by the admin
+     package because it writes to the database; dressed like the public
+     site: same logo, links home, footer to the privacy policy. */}}
+<div class="mx-auto w-full max-w-[45rem] px-4 py-6 sm:px-6 flex flex-col gap-6 min-h-dvh">
+  <header class="flex flex-wrap items-center justify-between gap-3">
+    <a class="flex items-center gap-2" href="/">
+      <svg viewBox="0 0 16 16" width="32" height="32" shape-rendering="crispEdges" aria-hidden="true" class="shrink-0"><rect width="16" height="16" fill="var(--ink)"/><rect x="2" y="2" width="12" height="11" fill="var(--paper)"/><rect x="3" y="9" width="2" height="3" fill="var(--s1)"/><rect x="7" y="7" width="2" height="5" fill="var(--s1)"/><rect x="11" y="5" width="2" height="7" fill="var(--accent)"/></svg>
+      <span class="font-bold text-lg tracking-tight">guzva</span>
+    </a>
+    <a class="text-sm font-semibold underline" href="/#saloni">Saloni</a>
+  </header>
+
+  {{if .Done}}
+  <section class="flex flex-col gap-3" role="status">
+    <h1 class="text-[1.75rem] leading-tight font-extrabold tracking-tight">{{.Cat.Get "intake.thanks.title"}}</h1>
+    <p class="text-lg">{{.Cat.Get "intake.thanks.p"}}</p>
+    <p><a class="btn" href="/">guzva.ba</a></p>
+  </section>
+  {{else}}
+  <section class="flex flex-col gap-2">
+    <h1 class="text-[1.75rem] leading-tight font-extrabold tracking-tight">{{.Cat.Get "intake.title"}}</h1>
+    <p class="text-lg">{{if .Invited}}{{.Cat.Get "intake.invited"}}{{else}}{{.Cat.Get "intake.lead"}}{{end}}</p>
+  </section>
+
+  {{if .Err}}<p class="border-l-4 border-accent bg-paper-2 px-3 py-2" role="alert">{{.Err}}</p>{{end}}
+
+  <form class="grid gap-6" method="post" action="/prijava/">
+    <input type="hidden" name="t" value="{{.Stamp}}">
+    {{if .Invite}}<input type="hidden" name="invite" value="{{.Invite}}">{{end}}
+    {{/* Honeypot: hidden from people (and screen readers), filled by bots. */}}
+    <div class="hidden" aria-hidden="true"><label>Web <input name="website" tabindex="-1" autocomplete="off"></label></div>
+
+    <fieldset class="grid gap-3 border-t-2 border-ink pt-4">
+      <legend class="font-bold pr-2">{{.Cat.Get "intake.sec.salon"}}</legend>
+      <div class="fieldset"><label class="lbl" for="i-name">{{.Cat.Get "intake.name"}} *</label>
+        <input class="inp" id="i-name" name="salon_name" value="{{.F.SalonName}}" required maxlength="160" autocomplete="organization"></div>
+      <div class="fieldset"><label class="lbl" for="i-type">{{.Cat.Get "intake.type"}}</label>
+        <select class="inp" id="i-type" name="salon_type">{{range .Types}}<option value="{{.}}"{{if eq . $.F.SalonType}} selected{{end}}>{{$.Cat.Get (printf "intake.type.%s" .)}}</option>{{end}}</select></div>
+      <div class="fieldset"><label class="lbl" for="i-addr">{{.Cat.Get "intake.address"}} *</label>
+        <input class="inp" id="i-addr" name="address" value="{{.F.Address}}" required maxlength="160" placeholder="{{.Cat.Get "intake.address.ph"}}" autocomplete="street-address"></div>
+      <div class="fieldset"><label class="lbl" for="i-maps">{{.Cat.Get "intake.maps"}}</label>
+        <input class="inp" id="i-maps" name="maps_url" value="{{.F.MapsURL}}" inputmode="url" maxlength="600" placeholder="https://maps.app.goo.gl/…"></div>
+    </fieldset>
+
+    <fieldset class="grid gap-3 border-t-2 border-ink pt-4">
+      <legend class="font-bold pr-2">{{.Cat.Get "intake.sec.contact"}}</legend>
+      <div class="fieldset"><label class="lbl" for="i-contact">{{.Cat.Get "intake.contact"}} *</label>
+        <input class="inp" id="i-contact" name="contact_name" value="{{.F.ContactName}}" required maxlength="160" autocomplete="name"></div>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div class="fieldset"><label class="lbl" for="i-phone">{{.Cat.Get "intake.phone"}} *</label>
+          <input class="inp tnum" id="i-phone" name="phone" value="{{.F.Phone}}" required maxlength="20" inputmode="tel" autocomplete="tel" placeholder="+387 61 000 000"></div>
+        <div class="fieldset"><label class="lbl" for="i-email">{{.Cat.Get "intake.email"}} *</label>
+          <input class="inp" id="i-email" name="email" type="email" value="{{.F.Email}}" required maxlength="254" autocomplete="email"></div>
+      </div>
+    </fieldset>
+
+    <fieldset class="grid gap-3 border-t-2 border-ink pt-4">
+      <legend class="font-bold pr-2">{{.Cat.Get "intake.sec.hours"}}</legend>
+      <p class="text-sm text-muted">{{.Cat.Get "intake.hours.help"}}</p>
+      <details>
+        <summary class="cursor-pointer font-semibold underline">{{.Cat.Get "intake.hours.add"}}</summary>
+        <div class="mt-3">
+        {{template "hours-editor.html" dict "days" .Days "closed" (.Cat.Get "hours.closed") "copy" (.Cat.Get "hours.copy")
+          "openL" (.Cat.Get "hours.open") "closeL" (.Cat.Get "hours.close") "split" (.Cat.Get "hours.splitwarn")}}
+        </div>
+      </details>
+    </fieldset>
+
+    <fieldset class="grid gap-3 border-t-2 border-ink pt-4">
+      <legend class="font-bold pr-2">{{.Cat.Get "intake.sec.more"}}</legend>
+      <div class="fieldset"><label class="lbl" for="i-chairs">{{.Cat.Get "intake.chairs"}}</label>
+        <input class="inp tnum w-32" id="i-chairs" name="chairs" value="{{.F.Chairs}}" inputmode="numeric" maxlength="3"></div>
+      <div class="fieldset">
+        <span class="lbl">{{.Cat.Get "intake.wifi"}}</span>
+        <div class="flex flex-wrap gap-x-5 gap-y-2">
+          {{range list "yes" "no" "unknown"}}<label class="inline-flex items-center gap-2"><input type="radio" name="wifi" value="{{.}}" class="w-5 h-5 accent-[var(--ink)]"{{if eq . $.F.WiFi}} checked{{end}}> {{$.Cat.Get (printf "intake.wifi.%s" .)}}</label>{{end}}
+        </div>
+        <span class="text-xs text-muted">{{.Cat.Get "intake.wifi.note"}}</span>
+      </div>
+      <div class="fieldset"><label class="lbl" for="i-when">{{.Cat.Get "intake.when"}}</label>
+        <input class="inp" id="i-when" name="install_window" value="{{.F.InstallWindow}}" maxlength="160"></div>
+      <div class="fieldset"><label class="lbl" for="i-heard">{{.Cat.Get "intake.heard"}}</label>
+        <input class="inp" id="i-heard" name="heard_from" value="{{.F.HeardFrom}}" maxlength="160"></div>
+      <div class="fieldset"><label class="lbl" for="i-msg">{{.Cat.Get "intake.message"}}</label>
+        <textarea class="inp" id="i-msg" name="message" rows="3" maxlength="1000">{{.F.Message}}</textarea></div>
+    </fieldset>
+
+    <label class="flex items-start gap-3">
+      <input type="checkbox" name="consent" value="1" class="mt-1 w-5 h-5 shrink-0 accent-[var(--ink)]"{{if .F.Consent}} checked{{end}} required>
+      <span>{{.Cat.Get "intake.consent"}} <a class="underline" href="/privatnost/" target="_blank" rel="noreferrer">{{.Cat.Get "privacy.link"}}</a></span>
+    </label>
+    <p><button class="btn btn--primary" type="submit">{{.Cat.Get "intake.submit"}}</button></p>
+  </form>
+  {{end}}
+
+  <footer class="mt-auto border-t-2 border-ink pt-4 text-xs text-muted flex flex-wrap gap-x-4 gap-y-1">
+    <a class="underline" href="/">guzva.ba</a>
+    <a class="underline" href="/privatnost/">{{.Cat.Get "privacy.link"}}</a>
+    <span>© 2026 guzva.ba</span>
+  </footer>
+</div>
+</body>
+</html>{{end}}
