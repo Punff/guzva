@@ -1300,3 +1300,16 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   service's server") is only fully true once the Q-10 firmware is flashed
   — the bench board still serves LAN `/jpg`; controller identity/contact
   for the policy; legal read.
+
+### Deploy — `v0.9.7` (2026-10-16 ~11:05 UTC)
+
+- Homepage with the venue list (D12, user decision: venues browsable),
+  shared footer on every public page, Croatian 404, header logo → home.
+  Schema v13 adds `venues.listed` (default 1): **every existing prod
+  venue — including the bench — is now on the public homepage** until
+  unlisted in the admin venue page ("Show on the homepage list").
+- "Za salone" contact is hidden until `GUZVA_CONTACT` is set in
+  `/etc/guzva/guzva.env` (email or phone) + restart.
+- Backup first: `guzva-20261016-1103.db.gz`. `make check` OK, healthz
+  `v0.9.7` (server started on the v12 DB → 13 applied).
+- Live probe still owed (permission guard).

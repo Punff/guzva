@@ -57,7 +57,7 @@ proven setup. History of the team mode lives in docs/ops-log.md.)
 
 ## Open queue (docs/qa-findings.md is the tracker)
 
-Prod is **v0.9.6** (2026-10-16; schema v12). Firmware Q-10 install window
+Prod is **v0.9.7** (2026-10-16; schema v13; homepage venue list, D12). Firmware Q-10 install window
 is built, NOT flashed — until it is, the privacy policy's "sent only to the
 server" is not fully true on the bench board (LAN `/jpg`).
 
@@ -73,6 +73,8 @@ server" is not fully true on the bench board (LAN `/jpg`).
 - **Phase 1 exit numbers** — `make soak` (prod journal read; the agent's
   permission guard blocks prod reads, so the user runs it) → ops-log.
 - Dead-man alert channel — needs the user to pick one (email/ntfy/…).
+- `GUZVA_CONTACT` on prod (homepage "Za salone") + unlist the bench venue
+  if it shouldn't be public — both user calls.
 
 **Then:**
 - **S0/S1 real corpus:** v4 constants were picked on the synthetic hard
