@@ -164,10 +164,8 @@
   {{/* Footer (mockup ruling 8): a hatched divider, not a rule — the
        print DNA again — then the privacy caption and the site footer
        shared by every public page (home, for salons, privacy). */}}
-  <footer class="mt-auto pt-4 text-xs text-muted flex flex-col gap-2">
-    <p>{{.PrivacyLine}}</p>
-    {{template "sitefooter" .Cat}}
-  </footer>
+  <p class="mt-auto pt-4 text-xs text-muted">{{.PrivacyLine}}</p>
+  {{template "sitefooter" .Cat}}
 </div>
 
 <script>

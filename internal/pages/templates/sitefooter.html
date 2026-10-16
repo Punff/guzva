@@ -1,9 +1,36 @@
-{{/* The footer every public page shares (D12): home, the venue list's
-     "for salons" section, the privacy policy. Takes the catalog. */}}
-{{define "sitefooter"}}
-    <nav class="flex flex-wrap gap-x-4 gap-y-1" aria-label="guzva.ba">
-      <a class="underline" href="/">{{.Get "footer.home"}}</a>
-      <a class="underline" href="/#za-salone">{{.Get "footer.biz"}}</a>
-      <a class="underline" href="/privatnost/">{{.Get "privacy.link"}}</a>
+{{/* Site header + footer shared by the public pages (D12). Both take the
+     catalog. Links are absolute so they work from any page. */}}
+{{define "siteheader"}}
+  <header class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+    <a class="flex items-center gap-2" href="/">{{template "logomark"}}<span class="font-bold text-lg tracking-tight">guzva</span></a>
+    <nav class="flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold" aria-label="{{.Get "nav.label"}}">
+      <a class="hover:underline" href="/#saloni">{{.Get "nav.venues"}}</a>
+      <a class="hover:underline" href="/#o-nama">{{.Get "nav.about"}}</a>
+      <a class="hover:underline" href="/#privatnost">{{.Get "nav.privacy"}}</a>
+      <a class="hover:underline" href="/#kontakt">{{.Get "nav.contact"}}</a>
     </nav>
+  </header>
+{{- end}}
+
+{{define "sitefooter"}}
+  <footer class="mt-auto border-t-2 border-ink pt-6 text-sm">
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
+      <div class="flex flex-col gap-2">
+        <a class="flex items-center gap-2" href="/">{{template "logomark"}}<span class="font-bold text-lg tracking-tight">guzva</span></a>
+        <p class="text-muted">{{.Get "footer.line"}}</p>
+      </div>
+      <nav class="flex flex-col gap-1" aria-label="{{.Get "footer.pages"}}">
+        <span class="font-bold">{{.Get "footer.pages"}}</span>
+        <a class="hover:underline" href="/#saloni">{{.Get "nav.venues"}}</a>
+        <a class="hover:underline" href="/#o-nama">{{.Get "nav.about"}}</a>
+        <a class="hover:underline" href="/#kontakt">{{.Get "nav.contact"}}</a>
+      </nav>
+      <div class="flex flex-col gap-1">
+        <span class="font-bold">{{.Get "footer.owners"}}</span>
+        <a class="hover:underline" href="/owner/">{{.Get "home.biz.login"}}</a>
+        <a class="hover:underline" href="/privatnost/">{{.Get "privacy.link"}}</a>
+      </div>
+    </div>
+    <p class="mt-6 text-xs text-muted">© 2026 guzva.ba</p>
+  </footer>
 {{- end}}

@@ -37,9 +37,34 @@ type homeCard struct {
 	OpenText             string
 }
 
-// SetContact sets the "for salons" contact shown on the homepage (an email
-// or a phone number, from -contact / GUZVA_CONTACT). Empty hides the line —
-// the page never shows an invented address.
+// contactItem's Href is template.URL because html/template only trusts
+// http(s)/mailto and would blank a tel: link; we build it from digits
+// (telHref) or an operator-set email, never from guest input.
+type contactItem struct {
+	Text string
+	Href template.URL
+}
+
+// contactItems splits the configured contact ("a@b.ba, +387 61 000 000"):
+// emails become mailto:, anything else a tel: link.
+func contactItems(raw string) []contactItem {
+	var out []contactItem
+	for _, c := range strings.Split(raw, ",") {
+		c = strings.TrimSpace(c)
+		switch {
+		case c == "":
+		case strings.Contains(c, "@"):
+			out = append(out, contactItem{c, template.URL("mailto:" + c)})
+		default:
+			out = append(out, contactItem{c, template.URL("tel:" + telHref(c))})
+		}
+	}
+	return out
+}
+
+// SetContact sets the homepage contact section's lines (emails and/or phone
+// numbers, comma-separated, from -contact / GUZVA_CONTACT). Empty shows
+// "coming soon" — the page never shows an invented address.
 func (w *Writer) SetContact(c string) { w.contact = strings.TrimSpace(c) }
 
 // buildHome renders the homepage from the listed venues, in the sched job —
@@ -88,22 +113,24 @@ func (w *Writer) buildHome(ctx context.Context, vs []store.Venue) error {
 	}
 	sort.Slice(cards, func(i, j int) bool { return strings.ToLower(cards[i].Name) < strings.ToLower(cards[j].Name) })
 
-	contactHref := ""
-	if w.contact != "" {
-		if strings.Contains(w.contact, "@") {
-			contactHref = "mailto:" + w.contact
-		} else {
-			contactHref = "tel:" + telHref(w.contact)
+	// The hero's live print: the first listed venue that is open and has a
+	// picture right now. None → the hero is text only.
+	var featured *homeCard
+	for i := range cards {
+		if cards[i].Still != "" {
+			featured = &cards[i]
+			break
 		}
 	}
 	var buf bytes.Buffer
 	if err := w.tmpl.ExecuteTemplate(&buf, "home.html", struct {
-		Lang                 string
-		Cat                  *i18n.Catalog
-		CSS                  template.CSS
-		Cards                []homeCard
-		Contact, ContactHref string
-	}{string(cat.Lang), cat, template.CSS(webui.Public()), cards, w.contact, contactHref}); err != nil {
+		Lang     string
+		Cat      *i18n.Catalog
+		CSS      template.CSS
+		Cards    []homeCard
+		Featured *homeCard
+		Contacts []contactItem
+	}{string(cat.Lang), cat, template.CSS(webui.Public()), cards, featured, contactItems(w.contact)}); err != nil {
 		return err
 	}
 	w.home.mu.Lock()

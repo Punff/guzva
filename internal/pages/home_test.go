@@ -45,7 +45,10 @@ func TestHomeListsListedVenues(t *testing.T) {
 	for _, want := range []string{
 		`<html lang="hr">`, "Ima li gužve?", `href="/jadro/"`, ">Jadro</span>",
 		"Obala Kulina bana 3", "Svježa slika", `src="/jadro/latest.jpg?v=`,
-		`id="za-salone"`, `href="/owner/"`, `href="/privatnost/"`,
+		`id="saloni"`, `id="o-nama"`, `id="privatnost"`, `id="kontakt"`,
+		`href="/owner/"`, `href="/privatnost/"`, "Kontakt podaci uskoro.",
+		// the hero's live print is the one open listed venue
+		`<a class="flex flex-col gap-3 justify-self-center" href="/jadro/">`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("home lacks %q", want)
@@ -54,7 +57,7 @@ func TestHomeListsListedVenues(t *testing.T) {
 	if strings.Contains(body, "/bench/") || strings.Contains(body, "Bench rig") {
 		t.Error("an unlisted venue appears on the homepage")
 	}
-	if strings.Contains(body, "Javite nam se") {
+	if strings.Contains(body, "Javi nam se") {
 		t.Error("contact line shown without a configured contact")
 	}
 	if strings.Contains(body, "<script") || hdr.Get("X-Robots-Tag") != "" || strings.Contains(body, "noindex") {
@@ -64,9 +67,13 @@ func TestHomeListsListedVenues(t *testing.T) {
 		t.Errorf("CSP = %q", csp)
 	}
 
-	f.w.SetContact("info@example.ba")
-	if _, body, _ = homeBody(t, f); !strings.Contains(body, `href="mailto:info@example.ba"`) {
-		t.Error("configured contact not shown as a mailto link")
+	f.w.SetContact("info@example.ba, +387 61 000 000")
+	_, body, _ = homeBody(t, f)
+	if !strings.Contains(body, `href="mailto:info@example.ba"`) || !strings.Contains(body, `href="tel:&#43;38761000000"`) {
+		t.Error("configured contacts not shown as mailto/tel links")
+	}
+	if strings.Contains(body, "Kontakt podaci uskoro.") {
+		t.Error("'coming soon' shown alongside real contacts")
 	}
 }
 
@@ -113,7 +120,7 @@ func TestSharedFooterOnVenuePage(t *testing.T) {
 		t.Fatal(err)
 	}
 	idx := f.readIndex(t)
-	for _, want := range []string{`href="/">Naslovna</a>`, `href="/#za-salone">Za salone</a>`, `href="/privatnost/">Politika privatnosti</a>`} {
+	for _, want := range []string{`href="/#saloni">Saloni</a>`, `href="/#kontakt">Kontakt</a>`, `href="/owner/"`, `href="/privatnost/">Politika privatnosti</a>`, "© 2026 guzva.ba"} {
 		if !strings.Contains(idx, want) {
 			t.Errorf("venue footer lacks %q", want)
 		}

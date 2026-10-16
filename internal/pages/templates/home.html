@@ -1,9 +1,12 @@
 <!doctype html>
 <!--
-  guzva.ba/ — the homepage (D12, 16 Oct 2026: venues are browsable). Built
-  in memory by the pages job every 30 s from the same state the venue pages
-  use (stateOf), never per request (D5). Listed venues only; a closed venue
-  shows no picture here either (§5.6). No script.
+  guzva.ba/ — the homepage (D12; redesign 16 Oct 2026 after "it should have a
+  header, a footer, sectioned off clients, privacy, about us, contact").
+  The one bold element is the hero band: the brand's print blue carrying the
+  question and a real, current picture from a listed salon — the product
+  shows itself. Everything below is quiet sections on paper.
+  Built in memory by the pages job, never per request (D5). A closed venue
+  never shows its picture here (§5.6). No script.
 -->
 <html lang="{{.Lang}}">
 <head>
@@ -11,25 +14,41 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>guzva.ba · {{.Cat.Get "home.title"}}</title>
 <meta name="description" content="{{.Cat.Get "home.lead"}}">
-<meta name="theme-color" content="#f2ede2">
+<meta name="theme-color" content="#33607f">
 <style>{{.CSS}}</style>
 </head>
 <body class="min-h-dvh bg-paper text-ink font-sans">
-<div class="mx-auto w-full max-w-[45rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
-  <header class="flex items-center gap-2">
-    <a class="flex items-center gap-2" href="/">{{template "logomark"}}<span class="font-bold text-lg tracking-tight">guzva</span></a>
-  </header>
+<div class="mx-auto w-full max-w-[64rem] px-4 py-6 sm:px-6 flex flex-col gap-10 min-h-dvh">
+  {{template "siteheader" .Cat}}
 
-  <h1 class="text-[1.5rem] leading-tight font-extrabold tracking-tight break-words sm:text-[1.75rem]">{{.Cat.Get "home.title"}}</h1>
-  <p class="-mt-2 text-base">{{.Cat.Get "home.lead"}}</p>
+  {{/* Hero: the question, one line, one action — and a live print. */}}
+  <section class="-mx-4 bg-s1 text-paper px-4 py-8 sm:mx-0 sm:px-8 sm:border-2 sm:border-ink grid grid-cols-1 items-center gap-8 md:grid-cols-2" aria-labelledby="hero-h">
+    <div class="flex flex-col gap-4">
+      <h1 class="text-[2.25rem] leading-none font-extrabold tracking-tight sm:text-[3rem]" id="hero-h">{{.Cat.Get "home.title"}}</h1>
+      <p class="text-lg">{{.Cat.Get "home.lead"}}</p>
+      <p><a class="btn" href="#saloni">{{.Cat.Get "home.cta"}}</a></p>
+    </div>
+    {{with .Featured}}
+    <a class="flex flex-col gap-3 justify-self-center" href="/{{.Slug}}/">
+      <span class="block w-[320px] max-w-full bg-s3 aspect-[4/3]">
+        <img src="/{{.Slug}}/{{.Still}}" alt="{{.Name}}" width="320" height="240" decoding="async"
+             class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
+      </span>
+      <span class="flex flex-wrap items-center justify-between gap-2 w-[320px] max-w-full">
+        <span class="font-bold">{{.Name}}</span>
+        <span class="chip text-ink"><span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}</span>
+      </span>
+    </a>
+    {{end}}
+  </section>
 
-  <section class="flex flex-col gap-3 pt-2" aria-labelledby="list-h">
-    <h2 class="font-bold" id="list-h">{{.Cat.Get "home.list"}}</h2>
+  <section class="flex flex-col gap-4" id="saloni" aria-labelledby="list-h">
+    <h2 class="text-[1.5rem] leading-tight font-extrabold tracking-tight" id="list-h">{{.Cat.Get "home.list"}}</h2>
     {{if .Cards}}
-    <ul class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <ul class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
       {{range .Cards}}
       <li>
-        <a class="flex flex-col border-2 border-ink bg-paper hover:bg-paper-2" href="/{{.Slug}}/">
+        <a class="flex h-full flex-col border-2 border-ink bg-paper hover:bg-paper-2" href="/{{.Slug}}/">
           <span class="block bg-s1 p-2">
             <span class="relative block aspect-[4/3] bg-s3">
               {{if .Still}}
@@ -57,16 +76,46 @@
     {{end}}
   </section>
 
-  <section class="flex flex-col gap-2 border-t-2 border-ink pt-4" id="za-salone" aria-labelledby="biz-h">
-    <h2 class="font-bold" id="biz-h">{{.Cat.Get "home.biz"}}</h2>
-    <p>{{.Cat.Get "home.biz.p"}}</p>
-    {{if .Contact}}<p>{{.Cat.Get "home.biz.contact"}} <a class="underline font-semibold" href="{{.ContactHref}}">{{.Contact}}</a></p>{{end}}
+  <section class="grid grid-cols-1 gap-6 border-t-2 border-ink pt-8 md:grid-cols-2" id="o-nama" aria-labelledby="about-h">
+    <div class="flex flex-col gap-3">
+      <h2 class="text-[1.5rem] leading-tight font-extrabold tracking-tight" id="about-h">{{.Cat.Get "about.title"}}</h2>
+      <p>{{.Cat.Get "about.p1"}}</p>
+      <p>{{.Cat.Get "about.p2"}}</p>
+    </div>
+    <div class="flex flex-col gap-3">
+      <h3 class="font-bold">{{.Cat.Get "how.title"}}</h3>
+      <ol class="grid gap-3">
+        <li class="flex gap-3"><span class="font-extrabold text-s1 tnum">1</span><span>{{.Cat.Get "how.1"}}</span></li>
+        <li class="flex gap-3"><span class="font-extrabold text-s1 tnum">2</span><span>{{.Cat.Get "how.2"}}</span></li>
+        <li class="flex gap-3"><span class="font-extrabold text-s1 tnum">3</span><span>{{.Cat.Get "how.3"}}</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="flex flex-col gap-3 border-t-2 border-ink pt-8" id="privatnost" aria-labelledby="priv-h">
+    <h2 class="text-[1.5rem] leading-tight font-extrabold tracking-tight" id="priv-h">{{.Cat.Get "privsec.title"}}</h2>
+    <ul class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <li class="border-l-4 border-s1 pl-3 font-semibold">{{.Cat.Get "privsec.1"}}</li>
+      <li class="border-l-4 border-s1 pl-3 font-semibold">{{.Cat.Get "privsec.2"}}</li>
+      <li class="border-l-4 border-s1 pl-3 font-semibold">{{.Cat.Get "privsec.3"}}</li>
+    </ul>
+    <p><a class="underline font-semibold" href="/privatnost/">{{.Cat.Get "privsec.more"}}</a></p>
+  </section>
+
+  <section class="flex flex-col gap-3 border-t-2 border-ink pt-8" id="kontakt" aria-labelledby="contact-h">
+    <h2 class="text-[1.5rem] leading-tight font-extrabold tracking-tight" id="contact-h">{{.Cat.Get "contact.title"}}</h2>
+    {{if .Contacts}}
+    <p>{{.Cat.Get "contact.p"}}</p>
+    <ul class="flex flex-col gap-1">
+      {{range .Contacts}}<li><a class="underline font-semibold" href="{{.Href}}">{{.Text}}</a></li>{{end}}
+    </ul>
+    {{else}}
+    <p class="text-muted">{{.Cat.Get "contact.none"}}</p>
+    {{end}}
     <p class="text-sm text-muted">{{.Cat.Get "home.biz.owner"}} <a class="underline" href="/owner/">{{.Cat.Get "home.biz.login"}}</a></p>
   </section>
 
-  <footer class="mt-auto pt-4 text-xs text-muted">
-    {{template "sitefooter" .Cat}}
-  </footer>
+  {{template "sitefooter" .Cat}}
 </div>
 </body>
 </html>

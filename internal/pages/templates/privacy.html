@@ -17,9 +17,7 @@
 </head>
 <body class="min-h-dvh bg-paper text-ink font-sans">
 <div class="mx-auto w-full max-w-[45rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
-  <header class="flex items-center gap-2">
-    <a class="flex items-center gap-2" href="/">{{template "logomark"}}<span class="font-bold text-lg tracking-tight">guzva</span></a>
-  </header>
+  {{template "siteheader" .Cat}}
 
   <h1 class="text-[1.5rem] leading-tight font-extrabold tracking-tight break-words sm:text-[1.75rem]">{{.Cat.Get "privacy.title"}}</h1>
   <p class="-mt-2 text-sm text-muted">{{.Cat.Get "privacy.updated"}}</p>
@@ -58,10 +56,7 @@
     <p>{{.Cat.Get "privacy.s8.p"}}</p>
   </section>
 
-  <footer class="mt-auto pt-4 text-xs text-muted flex flex-col gap-2">
-    <p>{{.Cat.Get "privacy.line"}}</p>
-    {{template "sitefooter" .Cat}}
-  </footer>
+  {{template "sitefooter" .Cat}}
 </div>
 </body>
 </html>
