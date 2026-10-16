@@ -38,7 +38,8 @@ gate green right now".
 ## Safety rails
 
 - The server binds `127.0.0.1` and its data dir lives under
-  `/tmp/opencode/guzva-qa`. Nothing writes to the repo's `mydata/`.
+  `$TMPDIR/guzva-qa` (override with `GUZVA_QA_DIR`). Nothing writes to the
+  repo's `mydata/`.
 - **No test opens `/dev/ttyUSB0`.** Opening the CH340 with `stty`/`cat`
   resets the ESP32 into download mode — that cost the bench its boot counter
   on 2026-10-14. Pass-by checks read the server journal instead.

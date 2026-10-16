@@ -45,9 +45,8 @@ proven setup. History of the team mode lives in docs/ops-log.md.)
   failures and reverted work.
 - Firmware touches the real board only via `pio run -t upload`;
   serial is DANGEROUS raw (`stty`/`cat` on /dev/ttyUSB0 drives the
-  CH340 DTR/RTS into download mode) — use a pyserial RTS-pulse
-  capture script; regenerate it if missing (the original
-  `/tmp/opencode/esp32-bootlog.py` was lost to tmp cleanup).
+  CH340 DTR/RTS into download mode) — use `tools/bootlog.py` (pyserial,
+  RTS pulse; note even opening the port reboots this board).
 - Prod: `ssh root@guzva`, data `/var/lib/guzva`, bench venue
   `https://34.139.58.143/bench/`, board serial `bd2a58b`.
   Never POST frames to prod from tests; never open the device

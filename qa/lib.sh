@@ -2,7 +2,7 @@
 # qa/lib.sh — shared harness for the guzva QA round.
 #
 # Every test script sources this. It owns three things so the individual
-# tests stay readable: a scratch data dir under /tmp/opencode (never the repo,
+# tests stay readable: a scratch data dir under $TMPDIR (never the repo,
 # never the prod VPS), a `guzva serve` on 127.0.0.1 with its own port and log,
 # and a tiny assertion vocabulary that prints one line per check and exits
 # non-zero on the first failure.
@@ -20,9 +20,9 @@ set -uo pipefail
 QA_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$QA_ROOT/.." && pwd)"
 
-# Scratch root. /tmp/opencode is the session-approved scratch area; everything
-# this harness writes lives under $GUZVA_QA_DIR and dies with the run.
-export GUZVA_QA_DIR="${GUZVA_QA_DIR:-/tmp/opencode/guzva-qa}"
+# Scratch root: everything this harness writes lives under $GUZVA_QA_DIR
+# (default $TMPDIR/guzva-qa) and dies with the run.
+export GUZVA_QA_DIR="${GUZVA_QA_DIR:-${TMPDIR:-/tmp}/guzva-qa}"
 QA_PORT="${GUZVA_QA_PORT:-18080}"
 QA_BASE="http://127.0.0.1:${QA_PORT}"
 QA_DATA="${GUZVA_QA_DIR}/data"

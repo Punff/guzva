@@ -9,7 +9,7 @@
 // responses; the expected outcome is printed next to each so the shell tests
 // and a human reading the directory agree on what each file is for.
 //
-//	go run ./qa/fixtures -out /tmp/opencode/guzva-qa/fix
+//	go run ./qa/fixtures -out "$TMPDIR/guzva-qa/fix"
 package main
 
 import (
