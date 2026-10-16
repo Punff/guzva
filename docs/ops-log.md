@@ -1368,3 +1368,12 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
 - Phone salon card: picture edge to edge (no print band + border double
   frame), smooth scaling for card pictures (pixelated stair-stepped at
   the ~1.5x non-integer scale). `make check` OK, healthz `v0.9.13`.
+
+### Deploy — `v0.10.0` (2026-10-16 ~16:52 UTC) — business plan P1 starts
+
+- Telegram operator alerts + dead-man ping (docs/plan-business.md P1).
+  Schema 13 → 14 (`alerts` ledger, additive). Backup first:
+  `guzva-20261016-1649.db.gz`. `make check` OK, healthz `v0.10.0`.
+- Not yet active on prod: needs `GUZVA_TELEGRAM_TOKEN` + `GUZVA_TELEGRAM_CHAT`
+  (and optionally `GUZVA_DEADMAN_URL`) in /etc/guzva/guzva.env — runbook
+  "Alerts on Telegram". Until then changes are logged and kept in the ledger.
