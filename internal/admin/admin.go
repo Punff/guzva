@@ -1181,7 +1181,7 @@ func (s *Server) deviceCommand(w http.ResponseWriter, r *http.Request) {
 	if cmd == "cancel" {
 		queued = ""
 	}
-	if err := s.st.SetPendingCommand(r.Context(), d.ID, queued, s.now()); err != nil {
+	if err := s.st.QueueCommand(r.Context(), d.ID, queued, s.now()); err != nil {
 		s.internal(w, "queue command", err)
 		return
 	}

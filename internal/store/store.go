@@ -1761,34 +1761,55 @@ func (s *Store) PruneDeviceEvents(ctx context.Context, cutoff time.Time) error {
 	return err
 }
 
-// SetPendingCommand queues one command for the camera's next upload reply
-// ("" cancels). A newer command replaces an undelivered one.
-func (s *Store) SetPendingCommand(ctx context.Context, deviceID int64, cmd string, at time.Time) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE devices SET pending_cmd = ?, cmd_at = ? WHERE id = ?`, cmd, ts(at), deviceID)
+// QueueCommand adds a command to the camera's queue, in order, skipping a
+// duplicate; "" clears the queue (Cancel). The queue lives in pending_cmd as
+// a comma list — one command per upload reply (proto-v1 cmd), so a second
+// click before the camera's next upload no longer replaces the first.
+func (s *Store) QueueCommand(ctx context.Context, deviceID int64, cmd string, at time.Time) error {
+	if cmd == "" {
+		_, err := s.db.ExecContext(ctx, `UPDATE devices SET pending_cmd = '', cmd_at = ? WHERE id = ?`, ts(at), deviceID)
+		return err
+	}
+	var cur string
+	if err := s.db.QueryRowContext(ctx, `SELECT pending_cmd FROM devices WHERE id = ?`, deviceID).Scan(&cur); err != nil {
+		return err
+	}
+	for _, c := range strings.Split(cur, ",") {
+		if c == cmd {
+			return nil
+		}
+	}
+	next := cmd
+	if cur != "" {
+		next = cur + "," + cmd
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE devices SET pending_cmd = ?, cmd_at = ? WHERE id = ? AND pending_cmd = ?`,
+		next, ts(at), deviceID, cur)
 	return err
 }
 
-// TakePendingCommand returns and clears the camera's pending command. The
-// clear is conditional on the value read, so two concurrent uploads cannot
-// both deliver it (the loser sees RowsAffected 0 and sends nothing).
+// TakePendingCommand pops the first queued command. The write is
+// conditional on the value read, so two concurrent uploads cannot both
+// deliver the same command (the loser sees RowsAffected 0 and sends nothing).
 func (s *Store) TakePendingCommand(ctx context.Context, deviceID int64, at time.Time) (string, error) {
-	var cmd string
-	if err := s.db.QueryRowContext(ctx, `SELECT pending_cmd FROM devices WHERE id = ?`, deviceID).Scan(&cmd); err != nil {
+	var cur string
+	if err := s.db.QueryRowContext(ctx, `SELECT pending_cmd FROM devices WHERE id = ?`, deviceID).Scan(&cur); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}
 		return "", err
 	}
-	if cmd == "" {
+	if cur == "" {
 		return "", nil
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE devices SET pending_cmd = '', cmd_at = ? WHERE id = ? AND pending_cmd = ?`,
-		ts(at), deviceID, cmd)
+	first, rest, _ := strings.Cut(cur, ",")
+	res, err := s.db.ExecContext(ctx, `UPDATE devices SET pending_cmd = ?, cmd_at = ? WHERE id = ? AND pending_cmd = ?`,
+		rest, ts(at), deviceID, cur)
 	if err != nil {
 		return "", err
 	}
 	if n, _ := res.RowsAffected(); n != 1 {
 		return "", nil
 	}
-	return cmd, nil
+	return first, nil
 }

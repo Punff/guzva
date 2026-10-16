@@ -47,7 +47,7 @@
 <section class="card mb-6">
   <h2 class="text-lg font-bold">Remote commands</h2>
   <p class="text-sm text-muted mb-3">The server can't reach the camera; a command rides the reply to its next upload (within a minute when it is healthy) and is sent once.</p>
-  {{if .CmdQueued}}<p class="mb-3 border-l-4 border-late pl-3 text-sm">Waiting to send: <b>{{.Device.PendingCmd}}</b> (queued {{.Device.CmdAt.Format "15:04"}} UTC).</p>{{end}}
+  {{if .CmdQueued}}<p class="mb-3 border-l-4 border-late pl-3 text-sm">Waiting to send, in order: <b>{{.Device.PendingCmd}}</b> (last queued {{.Device.CmdAt.Format "15:04"}} UTC). One goes out with each upload.</p>{{end}}
   <div class="flex flex-wrap gap-3">
     <form method="post" action="/admin/devices/{{.Device.ID}}/cmd"><input type="hidden" name="cmd" value="reboot"><button class="btn" type="submit">Restart camera</button></form>
     <form method="post" action="/admin/devices/{{.Device.ID}}/cmd"><input type="hidden" name="cmd" value="install_window"><button class="btn" type="submit">Open focusing window (15 min)</button></form>

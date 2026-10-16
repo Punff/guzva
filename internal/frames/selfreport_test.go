@@ -49,7 +49,7 @@ func TestSelfReportTimelineAndCommand(t *testing.T) {
 	}
 
 	// Command: queued → carried by exactly one reply → logged.
-	f.st.SetPendingCommand(ctx, d.ID, proto.CmdReboot, testNow)
+	f.st.QueueCommand(ctx, d.ID, proto.CmdReboot, testNow)
 	if r := beat("C6-2-aaaa", 6, 1, "v2", "brownout", "tls:-0x7280", 70); r["cmd"] != "reboot" {
 		t.Fatalf("reply cmd = %v", r["cmd"])
 	}

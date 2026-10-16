@@ -540,12 +540,20 @@ func TestPendingCommandDeliveredOnce(t *testing.T) {
 	if cmd, _ := s.TakePendingCommand(ctx, did, now); cmd != "" {
 		t.Fatalf("empty queue gave %q", cmd)
 	}
-	s.SetPendingCommand(ctx, did, "reboot", now)
-	if cmd, _ := s.TakePendingCommand(ctx, did, now); cmd != "reboot" {
-		t.Fatalf("take = %q", cmd)
+	// Two clicks before the next upload: both kept, in order, no dupes
+	// (the 16 Oct bench run lost a reboot to a later install_window).
+	s.QueueCommand(ctx, did, "reboot", now)
+	s.QueueCommand(ctx, did, "install_window", now)
+	s.QueueCommand(ctx, did, "reboot", now)
+	for _, want := range []string{"reboot", "install_window", ""} {
+		if cmd, _ := s.TakePendingCommand(ctx, did, now); cmd != want {
+			t.Fatalf("take = %q, want %q", cmd, want)
+		}
 	}
+	s.QueueCommand(ctx, did, "reboot", now)
+	s.QueueCommand(ctx, did, "", now) // cancel
 	if cmd, _ := s.TakePendingCommand(ctx, did, now); cmd != "" {
-		t.Fatalf("delivered twice: %q", cmd)
+		t.Fatalf("cancelled queue gave %q", cmd)
 	}
 	s.AddDeviceEvent(ctx, did, now, "boot", "reason=sw")
 	if ev, _ := s.DeviceEvents(ctx, did, 5); len(ev) != 1 || ev[0].Kind != "boot" {
