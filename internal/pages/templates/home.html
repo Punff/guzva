@@ -22,19 +22,22 @@
   {{template "siteheader" .Cat}}
 
   {{/* Hero: the question, one line, one action — and a live print. */}}
-  <section class="-mx-4 bg-s1 text-paper px-4 py-8 sm:mx-0 sm:px-8 sm:border-2 sm:border-ink grid grid-cols-1 items-center gap-8 md:grid-cols-2" aria-labelledby="hero-h">
+  <section class="-mx-4 bg-s1 text-paper px-4 py-6 sm:py-8 sm:mx-0 sm:px-8 sm:border-2 sm:border-ink grid grid-cols-1 items-center gap-8 md:grid-cols-2" aria-labelledby="hero-h">
     <div class="flex flex-col gap-4">
       <h1 class="text-[2.25rem] leading-none font-extrabold tracking-tight sm:text-[3rem]" id="hero-h">{{.Cat.Get "home.title"}}</h1>
       <p class="text-lg">{{.Cat.Get "home.lead"}}</p>
       <p><a class="btn" href="#saloni">{{.Cat.Get "home.cta"}}</a></p>
     </div>
     {{with .Featured}}
-    <a class="flex flex-col gap-3 justify-self-center" href="/{{.Slug}}/">
-      <span class="block w-[320px] max-w-full bg-s3 aspect-[4/3]">
+    {{/* Desktop only: on a phone the salon cards (each with its live
+         picture) follow straight after the text, so the hero must not
+         push them below the first screen. */}}
+    <a class="hidden md:flex flex-col gap-3 justify-self-center w-full max-w-[320px]" href="/{{.Slug}}/">
+      <span class="block w-full bg-s3 aspect-[4/3]">
         <img src="/{{.Slug}}/{{.Still}}" alt="{{.Name}}" width="320" height="240" decoding="async"
-             class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
+             class="block h-full w-full object-contain{{if .Pixelated}} [image-rendering:pixelated]{{end}}">
       </span>
-      <span class="flex flex-wrap items-center justify-between gap-2 w-[320px] max-w-full">
+      <span class="flex flex-wrap items-center justify-between gap-2">
         <span class="font-bold">{{.Name}}</span>
         <span class="chip text-ink"><span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}</span>
       </span>
@@ -48,19 +51,21 @@
     <ul class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
       {{range .Cards}}
       <li>
-        <a class="flex h-full flex-col border-2 border-ink bg-paper hover:bg-paper-2" href="/{{.Slug}}/">
-          <span class="block bg-s1 p-2">
+        {{/* Phones: a compact row (picture left, facts right) so a list of
+             salons stays scannable; from sm up: picture on top. */}}
+        <a class="flex h-full flex-row border-2 border-ink bg-paper hover:bg-paper-2 sm:flex-col" href="/{{.Slug}}/">
+          <span class="block w-32 shrink-0 self-start bg-s1 p-1.5 sm:w-auto sm:self-auto sm:p-2">
             <span class="relative block aspect-[4/3] bg-s3">
               {{if .Still}}
               <img src="/{{.Slug}}/{{.Still}}" alt="" width="320" height="240" loading="lazy" decoding="async"
-                   class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
+                   class="block h-full w-full object-contain{{if .Pixelated}} [image-rendering:pixelated]{{end}}">
               {{else}}
               <span class="absolute inset-0 tx-shutter" aria-hidden="true"></span>
               {{end}}
             </span>
           </span>
-          <span class="flex flex-col gap-1 p-3">
-            <span class="font-bold">{{.Name}}</span>
+          <span class="flex min-w-0 flex-col gap-1 p-3">
+            <span class="font-bold break-words">{{.Name}}</span>
             {{if .Location}}<span class="text-sm text-muted">{{.Location}}</span>{{end}}
             <span class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
               <span class="inline-flex items-center gap-1.5 font-semibold"><span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}</span>

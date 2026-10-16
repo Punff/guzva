@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -48,7 +49,7 @@ func TestHomeListsListedVenues(t *testing.T) {
 		`id="saloni"`, `id="o-nama"`, `id="privatnost"`, `id="kontakt"`,
 		`href="/owner/"`, `href="/privatnost/"`, "Kontakt podaci uskoro.",
 		// the hero's live print is the one open listed venue
-		`<a class="flex flex-col gap-3 justify-self-center" href="/jadro/">`,
+		`justify-self-center w-full max-w-[320px]" href="/jadro/">`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("home lacks %q", want)
@@ -59,6 +60,12 @@ func TestHomeListsListedVenues(t *testing.T) {
 	}
 	if strings.Contains(body, "Javi nam se") || !strings.Contains(body, "Imaš salon ili brijačnicu?") {
 		t.Error("without a contact: no button, but the owners line must stay")
+	}
+	// .still-print pins the venue page's print to 320/640 px; on the
+	// homepage it broke the hero and cards out of their boxes on a 320 px
+	// phone. Pixel scaling here is image-rendering only.
+	if regexp.MustCompile(`class="[^"]*still-print`).MatchString(body) {
+		t.Error("homepage uses the fixed-width still-print class")
 	}
 	if strings.Contains(body, "<script") || hdr.Get("X-Robots-Tag") != "" || strings.Contains(body, "noindex") {
 		t.Error("homepage must be script-free and indexable")

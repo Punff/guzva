@@ -3,19 +3,19 @@
 {{define "siteheader"}}
   <header class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
     <a class="flex items-center gap-2" href="/">{{template "logomark"}}<span class="font-bold text-lg tracking-tight">guzva</span></a>
-    <nav class="flex flex-wrap gap-x-5 gap-y-1 text-sm font-semibold" aria-label="{{.Get "nav.label"}}">
-      <a class="hover:underline" href="/#saloni">{{.Get "nav.venues"}}</a>
-      <a class="hover:underline" href="/#o-nama">{{.Get "nav.about"}}</a>
-      <a class="hover:underline" href="/#privatnost">{{.Get "nav.privacy"}}</a>
-      <a class="hover:underline" href="/#kontakt">{{.Get "nav.contact"}}</a>
+    <nav class="-my-2 flex flex-wrap gap-x-5 text-sm font-semibold" aria-label="{{.Get "nav.label"}}">
+      <a class="py-2 hover:underline" href="/#saloni">{{.Get "nav.venues"}}</a>
+      <a class="py-2 hover:underline" href="/#o-nama">{{.Get "nav.about"}}</a>
+      <a class="py-2 hover:underline" href="/#privatnost">{{.Get "nav.privacy"}}</a>
+      <a class="py-2 hover:underline" href="/#kontakt">{{.Get "nav.contact"}}</a>
     </nav>
   </header>
 {{- end}}
 
 {{define "sitefooter"}}
   <footer class="mt-auto border-t-2 border-ink pt-6 text-sm">
-    <div class="grid grid-cols-1 gap-6 sm:grid-cols-3">
-      <div class="flex flex-col gap-2">
+    <div class="grid grid-cols-2 gap-6 sm:grid-cols-3">
+      <div class="col-span-2 flex flex-col gap-2 sm:col-span-1">
         <a class="flex items-center gap-2" href="/">{{template "logomark"}}<span class="font-bold text-lg tracking-tight">guzva</span></a>
         <p class="text-muted">{{.Get "footer.line"}}</p>
       </div>
