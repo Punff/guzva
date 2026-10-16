@@ -531,7 +531,11 @@ placeholder to `{t}` fails the parity test with
 
 ### Q-10 · P1 · firmware · the LAN `/jpg` hands a raw photo to anyone on the venue WiFi
 
-**Status:** OPEN — fix proposed below; needs a firmware build + bench flash.
+**Status:** FIX IN TREE, NOT ON HARDWARE — the install window below is in
+`firmware/src/main.cpp` (`installWindowOpen`, esp_timer µs so no millis()
+wrap reopens it) and builds clean (`pio run`); it is NOT flashed — the bench
+board was mid-run. Close after a flash + `curl` proof: `/jpg` 200 right after
+boot, 403 after 15 min, `/api/status` still 200.
 
 The LAN cage (`firmware/src/main.cpp`, `handleJpg`, port 80) serves the
 **unstylised sensor JPEG**, unauthenticated, 1 per 3 s, for as long as the

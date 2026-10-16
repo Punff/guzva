@@ -129,7 +129,8 @@ Rules the server guarantees:
 
 Out-of-band, not part of the wire protocol: the device's own LAN cage
 on port 80 (`/api/status`, `/jpg`, `/ping`, `/api/factory-reset`) —
-PLAN §5, installer-facing. (The bench rig's `GET /status.json`,
+PLAN §5, installer-facing; `/jpg` and the reset only in the 15 min install
+window after boot (Q-10). (The bench rig's `GET /status.json`,
 `/latest.jpg`, `/ring/*.jpg`, `POST /upload` helpers retired with it
 in W0.)
 

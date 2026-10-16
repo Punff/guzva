@@ -25,7 +25,9 @@
  *    - NVS identity in "prov" (no config in NVS), factory reset
  *      over USB serial ("reset") and the caged LAN endpoint
  *    - LAN cage on port 80: GET /api/status, GET /jpg (1 per 3 s),
- *      GET /ping, POST /api/factory-reset?confirm=1 — nothing else
+ *      GET /ping, POST /api/factory-reset?confirm=1 — nothing else;
+ *      /jpg and factory-reset only in the 15 min install window after
+ *      boot (Q-10: the venue WiFi may be the guest WiFi)
  *    - mDNS guzva-<serial>.local, serial from efuse MAC
  *    - status LED GPIO33 (active LOW), all patterns millis()-based
  *
@@ -50,6 +52,7 @@
 #include <esp_random.h>
 #include <esp_heap_caps.h>
 #include <esp_task_wdt.h>
+#include <esp_timer.h>
 
 #include "settings.h"
 
@@ -109,6 +112,7 @@ static const uint8_t  POST_ATTEMPTS       = 3;       // transport retries/tick
 static const uint32_t POST_RETRY_GAP_MS   = 6000;    // decorrelate bursts
 static const uint32_t KEEPALIVE_IDLE_MS   = 45000;   // reuse well under 60 s idle
 static const uint32_t JPG_RATE_MS         = 3000;    // /jpg: 1 per 3 s
+static const int64_t  INSTALL_WINDOW_US   = 15LL * 60 * 1000000; // Q-10
 static const size_t   UPLOAD_CHUNK        = 6144;    // 6 KiB chunks (spec 4-8 KiB)
 static const uint32_t CAPTURE_INTERVAL_S  = 60;      // proto IntervalS
 static const uint32_t DARK_BACKOFF_S      = 300;     // after 4 dark rejects in a row
@@ -1110,8 +1114,19 @@ static void handleStatus() {
   server.send(200, "application/json", j);
 }
 
+// Q-10: the raw /jpg and the LAN wipe answer only during the install
+// window after boot — the venue WiFi may be the guests' WiFi, and a raw
+// frame must not be one GET away for them. Power-cycle to reopen; serial
+// "reset" stays available. esp_timer is 64-bit µs, so no 49-day millis()
+// wrap can reopen it.
+static bool installWindowOpen() { return esp_timer_get_time() < INSTALL_WINDOW_US; }
+
 // One still per 3 s max; 503 while the camera is not inited.
 static void handleJpg() {
+  if (!installWindowOpen()) {
+    server.send(403, "text/plain", "install window closed (15 min after boot); power-cycle to reopen");
+    return;
+  }
   static uint32_t lastJpgAt = 0;
   uint32_t now = millis();
   if (now - lastJpgAt < JPG_RATE_MS) {
@@ -1139,6 +1154,10 @@ static void handleJpg() {
 static void handlePing() { server.send(200, "text/plain", "ok"); }
 
 static void handleFactoryReset() {
+  if (!installWindowOpen()) {
+    server.send(403, "text/plain", "install window closed; power-cycle, or serial \"reset\"");
+    return;
+  }
   if (server.arg("confirm") != "1") {
     server.send(400, "text/plain", "confirm=1 required");
     return;

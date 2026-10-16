@@ -59,8 +59,11 @@ off.
 ## LAN cage (port 80 — installer-facing, unauthenticated by design)
 
 `/api/status`, `/jpg` (rate-limited 1/3 s), `/ping`,
-`/api/factory-reset?confirm=1` (anyone on the bench LAN can wipe — that is
-the threat model: the cage exists for installing, not for the internet).
+`/api/factory-reset?confirm=1`. **`/jpg` and the factory reset answer only
+in the install window — the first 15 min after boot — and 403 after
+that** (Q-10): the venue WiFi may be the guest WiFi, and the raw frame must
+not be one GET away for a guest. Power-cycle to reopen it (focusing, corpus
+capture); USB serial "reset" always works.
 
 ## Stability mechanisms
 

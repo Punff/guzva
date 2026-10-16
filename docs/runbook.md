@@ -52,6 +52,8 @@ are shown **once** at provision time and never stored recoverably.
 5. Serial recipe: 115200 8N1; reset pulse is `dtr=False, rts=True→False`.
    LAN cage on port 80 (installer-facing): `/api/status`, `/jpg`, `/ping`,
    `/api/factory-reset` (caged — see firmware README before touching).
+   `/jpg` and the reset work only for 15 min after boot (Q-10): 403 means
+   power-cycle the board, then focus/capture within the window.
 
 ## Routine operations (all from the VPS unless noted)
 
