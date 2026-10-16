@@ -514,3 +514,19 @@ func TestReopenCurrentDatabase(t *testing.T) {
 		s.Close()
 	}
 }
+
+func TestSetMapsURL(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	id, err := s.CreateVenue(ctx, Venue{Slug: "jadro", Name: "Jadro", Style: "poster"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMapsURL(ctx, id, "https://maps.app.goo.gl/AbC123"); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.VenueByID(ctx, id)
+	if err != nil || v.MapsURL != "https://maps.app.goo.gl/AbC123" {
+		t.Fatalf("MapsURL = %q, err %v", v.MapsURL, err)
+	}
+}

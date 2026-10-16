@@ -798,3 +798,38 @@ func TestFormsWorkWithoutJS(t *testing.T) {
 		t.Error("fleet page missing no-JS fragment for the mint form")
 	}
 }
+
+// TestParseMapsURL: the owner-pasted link is the one URL an owner can put on
+// the public page, so only Google Maps links pass (no phishing slot).
+func TestParseMapsURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                                   "",
+		"  https://maps.app.goo.gl/AbC123  ": "https://maps.app.goo.gl/AbC123",
+		"http://maps.app.goo.gl/AbC123":      "https://maps.app.goo.gl/AbC123",
+		"https://goo.gl/maps/xyz":            "https://goo.gl/maps/xyz",
+		"https://www.google.com/maps/place/Jadro/@43.85,18.43,17z": "https://www.google.com/maps/place/Jadro/@43.85,18.43,17z",
+		"https://www.google.ba/maps?q=Jadro":                       "https://www.google.ba/maps?q=Jadro",
+		"https://maps.google.co.uk/?q=x":                           "https://maps.google.co.uk/?q=x",
+	} {
+		got, ok := parseMapsURL(in)
+		if !ok || got != want {
+			t.Errorf("parseMapsURL(%q) = %q, %v; want %q", in, got, ok, want)
+		}
+	}
+	for _, bad := range []string{
+		"javascript:alert(1)",
+		"https://evil.example/maps",
+		"https://google.com.evil.example/maps",
+		"https://www.google.com/search?q=x", // google, but not maps
+		"https://goo.gl/abc",                // generic shortener
+		"https://user@maps.app.goo.gl/x",
+		"https://maps.app.goo.gl:8443/x",
+		"https://maps.app.goo.gl/x\"onclick=1",
+		"ftp://maps.app.goo.gl/x",
+		"https://maps.app.goo.gl/" + strings.Repeat("a", maxMapsURL),
+	} {
+		if got, ok := parseMapsURL(bad); ok {
+			t.Errorf("parseMapsURL(%q) accepted as %q", bad, got)
+		}
+	}
+}

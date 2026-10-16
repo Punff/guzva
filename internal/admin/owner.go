@@ -230,6 +230,11 @@ func (s *Server) ownerUpdateVenue(w http.ResponseWriter, r *http.Request, v *sto
 		return
 	}
 	cat := i18n.For(i18n.Normalize(v.Lang))
+	maps, ok := parseMapsURL(r.FormValue("maps_url"))
+	if !ok {
+		s.flash(w, cat.Get("owner.maps.bad"))
+		return
+	}
 	h, hferr := parseHours(r, cat)
 	if hferr != "" {
 		s.flash(w, hferr)
@@ -238,6 +243,10 @@ func (s *Server) ownerUpdateVenue(w http.ResponseWriter, r *http.Request, v *sto
 	name := strings.TrimSpace(r.FormValue("name"))
 	if err := s.st.UpdateVenue(r.Context(), v.ID, name, r.FormValue("style"), tz, desc, phone, loc); err != nil {
 		s.internal(w, "owner update venue", err)
+		return
+	}
+	if err := s.st.SetMapsURL(r.Context(), v.ID, maps); err != nil {
+		s.internal(w, "owner set maps url", err)
 		return
 	}
 	if err := s.st.SetHours(r.Context(), v.ID, h); err != nil {

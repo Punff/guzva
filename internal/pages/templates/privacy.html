@@ -1,9 +1,10 @@
 <!doctype html>
 <!--
-  guzva /privatnost/ — the page the public footer links to (PLAN §13/§14).
-  Every sentence is a fact the code enforces; the copy lives in the catalog
-  (privacy.*). Rendered once at startup and served from memory, so the web
-  root keeps exactly two files per venue (D5). No script.
+  guzva /privatnost/ — the privacy policy the public footer links to (PLAN
+  §13/§14). Formal, numbered register (user ruling, 16 Oct 2026); every
+  sentence is still a fact the code enforces. Copy: catalog privacy.*.
+  Rendered once at startup and served from memory, so the web root keeps
+  exactly two files per venue (D5). No script.
 -->
 <html lang="{{.Lang}}">
 <head>
@@ -22,27 +23,40 @@
   </header>
 
   <h1 class="text-[1.5rem] leading-tight font-extrabold tracking-tight break-words sm:text-[1.75rem]">{{.Cat.Get "privacy.title"}}</h1>
-  <p class="-mt-2 text-base">{{.Cat.Get "privacy.intro"}}</p>
+  <p class="-mt-2 text-sm text-muted">{{.Cat.Get "privacy.updated"}}</p>
+  <p>{{.Cat.Get "privacy.intro"}}</p>
 
   <section class="flex flex-col gap-1">
-    <h2 class="font-bold">{{.Cat.Get "privacy.cam.h"}}</h2>
-    <p>{{.Cat.Get "privacy.cam.p"}}</p>
+    <h2 class="font-bold">{{.Cat.Get "privacy.s1.h"}}</h2>
+    <p>{{.Cat.Get "privacy.s1.p"}}</p>
   </section>
   <section class="flex flex-col gap-1">
-    <h2 class="font-bold">{{.Cat.Get "privacy.raw.h"}}</h2>
-    <p>{{.Cat.Get "privacy.raw.p"}}</p>
+    <h2 class="font-bold">{{.Cat.Get "privacy.s2.h"}}</h2>
+    <p>{{.Cat.Get "privacy.s2.p"}}</p>
   </section>
   <section class="flex flex-col gap-1">
-    <h2 class="font-bold">{{.Cat.Get "privacy.style.h"}}</h2>
-    <p>{{.Cat.Get "privacy.style.p"}}</p>
+    <h2 class="font-bold">{{.Cat.Get "privacy.s3.h"}}</h2>
+    <p>{{.Cat.Get "privacy.s3.p"}}</p>
   </section>
   <section class="flex flex-col gap-1">
-    <h2 class="font-bold">{{.Cat.Get "privacy.nobio.h"}}</h2>
-    <p>{{.Cat.Get "privacy.nobio.p"}}</p>
+    <h2 class="font-bold">{{.Cat.Get "privacy.s4.h"}}</h2>
+    <p>{{.Cat.Get "privacy.s4.p"}}</p>
   </section>
   <section class="flex flex-col gap-1">
-    <h2 class="font-bold">{{.Cat.Get "privacy.visits.h"}}</h2>
-    <p>{{.Cat.Get "privacy.visits.p"}}</p>
+    <h2 class="font-bold">{{.Cat.Get "privacy.s5.h"}}</h2>
+    <p>{{.Cat.Get "privacy.s5.p"}}</p>
+  </section>
+  <section class="flex flex-col gap-1">
+    <h2 class="font-bold">{{.Cat.Get "privacy.s6.h"}}</h2>
+    <p>{{.Cat.Get "privacy.s6.p"}}</p>
+  </section>
+  <section class="flex flex-col gap-1">
+    <h2 class="font-bold">{{.Cat.Get "privacy.s7.h"}}</h2>
+    <p>{{.Cat.Get "privacy.s7.p"}}</p>
+  </section>
+  <section class="flex flex-col gap-1">
+    <h2 class="font-bold">{{.Cat.Get "privacy.s8.h"}}</h2>
+    <p>{{.Cat.Get "privacy.s8.p"}}</p>
   </section>
 
   <footer class="mt-auto pt-4 text-xs text-muted">

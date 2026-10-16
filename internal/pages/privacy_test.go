@@ -22,11 +22,18 @@ func TestPrivacyPage(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, want := range []string{
-		`<html lang="hr">`, "<h1", "O privatnosti",
-		"radnoj memoriji", "48 sati", "ne prepoznaje lica", "Nema kolačića", "s interneta",
+		`<html lang="hr">`, "<h1", "Politika privatnosti", "Posljednja izmjena",
+		"radnoj memoriji", "48 sati", "prepoznavanje lica", "ne koristi kolačiće", "s interneta",
+		"8. Vaša prava", "Agenciji za zaštitu ličnih podataka",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("privacy page lacks %q", want)
+		}
+	}
+	// User ruling (16 Oct 2026): no visit-counting mechanics on the page.
+	for _, gone := range []string{"sažetak", "nasumičnim ključem", "400 dana", "Posjete ovoj stranici"} {
+		if strings.Contains(body, gone) {
+			t.Errorf("privacy page still discloses %q", gone)
 		}
 	}
 	if strings.Contains(body, "<script") {
@@ -55,7 +62,7 @@ func TestVenueFooterLinksPrivacy(t *testing.T) {
 	if err := f.w.OnFrame(context.Background(), f.vid); err != nil {
 		t.Fatalf("OnFrame: %v", err)
 	}
-	if !strings.Contains(f.readIndex(t), `href="/privatnost/">O privatnosti</a>`) {
+	if !strings.Contains(f.readIndex(t), `href="/privatnost/">Politika privatnosti</a>`) {
 		t.Error("venue footer does not link the privacy page")
 	}
 }

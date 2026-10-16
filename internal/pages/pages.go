@@ -13,6 +13,7 @@ import (
 	"html/template"
 	"io"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,6 +126,7 @@ type view struct {
 	Description string // public one-liner, plain text
 	Phone       string // public phone, displayed as typed
 	PhoneHref   string // phone normalized for tel: (digits + leading +)
+	MapsHref    string // owner's Google Maps link, else an address search; "" without either
 	Location    string // public "where we are" line, plain text (schema v7)
 	AboutTitle  string // localized "about" heading
 	// Week is the whole schedule, Mo-first, ready for seven small day cards
@@ -146,6 +148,7 @@ type view struct {
 	StrOffline, StrIdle, StrResume    string
 	StrNewPic, StrToday, StrYesterday string
 	StrCall                           string // "Nazovi" — the phone button's verb
+	StrMaps                           string // "Otvori u Google Kartama"
 	// "N watching" plural forms, picked client-side (hr one/few/many).
 	StrWatchOne, StrWatchFew, StrWatchMany string
 
@@ -223,7 +226,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	}
 	stateKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d", fresh, open, v.Name, v.Style,
 		v.TZ, v.Lang, hoursToday(cat0, hours, localNow), stillFile,
-		v.Description, v.Phone, v.Location, todayIdx)
+		v.Description, v.Phone, v.Location+"|"+v.MapsURL, todayIdx)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -280,6 +283,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		Description:  v.Description,
 		Phone:        v.Phone,
 		PhoneHref:    telHref(v.Phone),
+		MapsHref:     mapsHref(v),
 		Location:     v.Location,
 		Week:         hours.WeekCards(cat.DayNames()),
 		TodayIdx:     todayIdx,
@@ -291,6 +295,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		StrNewPic:    cat.Get("live.newpic"),
 		StrToday:     cat.Get("when.today"),
 		StrCall:      cat.Get("venue.call"),
+		StrMaps:      cat.Get("venue.maps"),
 		StrWatchOne:  cat.Get("watch.one"),
 		StrWatchFew:  cat.Get("watch.few"),
 		StrWatchMany: cat.Get("watch.many"),
@@ -510,4 +515,17 @@ func (w *Writer) Remove(slug string) error {
 		return fmt.Errorf("pages: refusing to remove invalid slug %q", slug)
 	}
 	return os.RemoveAll(filepath.Join(w.Root(), slug))
+}
+
+// mapsHref is the O salonu map button's target: the owner's pasted Google
+// Maps link (validated on save), else a Maps search for name + address, else
+// nothing. A plain link — the page never embeds a map (no third party).
+func mapsHref(v *store.Venue) string {
+	if v.MapsURL != "" {
+		return v.MapsURL
+	}
+	if v.Location == "" {
+		return ""
+	}
+	return "https://www.google.com/maps/search/?api=1&query=" + url.QueryEscape(v.Name+", "+v.Location)
 }

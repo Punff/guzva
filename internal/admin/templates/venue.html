@@ -87,9 +87,14 @@
             <input class="inp tnum" id="v-phone" name="phone" value="{{.Venue.Phone}}" maxlength="20" inputmode="tel" placeholder="+387 61 000 000">
           </div>
           <div class="fieldset">
-            <label class="lbl" for="v-loc">Location (public)</label>
-            <input class="inp" id="v-loc" name="location" value="{{.Venue.Location}}" maxlength="160" placeholder="Street, landmark">
+            <label class="lbl" for="v-loc">Address (public)</label>
+            <input class="inp" id="v-loc" name="location" value="{{.Venue.Location}}" maxlength="160" placeholder="Street and number, city">
           </div>
+        </div>
+        <div class="fieldset">
+          <label class="lbl" for="v-maps">Google Maps link (public)</label>
+          <input class="inp" id="v-maps" name="maps_url" value="{{.Venue.MapsURL}}" maxlength="600" inputmode="url" placeholder="https://maps.app.goo.gl/…">
+          <p class="text-xs text-muted mt-1">In Google Maps: open the place → Share → Copy link. Empty = the page searches the address.</p>
         </div>
         <div class="fieldset">
           <label class="lbl" for="v-desc">Description (public)</label>

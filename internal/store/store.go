@@ -235,6 +235,12 @@ const schemaV11 = `
 ALTER TABLE venues ADD COLUMN look_json TEXT NOT NULL DEFAULT '';
 `
 
+// schemaV12 adds the venue's optional Google Maps link (owner-pasted, the
+// O salonu card's "Otvori u Google Kartama" button). Additive.
+const schemaV12 = `
+ALTER TABLE venues ADD COLUMN maps_url TEXT NOT NULL DEFAULT '';
+`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []struct {
 	sql  string
@@ -246,6 +252,7 @@ var migrations = []struct {
 	{sql: schemaV9},
 	{sql: schemaV10},
 	{sql: schemaV11},
+	{sql: schemaV12},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -390,14 +397,14 @@ func (s *Store) CreateVenue(ctx context.Context, v Venue) (int64, error) {
 	return res.LastInsertId()
 }
 
-const venueCols = `id, slug, name, tz, style, description, phone, location, owner_hash, lang, look_json, last_frame_at, created_at`
+const venueCols = `id, slug, name, tz, style, description, phone, location, maps_url, owner_hash, lang, look_json, last_frame_at, created_at`
 
 func scanVenue(row interface{ Scan(...any) error }) (*Venue, error) {
 	var v Venue
 	var last, created int64
 	var look string
 	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &v.Description, &v.Phone,
-		&v.Location, &v.OwnerHash, &v.Lang, &look, &last, &created)
+		&v.Location, &v.MapsURL, &v.OwnerHash, &v.Lang, &look, &last, &created)
 	if look != "" {
 		_ = json.Unmarshal([]byte(look), &v.Look) // malformed → zero Look = defaults
 	}
@@ -506,6 +513,7 @@ type Venue struct {
 	Description string // optional public one-liner (design-pass2 §5)
 	Phone       string // optional public contact, digits/+/spaces
 	Location    string // optional public "where we are" line, free text
+	MapsURL     string // optional Google Maps link (validated by admin)
 	OwnerHash   string
 	Lang        string      // page language, "hr" (default) or "en" (⚑9)
 	Look        render.Look // picture tuning presets (admin style panel)
@@ -520,6 +528,13 @@ func (s *Store) UpdateVenue(ctx context.Context, id int64, name, style, tz, desc
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE venues SET name = ?, style = ?, tz = ?, description = ?, phone = ?, location = ? WHERE id = ?`,
 		name, style, tz, description, phone, location, id)
+	return err
+}
+
+// SetMapsURL stores the venue's Google Maps link ("" clears it). The admin
+// layer validates it; the store only persists.
+func (s *Store) SetMapsURL(ctx context.Context, id int64, url string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE venues SET maps_url = ? WHERE id = ?`, url, id)
 	return err
 }
 

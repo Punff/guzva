@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -532,6 +533,61 @@ func parseVenueInfo(descRaw, phoneRaw, locRaw string) (string, string, string, s
 	return desc, phone, loc, ""
 }
 
+// maxMapsURL bounds the pasted link (Google share links are ~40 chars;
+// full place URLs can run to a few hundred).
+const maxMapsURL = 600
+
+// parseMapsURL accepts an empty value or an https link to Google Maps —
+// the only link an owner can put on the public page, so it cannot become
+// a phishing slot: maps.app.goo.gl / goo.gl/maps share links, or
+// google.<tld> / maps.google.<tld> with a /maps path. http is upgraded.
+func parseMapsURL(raw string) (string, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", true
+	}
+	if len(s) > maxMapsURL || strings.ContainsAny(s, " \t\r\n\"'<>") {
+		return "", false
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") {
+		return "", false
+	}
+	u.Scheme = "https"
+	host := strings.ToLower(u.Hostname())
+	switch {
+	case host == "maps.app.goo.gl":
+	case host == "goo.gl" && strings.HasPrefix(u.Path, "/maps"):
+	case googleHost(host) && (strings.HasPrefix(host, "maps.") || strings.HasPrefix(u.Path, "/maps")):
+	default:
+		return "", false
+	}
+	if u.Port() != "" {
+		return "", false
+	}
+	return u.String(), true
+}
+
+// googleHost: google.<tld> or google.co(m).<cc>, optionally www./maps.
+func googleHost(h string) bool {
+	h = strings.TrimPrefix(strings.TrimPrefix(h, "www."), "maps.")
+	rest, ok := strings.CutPrefix(h, "google.")
+	if !ok || rest == "" {
+		return false
+	}
+	for _, part := range strings.Split(rest, ".") {
+		if len(part) < 2 || len(part) > 3 {
+			return false
+		}
+		for _, r := range part {
+			if r < 'a' || r > 'z' {
+				return false
+			}
+		}
+	}
+	return strings.Count(rest, ".") <= 1
+}
+
 func (s *Server) createVenue(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	slug := strings.ToLower(strings.TrimSpace(r.FormValue("slug")))
@@ -719,6 +775,11 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 		s.flash(w, ierr)
 		return
 	}
+	maps, ok := parseMapsURL(r.FormValue("maps_url"))
+	if !ok {
+		s.flash(w, "Google Maps link: paste the link from Maps → Share (maps.app.goo.gl/… or google.com/maps/…).")
+		return
+	}
 	h, hferr := parseHours(r, i18n.For(i18n.EN))
 	if hferr != "" {
 		s.flash(w, hferr)
@@ -727,6 +788,10 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("name"))
 	if err := s.st.UpdateVenue(r.Context(), v.ID, name, style, tz, desc, phone, loc); err != nil {
 		s.internal(w, "update venue", err)
+		return
+	}
+	if err := s.st.SetMapsURL(r.Context(), v.ID, maps); err != nil {
+		s.internal(w, "set maps url", err)
 		return
 	}
 	if err := s.st.SetHours(r.Context(), v.ID, h); err != nil {

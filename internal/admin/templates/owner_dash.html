@@ -195,8 +195,15 @@
       </div>
       <div class="fieldset">
         <label class="lbl" for="v-loc">{{.Cat.Get "owner.location"}}</label>
-        <input class="inp" id="v-loc" name="location" value="{{.Venue.Location}}" maxlength="160">
+        <input class="inp" id="v-loc" name="location" value="{{.Venue.Location}}" maxlength="160"
+               placeholder="{{.Cat.Get "owner.location.placeholder"}}">
       </div>
+    </div>
+    <div class="fieldset">
+      <label class="lbl" for="v-maps">{{.Cat.Get "owner.maps"}}</label>
+      <input class="inp" id="v-maps" name="maps_url" value="{{.Venue.MapsURL}}" maxlength="600"
+             inputmode="url" placeholder="https://maps.app.goo.gl/…" aria-describedby="v-maps-help">
+      <p class="text-xs text-muted mt-1" id="v-maps-help">{{.Cat.Get "owner.maps.help"}}</p>
     </div>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <div class="fieldset">

@@ -134,16 +134,31 @@
   </details>
   {{end}}
 
-  {{/* Contact: the number is the action a guest at the door takes, so it is
-       a full-width call button; where and what follow as plain text. */}}
-  {{if .Phone}}
-  <a class="btn btn--block bg-ink text-paper" href="tel:{{.PhoneHref}}">{{.StrCall}} {{.Phone}}</a>
-  {{end}}
-  {{if or .Location .Description}}
-  <section class="flex flex-col gap-1">
-    <h2 class="font-bold">{{.AboutTitle}}</h2>
-    {{if .Location}}<p>{{.Location}}</p>{{end}}
-    {{if .Description}}<p class="text-muted">{{.Description}}</p>{{end}}
+  {{/* O salonu (16 Oct 2026, user ruling): the page exists so guests do
+       NOT have to call, so the phone is no longer a full-width ink bar
+       under the hours — it is one quiet action in the about card, beside
+       the map. What the place is, where it is, then the two ways to act.
+       The map is a plain link (owner-pasted Google Maps link, or an
+       address search): no embed, so no third-party request until the
+       guest taps it (privacy page, CSP). */}}
+  {{if or .Location .Description .Phone .MapsHref}}
+  <section class="flex flex-col gap-3 border-t-2 border-ink pt-4" aria-labelledby="about-h">
+    <h2 class="font-bold" id="about-h">{{.AboutTitle}}</h2>
+    {{if .Description}}<p>{{.Description}}</p>{{end}}
+    {{if .Location}}
+    <p class="flex items-start gap-2">
+      <svg viewBox="0 0 16 16" width="16" height="16" shape-rendering="crispEdges" aria-hidden="true" class="mt-1 shrink-0">
+        <path fill="var(--accent)" fill-rule="evenodd" d="M5 1h6v1h1v1h1v5h-1v2h-1v2h-1v2H9v2H7v-2H6v-2H5v-2H4V8H3V3h1V2h1zM7 5v2h2V5z"/>
+      </svg>
+      <span>{{.Location}}</span>
+    </p>
+    {{end}}
+    {{if or .MapsHref .Phone}}
+    <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {{if .MapsHref}}<a class="btn btn--quiet" href="{{.MapsHref}}" rel="noopener noreferrer">{{.StrMaps}}</a>{{end}}
+      {{if .Phone}}<a class="btn btn--quiet" href="tel:{{.PhoneHref}}">{{.StrCall}} <span class="tnum">{{.Phone}}</span></a>{{end}}
+    </div>
+    {{end}}
   </section>
   {{end}}
 
