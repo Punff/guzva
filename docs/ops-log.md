@@ -1274,3 +1274,14 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
 - Proof (local, Playwright): 4 reloads hold X-Watching at 1; a second
   same-IP same-UA guest makes 2. qa/run_all.sh green before the tag.
   `make check` OK, healthz `v0.9.4`. Live probe still owed (guard).
+
+### Deploy — `v0.9.5` (2026-10-16 ~10:20 UTC)
+
+- Leave beacon (user report: the watcher count did not reset reliably):
+  hidden/closed/idle-paused tabs send `POST /leave` and stop counting at
+  once; 75 s window stays as the backstop. Local Playwright proof: B's 3
+  reloads keep A at 2; B closes → A's next poll 1, badge hidden.
+- CI caught stale CSS on the first push (a template comment word became a
+  Tailwind utility); my local `make test` had flagged it but I grepped
+  its output and ignored the exit code. Fixed in the next commit; tag cut
+  only after CI green. Live probe still owed (guard).
