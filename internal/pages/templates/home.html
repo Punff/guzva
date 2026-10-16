@@ -53,13 +53,19 @@
       <li>
         {{/* Phones: a compact row — the picture takes half the card (it is
              the product; a fixed thumbnail was too small to read people
-             in), facts on the other half; from sm up: picture on top. */}}
+             in), edge to edge with one ink rule beside it (the print band
+             plus the card border read as a heavy double frame), facts on
+             the other half; from sm up: picture on top in the print band. */}}
         <a class="flex h-full flex-row border-2 border-ink bg-paper hover:bg-paper-2 sm:flex-col" href="/{{.Slug}}/">
-          <span class="block w-1/2 shrink-0 self-start bg-s1 p-1.5 sm:w-auto sm:self-auto sm:p-2">
+          <span class="block w-1/2 shrink-0 self-start border-r-2 border-ink sm:w-auto sm:self-auto sm:border-r-0 sm:bg-s1 sm:p-2">
             <span class="relative block aspect-[4/3] bg-s3">
               {{if .Still}}
+              {{/* Smooth scaling here: a card shows the 320-cell print at a
+                   non-integer size, where pixelated rendering stair-steps
+                   unevenly. The hero and venue page scale by whole numbers
+                   and keep crisp cells. */}}
               <img src="/{{.Slug}}/{{.Still}}" alt="" width="320" height="240" loading="lazy" decoding="async"
-                   class="block h-full w-full object-contain{{if .Pixelated}} [image-rendering:pixelated]{{end}}">
+                   class="block h-full w-full object-contain">
               {{else}}
               <span class="absolute inset-0 tx-shutter" aria-hidden="true"></span>
               {{end}}
