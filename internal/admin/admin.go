@@ -138,6 +138,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	sub.HandleFunc("POST /admin/venues/{id}", s.require(s.updateVenue))
 	sub.HandleFunc("POST /admin/venues/{id}/ownerpw", s.require(s.setOwnerPassword))
 	sub.HandleFunc("POST /admin/venues/{id}/status", s.require(s.setVenueStatus))
+	sub.HandleFunc("GET /admin/venues/{id}/legal/{doc}", s.require(s.legalDoc))
 	sub.HandleFunc("POST /admin/venues/{id}/owner", s.require(s.ownerInvite))
 	sub.HandleFunc("POST /admin/venues/{id}/style", s.require(s.setStyle))
 	sub.HandleFunc("POST /admin/venues/{id}/delete", s.require(s.deleteVenue))

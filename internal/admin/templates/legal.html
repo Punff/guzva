@@ -1,0 +1,78 @@
+{{define "legal.html"}}<!doctype html>
+<html lang="hr">
+<head>
+{{template "shell-head.html" .}}
+<title>{{.Venue.Name}} — {{if eq .Doc "notice"}}obavijest o kameri{{else if eq .Doc "odluka"}}odluka o video nadzoru{{else}}uvjeti usluge{{end}}</title>
+<script src="/admin/static/owner.js" defer></script>
+</head>
+<body class="bg-paper text-ink font-sans print:bg-white">
+{{/* Legal pack (business plan P2). Croatian-only documents for the salon.
+     The notice states facts; the decision and the terms are drafts until a
+     lawyer reads them and print with that mark. */}}
+<div class="mx-auto w-full max-w-[44rem] px-4 py-6 print:p-0 print:max-w-none">
+  <div class="flex flex-wrap gap-2 mb-6 print:hidden">
+    <a class="btn" href="{{if .Owner}}/owner/{{else}}/admin/venues/{{.Venue.ID}}{{end}}">← Natrag</a>
+    <button class="btn btn--primary" type="button" id="poster-print">Ispiši</button>
+  </div>
+
+  {{if eq .Doc "notice"}}
+  <article class="border-4 border-ink bg-paper print:bg-white p-8 grid gap-4">
+    <div class="flex items-center gap-2 font-bold">
+      <svg viewBox="0 0 16 16" width="24" height="24" shape-rendering="crispEdges" aria-hidden="true"><rect width="16" height="16" class="fill-ink"/><rect x="2" y="2" width="12" height="11" class="fill-paper"/><rect x="3" y="9" width="2" height="3" class="fill-s1"/><rect x="7" y="7" width="2" height="5" class="fill-s1"/><rect x="11" y="5" width="2" height="7" class="fill-accent"/></svg>
+      guzva.ba
+    </div>
+    <h1 class="text-4xl font-bold tracking-tight">Video nadzor</h1>
+    <p class="text-xl">U ovom prostoru radi kamera usluge guzva.ba.</p>
+    <p>Jednom u minuti kamera snimi sliku prostora. Slika se odmah pretvara u grubi crtež u nekoliko tonova, na kojem se ne mogu prepoznati lica, i objavljuje na:</p>
+    <p class="font-mono break-all">{{.PageURL}}</p>
+    <p>Izvorne fotografije se ne spremaju. Ne snima se zvuk ni video. Svrha je prikaz trenutne popunjenosti salona.</p>
+    <p class="text-sm">Objekt: <b>{{.Venue.Name}}</b>{{if .Venue.Location}}, {{.Venue.Location}}{{end}}</p>
+    <div class="flex items-center gap-4">
+      {{if .QR}}<div class="w-28 h-28 shrink-0 [&_svg]:block [&_svg]:w-full [&_svg]:h-full">{{.QR}}</div>{{end}}
+      <p class="text-sm">Više o obradi podataka: <span class="font-mono break-all">{{.PolicyURL}}</span></p>
+    </div>
+  </article>
+
+  {{else if eq .Doc "odluka"}}
+  <p class="mb-4 border-2 border-accent px-3 py-2 font-bold text-accent">NACRT — provjeriti s pravnikom prije potpisivanja.</p>
+  <article class="grid gap-3 leading-relaxed">
+    <p>Na temelju propisa o zaštiti ličnih podataka u Bosni i Hercegovini,</p>
+    <p><b>{{.Venue.Name}}</b>, {{if .Venue.Location}}{{.Venue.Location}}{{else}}______________________{{end}}, JIB/IDB: ______________________ (u daljnjem tekstu: Objekt) donosi</p>
+    <h1 class="text-2xl font-bold text-center my-2">Odluku o uvođenju video nadzora</h1>
+    <p><b>Član 1. Svrha.</b> U prostoru Objekta uvodi se kamera isključivo radi javnog prikaza trenutne popunjenosti putem usluge guzva.ba.</p>
+    <p><b>Član 2. Prostor.</b> Kamera je postavljena: ______________________________ i obuhvata samo prostor Objekta namijenjen strankama. Ne snimaju se toaleti, garderobe ni prostorije namijenjene samo zaposlenima.</p>
+    <p><b>Član 3. Način obrade.</b> Kamera približno jednom u minuti bilježi sliku koja se odmah, u radnoj memoriji poslužitelja usluge, pretvara u stiliziranu sliku niske razlučivosti u nekoliko tonova, na kojoj nije moguće prepoznati lica. Izvorne fotografije se ne pohranjuju. Ne snima se zvuk ni video, i ne provodi se prepoznavanje lica, osoba ni registarskih oznaka.</p>
+    <p><b>Član 4. Rok čuvanja.</b> Stilizirane slike čuvaju se 48 sati, nakon čega se trajno brišu; posljednja objavljena slika čuva se dok je ne zamijeni nova.</p>
+    <p><b>Član 5. Pristup.</b> Stilizirana slika javno se prikazuje na stranici {{.PageURL}}. Izvornim fotografijama nitko nema pristup jer se ne pohranjuju.</p>
+    <p><b>Član 6. Obavijest.</b> Na ulazu u Objekt na vidnom mjestu istaknuta je obavijest o video nadzoru.</p>
+    <p><b>Član 7. Odgovorna osoba.</b> Za provođenje ove Odluke odgovoran je: ______________________________.</p>
+    <p><b>Član 8.</b> Ova Odluka stupa na snagu danom donošenja.</p>
+    <div class="mt-8 grid grid-cols-2 gap-8 text-sm">
+      <p>Mjesto i datum:<br><br>______________________</p>
+      <p>Potpis i pečat:<br><br>______________________</p>
+    </div>
+  </article>
+
+  {{else}}
+  <p class="mb-4 border-2 border-accent px-3 py-2 font-bold text-accent">NACRT — provjeriti s pravnikom prije potpisivanja.</p>
+  <article class="grid gap-3 leading-relaxed">
+    <h1 class="text-2xl font-bold">Uvjeti korištenja usluge guzva.ba</h1>
+    <p><b>Pružatelj usluge:</b> ______________________________ (guzva.ba)<br>
+       <b>Korisnik:</b> {{.Venue.Name}}{{if .Venue.Location}}, {{.Venue.Location}}{{end}}, JIB/IDB: ______________________</p>
+    <p><b>1. Usluga.</b> Pružatelj postavlja kameru u prostor Korisnika i objavljuje stiliziranu sliku popunjenosti na stranici {{.PageURL}}. Korisnik dobiva pristup vlasničkom panelu sa statistikom posjeta i postavkama stranice.</p>
+    <p><b>2. Oprema.</b> Kamera i pribor ostaju vlasništvo Pružatelja. Kvar ili zamjenu Pružatelj otklanja bez troška za Korisnika, osim kod namjernog oštećenja.</p>
+    <p><b>3. Cijena i plaćanje.</b> Naknada iznosi ______ KM mjesečno{{/* PDV status: accountant */}} ______________. Plaća se virmanom do ____. dana u mjesecu za tekući mjesec, na temelju računa. Prvih ____ mjeseci usluga je bez naknade.</p>
+    <p><b>4. Obveze Korisnika.</b> Korisnik osigurava napajanje i WiFi na mjestu kamere, drži istaknutu obavijest o video nadzoru i ne pomiče kameru bez dogovora s Pružateljem.</p>
+    <p><b>5. Privatnost.</b> Obrada se provodi kako je opisano u politici privatnosti ({{.PolicyURL}}): slika bez mogućnosti prepoznavanja lica, izvorne fotografije se ne spremaju.</p>
+    <p><b>6. Trajanje i otkaz.</b> Ugovor se sklapa na neodređeno vrijeme. Svaka strana ga može otkazati pisanim putem uz otkazni rok od ____ dana. Ako račun nije plaćen ni ____ dana nakon dospijeća, Pružatelj može privremeno isključiti prikaz. Po prestanku ugovora Korisnik vraća kameru.</p>
+    <p><b>7. Odgovornost.</b> Pružatelj nastoji osigurati neprekidan rad, ali ne odgovara za prekide uzrokovane nestankom struje, interneta ili višom silom.</p>
+    <div class="mt-8 grid grid-cols-2 gap-8 text-sm">
+      <p>Za Pružatelja:<br><br>______________________</p>
+      <p>Za Korisnika:<br><br>______________________</p>
+    </div>
+    <p class="text-sm">Mjesto i datum: ______________________</p>
+  </article>
+  {{end}}
+</div>
+</body>
+</html>{{end}}

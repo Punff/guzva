@@ -30,6 +30,7 @@ func (s *Server) registerOwner(mux *http.ServeMux) {
 	mux.HandleFunc("GET /owner/{$}", s.requireOwner(s.ownerDash))
 	mux.HandleFunc("POST /owner/venue", s.requireOwner(s.ownerUpdateVenue))
 	mux.HandleFunc("GET /owner/poster", s.requireOwner(s.ownerPoster))
+	mux.HandleFunc("GET /owner/notice", s.requireOwner(s.ownerNotice))
 	mux.HandleFunc("GET /owner/set/{token}", s.ownerSetPage)
 	mux.HandleFunc("POST /owner/set/{token}", s.ownerSetSubmit)
 	mux.HandleFunc("GET /owner/reset", s.ownerResetPage)

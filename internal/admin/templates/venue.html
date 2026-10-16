@@ -141,6 +141,16 @@
     </section>
 
     <section class="card">
+      <h2 class="text-lg font-bold">Legal pack</h2>
+      <p class="text-sm text-muted mb-3">Print for the install. The decision and the terms are drafts until a lawyer has read them.</p>
+      <ul class="grid gap-1 text-sm">
+        <li><a class="underline font-semibold" href="/admin/venues/{{.Venue.ID}}/legal/notice">Camera notice (entrance sign)</a></li>
+        <li><a class="underline" href="/admin/venues/{{.Venue.ID}}/legal/odluka">Odluka o video nadzoru — draft</a></li>
+        <li><a class="underline" href="/admin/venues/{{.Venue.ID}}/legal/terms">Service terms — draft</a></li>
+      </ul>
+    </section>
+
+    <section class="card">
       <h2 class="text-lg font-bold">Owner access</h2>
       <p class="text-sm text-muted mb-3">Send the owner a link to set their own password (valid 72 h). With an email it is mailed and "forgot password" works for them.</p>
       <form class="flex flex-wrap items-end gap-3" method="post" action="/admin/venues/{{.Venue.ID}}/owner" hx-post="/admin/venues/{{.Venue.ID}}/owner" hx-target="#owner-out" hx-swap="innerHTML">

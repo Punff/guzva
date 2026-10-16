@@ -92,3 +92,38 @@ func TestOwnerInviteSetLoginAndReset(t *testing.T) {
 		t.Fatalf("reset mails = %d, want 1", resets)
 	}
 }
+
+// TestLegalPack: the three documents render with the venue's details; only
+// the drafts carry the NACRT mark; the owner can print the notice.
+func TestLegalPack(t *testing.T) {
+	f := newFixture(t, mustHash(t, "sekret"))
+	c := f.login(t)
+	ctx := context.Background()
+	vid, _ := f.st.CreateVenue(ctx, store.Venue{Slug: "jadro", Name: "Jadro", Style: "poster", TZ: "Europe/Sarajevo"})
+	f.st.UpdateVenue(ctx, vid, "Jadro", "poster", "Europe/Sarajevo", "", "", "Ferhadija 12, Sarajevo")
+	get := func(doc string) string {
+		return f.do(t, http.MethodGet, fmt.Sprintf("/admin/venues/%d/legal/%s", vid, doc), nil, c, false).Body.String()
+	}
+	notice, odluka, terms := get("notice"), get("odluka"), get("terms")
+	if !strings.Contains(notice, "Video nadzor") || !strings.Contains(notice, "/jadro/") || !strings.Contains(notice, "/privatnost/") ||
+		!strings.Contains(notice, "<svg") || strings.Contains(notice, "NACRT") {
+		t.Error("notice wrong")
+	}
+	for name, doc := range map[string]string{"odluka": odluka, "terms": terms} {
+		if !strings.Contains(doc, "NACRT") || !strings.Contains(doc, "Jadro") || !strings.Contains(doc, "Ferhadija 12") {
+			t.Errorf("%s lacks the draft mark or the venue details", name)
+		}
+	}
+	if w := f.do(t, http.MethodGet, fmt.Sprintf("/admin/venues/%d/legal/other", vid), nil, c, false); w.Code != http.StatusNotFound {
+		t.Errorf("unknown doc = %d", w.Code)
+	}
+	f.st.SetOwnerHash(ctx, vid, mustHash(t, "vlasnik12345"))
+	w := f.do(t, http.MethodPost, "/owner/login", url.Values{"slug": {"jadro"}, "password": {"vlasnik12345"}}, nil, false)
+	var oc *http.Cookie
+	for _, ck := range w.Result().Cookies() {
+		oc = ck
+	}
+	if body := f.do(t, http.MethodGet, "/owner/notice", nil, oc, false).Body.String(); !strings.Contains(body, "Video nadzor") {
+		t.Error("owner cannot print the notice")
+	}
+}
