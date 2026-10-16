@@ -271,6 +271,7 @@
     if (Date.now() > idleAt) {
       idle = true;
       idleBox.classList.remove('hidden');
+      leave();
       return;
     }
     busy = true;
@@ -329,9 +330,22 @@
     idleBox.classList.add('hidden');
     tick();
   });
+  // Stop counting as a watcher the moment this tab stops showing the
+  // picture — hidden, closed, reloaded, or idle-paused — instead of
+  // lingering for the server's 75 s window (stats.Leave). sendBeacon is
+  // the one request browsers still deliver while a page is going away.
+  // The next visible poll counts the tab again.
+  function leave() {
+    if (!viewer || !navigator.sendBeacon) return;
+    var slug = location.pathname.split('/')[1] || '';
+    try { navigator.sendBeacon('/leave', slug + ' ' + viewer); } catch (e) {}
+  }
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && !idle) tick();
+    if (document.hidden) leave();
+    else if (!idle) tick();
   });
+  window.addEventListener('pagehide', leave);
+  window.addEventListener('pageshow', function (e) { if (e.persisted && !idle) tick(); });
 
   setTimeout(tick, 1500);
 })();

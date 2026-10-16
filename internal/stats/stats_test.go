@@ -157,3 +157,24 @@ func TestWatchIsCapped(t *testing.T) {
 		t.Errorf("live = %d, want the cap %d", n, liveCap)
 	}
 }
+
+// TestLeave: a tab that says it is going away stops counting at once;
+// a made-up or foreign id removes nothing.
+func TestLeave(t *testing.T) {
+	r := New(nil)
+	r.Watch("jadro", "00112233aabbccdd", "1.1.1.1", "ua")
+	r.Watch("jadro", "ffeeddccbbaa9988", "1.1.1.1", "ua")
+	r.Leave("jadro", "bad")
+	r.Leave("other", "00112233aabbccdd")
+	if n := r.Live("jadro"); n != 2 {
+		t.Fatalf("live = %d after no-op leaves, want 2", n)
+	}
+	r.Leave("jadro", "00112233aabbccdd")
+	if n := r.Live("jadro"); n != 1 {
+		t.Fatalf("live = %d after a leave, want 1", n)
+	}
+	r.Watch("jadro", "00112233aabbccdd", "1.1.1.1", "ua") // tab visible again
+	if n := r.Live("jadro"); n != 2 {
+		t.Fatalf("live = %d after coming back, want 2", n)
+	}
+}

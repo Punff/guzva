@@ -176,6 +176,20 @@ func (r *Recorder) Watch(slug, tab, ip, ua string) {
 	lv[id] = t
 }
 
+// Leave drops one tab from the venue's watchers at once — the page calls
+// it when it is hidden, closed or idle-paused, so the count falls when a
+// guest leaves rather than LiveWindow later. Only the tab's own id can be
+// removed; IP+UA fallback entries still expire on the window.
+func (r *Recorder) Leave(slug, tab string) {
+	if !validTab(tab) {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rotate(r.now())
+	delete(r.live[slug], r.visitor("tab", tab))
+}
+
 // validTab accepts the page's id shape: 16 lowercase hex digits.
 func validTab(s string) bool {
 	if len(s) != 16 {

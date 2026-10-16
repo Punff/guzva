@@ -74,9 +74,10 @@ func newMux(ing *frames.Server, adm *admin.Server, publicDir string, rec *stats.
 	mux.HandleFunc("POST "+proto.PathIngest, ing.HandleIngest)
 	mux.HandleFunc("GET "+proto.PathIngest, methodNotPOST)
 	adm.Register(mux)
-	mux.Handle("GET "+proto.PathHealthz, healthz)     // method-scoped: a bare "/healthz" would conflict with GET "/"
-	mux.Handle("GET "+pages.PrivacyPath, privacy)     // in memory; the slug is reserved (store.ValidSlug)
-	mux.Handle("GET /", pages.Static(publicDir, rec)) // file bytes + in-memory visit counts, no DB (D5)
+	mux.Handle("GET "+proto.PathHealthz, healthz)         // method-scoped: a bare "/healthz" would conflict with GET "/"
+	mux.Handle("GET "+pages.PrivacyPath, privacy)         // in memory; the slug is reserved (store.ValidSlug)
+	mux.Handle("POST "+pages.LeavePath, pages.Leave(rec)) // watcher beacon, memory only
+	mux.Handle("GET /", pages.Static(publicDir, rec))     // file bytes + in-memory visit counts, no DB (D5)
 	return mux
 }
 

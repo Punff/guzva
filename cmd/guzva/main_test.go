@@ -79,6 +79,7 @@ func TestMuxComposition(t *testing.T) {
 		{"admin POST redirects when logged out", http.MethodPost, "/admin/venues", http.StatusSeeOther, ""},
 		{"admin static htmx", http.MethodGet, "/admin/static/htmx.min.js", http.StatusOK, ""},
 		{"privacy page", http.MethodGet, "/privatnost/", http.StatusOK, ""},
+		{"watcher leave beacon", http.MethodPost, "/leave", http.StatusNoContent, ""},
 		{"privacy page without slash", http.MethodGet, "/privatnost", http.StatusTemporaryRedirect, ""}, // ServeMux subtree redirect,
 	}
 	for _, c := range cases {
