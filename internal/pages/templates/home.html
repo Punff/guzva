@@ -51,10 +51,11 @@
     <ul class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
       {{range .Cards}}
       <li>
-        {{/* Phones: a compact row (picture left, facts right) so a list of
-             salons stays scannable; from sm up: picture on top. */}}
+        {{/* Phones: a compact row — the picture takes half the card (it is
+             the product; a fixed thumbnail was too small to read people
+             in), facts on the other half; from sm up: picture on top. */}}
         <a class="flex h-full flex-row border-2 border-ink bg-paper hover:bg-paper-2 sm:flex-col" href="/{{.Slug}}/">
-          <span class="block w-32 shrink-0 self-start bg-s1 p-1.5 sm:w-auto sm:self-auto sm:p-2">
+          <span class="block w-1/2 shrink-0 self-start bg-s1 p-1.5 sm:w-auto sm:self-auto sm:p-2">
             <span class="relative block aspect-[4/3] bg-s3">
               {{if .Still}}
               <img src="/{{.Slug}}/{{.Still}}" alt="" width="320" height="240" loading="lazy" decoding="async"
@@ -64,7 +65,7 @@
               {{end}}
             </span>
           </span>
-          <span class="flex min-w-0 flex-col gap-1 p-3">
+          <span class="flex min-w-0 flex-col justify-center gap-1 p-3">
             <span class="font-bold break-words">{{.Name}}</span>
             {{if .Location}}<span class="text-sm text-muted">{{.Location}}</span>{{end}}
             <span class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
