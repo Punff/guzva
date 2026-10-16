@@ -1444,3 +1444,19 @@ still not in the journal.
   until `GUZVA_PUBLIC_URL` is set — set it to https://guzva.ba when the
   domain lands. Owner emails queue until SMTP is configured; the admin
   sees every link once on screen meanwhile.
+
+### Deploy — `v0.12.0` + P4 firmware (2026-10-16 ~19:20 UTC) — business plan P4
+
+- Server: device self-report (reset_reason, uptime_s, wifi_reconnects,
+  last_err), 30-day device timeline, remote commands (reboot,
+  install_window) delivered once in the upload reply. Schema 18 → 19.
+  Backup first: `guzva-20261016-1918.db.gz`. `make check` OK, v0.12.0.
+- Firmware v0.12.0 flashed to the bench board (hash verified). Prod read
+  after the first uploads: device row fw v0.12.0, boot 48, reset_reason
+  power_on, uptime_s 214, wifi_reconnects 0, last_err tls:-1, rssi −74;
+  timeline: "boot 48, reason power_on" → "firmware v0.10.1-3-gaeeec24 →
+  v0.12.0" → "error tls:-1" (one failed TLS connect on the weak link).
+- Remote commands not yet proven on hardware: queuing one needs the admin
+  console (operator password) — the user presses "Restart camera" and
+  "Open focusing window", then the timeline must show "sent: reboot" and
+  a new "boot … reason sw", and /jpg must answer 200 again on the LAN.
