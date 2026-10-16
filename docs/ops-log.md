@@ -1357,3 +1357,8 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   NVS clear and the desired_cfg-ignore path are kept on purpose (boards
   from before Profile v1).
 - `make check` OK, healthz `v0.9.11`. Live probe owed (permission guard).
+
+### Deploy — `v0.9.12` (2026-10-16 ~13:38 UTC)
+
+- Homepage phone cards: picture is half the card (150–185 px wide by
+  phone) instead of a fixed 116 px. `make check` OK, healthz `v0.9.12`.
