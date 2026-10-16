@@ -69,12 +69,13 @@ func envOr(flagVal, envName string) string {
 // The ingest route is method-scoped (POST/GET) so the static GET "/" catch-
 // all cannot swallow its 405 (Go 1.22: method sets must be disjoint or
 // paths comparable).
-func newMux(ing *frames.Server, adm *admin.Server, publicDir string, rec *stats.Recorder, healthz, privacy http.Handler) *http.ServeMux {
+func newMux(ing *frames.Server, adm *admin.Server, publicDir string, rec *stats.Recorder, healthz, privacy, home http.Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+proto.PathIngest, ing.HandleIngest)
 	mux.HandleFunc("GET "+proto.PathIngest, methodNotPOST)
 	adm.Register(mux)
 	mux.Handle("GET "+proto.PathHealthz, healthz)         // method-scoped: a bare "/healthz" would conflict with GET "/"
+	mux.Handle("GET /{$}", home)                          // homepage venue list (D12), in memory
 	mux.Handle("GET "+pages.PrivacyPath, privacy)         // in memory; the slug is reserved (store.ValidSlug)
 	mux.Handle("POST "+pages.LeavePath, pages.Leave(rec)) // watcher beacon, memory only
 	mux.Handle("GET /", pages.Static(publicDir, rec))     // file bytes + in-memory visit counts, no DB (D5)
@@ -114,7 +115,9 @@ func serveMain(args []string) int {
 	tlsKey := fs.String("tls-key", "", "PEM key (must pair with -tls-cert)")
 	adminHash := fs.String("admin-hash", "", "bcrypt hash for the admin console (env GUZVA_ADMIN_HASH)")
 	cookieSecret := fs.String("cookie-secret", "", "admin cookie HMAC secret (env GUZVA_COOKIE_SECRET)")
+	contact := fs.String("contact", "", "homepage 'Za salone' contact, email or phone (env GUZVA_CONTACT); empty hides it")
 	fs.Parse(args)
+	*contact = envOr(*contact, "GUZVA_CONTACT")
 	*adminHash = envOr(*adminHash, "GUZVA_ADMIN_HASH")
 	*cookieSecret = envOr(*cookieSecret, "GUZVA_COOKIE_SECRET")
 
@@ -191,7 +194,13 @@ func serveMain(args []string) int {
 		log.Error("privacy page", "err", err.Error())
 		os.Exit(1)
 	}
-	mux := newMux(ing, adm, pub.Root(), rec, healthzHandler(*dataDir, started), privacy)
+	pub.SetContact(*contact)
+	// Build every page (and the homepage list) once before serving, so "/"
+	// never answers 503 in the seconds before the first pages tick.
+	if err := pub.RefreshAll(context.Background()); err != nil {
+		log.Warn("pages: initial build", "err", err.Error())
+	}
+	mux := newMux(ing, adm, pub.Root(), rec, healthzHandler(*dataDir, started), privacy, pub.Home())
 
 	srv := &http.Server{
 		Addr:    *listen,

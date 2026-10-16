@@ -55,7 +55,10 @@ func newTestMux(t *testing.T) *http.ServeMux {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return newMux(ing, adm, pub.Root(), nil, healthzHandler(dir, time.Now()), privacy)
+	if err := pub.RefreshAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return newMux(ing, adm, pub.Root(), nil, healthzHandler(dir, time.Now()), privacy, pub.Home())
 }
 
 func TestMuxComposition(t *testing.T) {
@@ -71,7 +74,7 @@ func TestMuxComposition(t *testing.T) {
 		// PUT's Allow is ServeMux's auto-405 union (GET + POST routes on the
 		// path plus the GET "/" subtree) — only the status is pinned.
 		{"ingest other method", http.MethodPut, proto.PathIngest, http.StatusMethodNotAllowed, ""},
-		{"root has no index", http.MethodGet, "/", http.StatusNotFound, ""},
+		{"homepage", http.MethodGet, "/", http.StatusOK, ""},
 		{"unknown venue static", http.MethodGet, "/jadro/", http.StatusNotFound, ""},
 		{"healthz", http.MethodGet, proto.PathHealthz, http.StatusOK, ""},
 		{"admin login page", http.MethodGet, "/admin/login", http.StatusOK, ""},
@@ -150,11 +153,14 @@ func TestStaticServesOnlyPublicFiles(t *testing.T) {
 			t.Errorf("GET %s: %d, want %d", path, w.Code, want)
 		}
 	}
-	// No listing anywhere: GET / has the hint, GET /<venue>/ serves index.
+	// No directory listing anywhere: "/" belongs to the homepage route
+	// (GET /{$}), so the file handler alone answers it with the Croatian
+	// 404 page — never a listing of the web root.
 	w := httptest.NewRecorder()
 	static.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
-	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "/<slug>/") {
-		t.Errorf("root hint = %d %q", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "Ova stranica ne postoji") ||
+		strings.Contains(w.Body.String(), slug) {
+		t.Errorf("static / = %d, want the 404 page and no venue names", w.Code)
 	}
 	// The slashless form is canonicalised: served from /<slug>, the still
 	// would resolve to /latest.png (404 — the broken-image bug on mobile

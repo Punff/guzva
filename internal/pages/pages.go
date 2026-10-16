@@ -45,6 +45,9 @@ type Writer struct {
 
 	mu   sync.Mutex
 	last map[string]string // slug → state key of the last index.html write
+
+	home    homePage // the homepage list (D12), rebuilt by RefreshAll
+	contact string   // homepage "for salons" contact; "" hides it
 }
 
 // New builds the writer and ensures the web root exists.
@@ -95,6 +98,9 @@ func (w *Writer) RefreshAll(ctx context.Context) error {
 		if err := w.Refresh(ctx, v.ID); err != nil {
 			w.log.Error("pages: refresh failed", "venue", v.Slug, "err", err.Error())
 		}
+	}
+	if err := w.buildHome(ctx, vs); err != nil {
+		w.log.Error("pages: homepage build failed", "err", err.Error())
 	}
 	return nil
 }
@@ -160,8 +166,8 @@ type view struct {
 	StateDetail string        // one plain sentence, or ""
 	OpenText    string
 	PrivacyLine string
-	PrivacyLink string // footer link text to PrivacyPath
-	ShowStill   bool   // §5.6: a closed venue shows no still at all
+	Cat         *i18n.Catalog // for the shared site footer partial
+	ShowStill   bool          // §5.6: a closed venue shows no still at all
 	Lang        string
 	CSS         template.CSS // embedded design-system stylesheet (inlined: D5)
 }
@@ -274,7 +280,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		CSS:          template.CSS(webui.Public()),
 		Lang:         string(cat.Lang),
 		PrivacyLine:  cat.Get("privacy.line"),
-		PrivacyLink:  cat.Get("privacy.link"),
+		Cat:          cat,
 		ShowStill:    true,
 		StillFile:    stillFile,
 		Tagline:      cat.Get("tagline"),
@@ -323,24 +329,16 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	// State = shape + colour + sentence (§3.2). Two stale tiers (DESIGN.md
 	// ⚑3) so a camera merely running behind reads differently from one that
 	// has gone quiet.
-	switch {
-	case !vw.HasFrame:
-		vw.StateClass, vw.StateText, vw.StateShape = "waiting", cat.Get("state.waiting"), shapeWaiting
-	case fresh == venue.Fresh:
-		vw.StateClass, vw.StateText, vw.StateShape = "fresh", cat.Get("state.fresh"), shapeFresh
-	case fresh == venue.Late:
-		vw.StateClass, vw.StateText, vw.StateShape = "late", cat.Get("state.late"), shapeLate
+	vw.StateClass, vw.StateText, vw.StateShape = stateOf(cat, vw.HasFrame, fresh, open)
+	switch vw.StateClass {
+	case "late":
 		vw.StateDetail = cat.F("late.detail", vw.Updated)
-	default:
-		vw.StateClass, vw.StateText, vw.StateShape = "nosignal", cat.Get("state.nosignal"), shapeNoSignal
+	case "nosignal":
 		vw.StateDetail = cat.F("stale.detail", vw.Updated)
-	}
-
-	// §5.6: a closed venue shows no still at all — privacy after hours,
-	// honesty (there is nothing to claim), and bytes.
-	if open == venue.Closed {
-		vw.StateClass, vw.StateText, vw.StateShape = "closed", cat.Get("state.closed"), shapeClosed
-		vw.ShowStill, vw.StateDetail = false, ""
+	case "closed":
+		// §5.6: a closed venue shows no still at all — privacy after
+		// hours, honesty (there is nothing to claim), and bytes.
+		vw.ShowStill = false
 	}
 	vw.OpenText = openText(cat, hours, localNow, open)
 	vw.HoursToday = hoursToday(cat, hours, localNow)
@@ -528,4 +526,22 @@ func mapsHref(v *store.Venue) string {
 		return ""
 	}
 	return "https://www.google.com/maps/search/?api=1&query=" + url.QueryEscape(v.Name+", "+v.Location)
+}
+
+// stateOf is the page's state chip (§3.2: shape + colour + sentence), shared
+// by the venue page and the homepage list so both always say the same
+// thing. Two stale tiers (DESIGN.md ⚑3); closed wins over everything.
+func stateOf(cat *i18n.Catalog, hasFrame bool, fresh venue.Freshness, open venue.OpenClosed) (class, text string, shape template.HTML) {
+	switch {
+	case open == venue.Closed:
+		return "closed", cat.Get("state.closed"), shapeClosed
+	case !hasFrame:
+		return "waiting", cat.Get("state.waiting"), shapeWaiting
+	case fresh == venue.Fresh:
+		return "fresh", cat.Get("state.fresh"), shapeFresh
+	case fresh == venue.Late:
+		return "late", cat.Get("state.late"), shapeLate
+	default:
+		return "nosignal", cat.Get("state.nosignal"), shapeNoSignal
+	}
 }

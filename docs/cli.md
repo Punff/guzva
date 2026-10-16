@@ -28,6 +28,7 @@ pages, the admin console, the owner panels (PLAN §2). Flags:
 | `-tls-cert` / `-tls-key` | — | PEM pair; both or neither. Enables TLS |
 | `-admin-hash` | env `GUZVA_ADMIN_HASH` | bcrypt hash; empty = console locked |
 | `-cookie-secret` | env `GUZVA_COOKIE_SECRET` | HMAC secret; empty = sessions reset per restart |
+| `-contact` | env `GUZVA_CONTACT` | homepage "Za salone" contact, email (→ mailto) or phone (→ tel); empty hides the line |
 
 Env fallbacks exist for the two secrets only — they belong in
 `/etc/guzva/guzva.env` (systemd `EnvironmentFile`), never in shell history.

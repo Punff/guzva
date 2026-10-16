@@ -46,8 +46,7 @@
 <div class="mx-auto w-full max-w-[45rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
 
   <header class="flex items-center gap-2">
-    {{template "logomark"}}
-    <span class="font-bold text-lg tracking-tight">guzva</span>
+    <a class="flex items-center gap-2" href="/">{{template "logomark"}}<span class="font-bold text-lg tracking-tight">guzva</span></a>
     <!-- The tagline answers the only question the mark asks (mockup §header). -->
     <span class="ml-auto text-sm text-muted">{{.Tagline}}</span>
   </header>
@@ -163,10 +162,11 @@
   {{end}}
 
   {{/* Footer (mockup ruling 8): a hatched divider, not a rule — the
-       print DNA again — then the privacy caption and its "learn more"
-       link to the in-memory /privatnost/ page (pages.PrivacyPath). */}}
-  <footer class="mt-auto pt-4 text-xs text-muted">
-    <p>{{.PrivacyLine}} <a class="underline" href="/privatnost/">{{.PrivacyLink}}</a></p>
+       print DNA again — then the privacy caption and the site footer
+       shared by every public page (home, for salons, privacy). */}}
+  <footer class="mt-auto pt-4 text-xs text-muted flex flex-col gap-2">
+    <p>{{.PrivacyLine}}</p>
+    {{template "sitefooter" .Cat}}
   </footer>
 </div>
 

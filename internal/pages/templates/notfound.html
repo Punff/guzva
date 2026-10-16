@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- The public 404 (D12): Croatian, same look, a way home. Served from
+     memory for any path the web root does not have. No script. -->
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Cat.Get "nf.title"}} · guzva.ba</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f2ede2">
+<style>{{.CSS}}</style>
+</head>
+<body class="min-h-dvh bg-paper text-ink font-sans">
+<div class="mx-auto w-full max-w-[45rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
+  <header class="flex items-center gap-2">
+    <a class="flex items-center gap-2" href="/">{{template "logomark"}}<span class="font-bold text-lg tracking-tight">guzva</span></a>
+  </header>
+  <h1 class="text-[1.5rem] leading-tight font-extrabold tracking-tight break-words sm:text-[1.75rem]">{{.Cat.Get "nf.title"}}</h1>
+  <p class="-mt-2 text-base">{{.Cat.Get "nf.p"}}</p>
+  <p><a class="btn btn--quiet" href="/">{{.Cat.Get "nf.home"}}</a></p>
+  <footer class="mt-auto pt-4 text-xs text-muted">
+    {{template "sitefooter" .Cat}}
+  </footer>
+</div>
+</body>
+</html>

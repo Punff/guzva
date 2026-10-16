@@ -96,6 +96,10 @@
           <input class="inp" id="v-maps" name="maps_url" value="{{.Venue.MapsURL}}" maxlength="600" inputmode="url" placeholder="https://maps.app.goo.gl/…">
           <p class="text-xs text-muted mt-1">In Google Maps: open the place → Share → Copy link. Empty = the page searches the address.</p>
         </div>
+        <label class="flex items-center gap-2 text-sm font-semibold">
+          <input type="checkbox" name="listed" value="1"{{if .Venue.Listed}} checked{{end}} class="w-5 h-5 accent-[var(--ink)]">
+          Show on the homepage list (the venue page works by its link either way)
+        </label>
         <div class="fieldset">
           <label class="lbl" for="v-desc">Description (public)</label>
           <input class="inp" id="v-desc" name="description" value="{{.Venue.Description}}" maxlength="200" placeholder="One sentence for guests">

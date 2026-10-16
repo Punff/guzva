@@ -37,19 +37,18 @@ func Static(dir string, rec *stats.Recorder) http.Handler {
 			http.Error(w, "405 — method not allowed (GET only)", http.StatusMethodNotAllowed)
 			return
 		}
-		// "/" is a lost visitor: there is no index or venue list (§6.4).
+		// "/" is the homepage's own route (GET /{$}, Writer.Home); reaching
+		// it here means the mux was built without it — answer 404, never
+		// a directory listing of the web root.
 		clean := path.Clean(r.URL.Path)
 		if clean == "/" {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte("404 — there is no page here.\n\n" +
-				"Venue pages live at /<slug>/ — one URL per venue, never a list.\n"))
+			serveNotFound(w, r)
 			return
 		}
 		full := filepath.Join(root, filepath.FromSlash(clean))
 		if full != root && !strings.HasPrefix(full, root+string(os.PathSeparator)) {
 			// path.Clean already prevents "..", this is belt and braces.
-			http.NotFound(w, r)
+			serveNotFound(w, r)
 			return
 		}
 		if fi, err := os.Stat(full); err == nil && fi.IsDir() {
@@ -69,13 +68,13 @@ func Static(dir string, rec *stats.Recorder) http.Handler {
 		}
 		f, err := os.Open(full)
 		if err != nil {
-			http.NotFound(w, r)
+			serveNotFound(w, r)
 			return
 		}
 		defer f.Close()
 		fi, err := f.Stat()
 		if err != nil || fi.IsDir() {
-			http.NotFound(w, r)
+			serveNotFound(w, r)
 			return
 		}
 
@@ -127,7 +126,7 @@ func Static(dir string, rec *stats.Recorder) http.Handler {
 		case ".jpg", ".jpeg":
 			w.Header().Set("Content-Type", "image/jpeg")
 		default:
-			http.NotFound(w, r)
+			serveNotFound(w, r)
 			return
 		}
 		// How many people have this page open right now, for the page's

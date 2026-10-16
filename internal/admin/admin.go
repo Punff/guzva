@@ -794,6 +794,10 @@ func (s *Server) updateVenue(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, "set maps url", err)
 		return
 	}
+	if err := s.st.SetListed(r.Context(), v.ID, r.FormValue("listed") == "1"); err != nil {
+		s.internal(w, "set listed", err)
+		return
+	}
 	if err := s.st.SetHours(r.Context(), v.ID, h); err != nil {
 		s.internal(w, "set hours", err)
 		return

@@ -1,0 +1,72 @@
+<!doctype html>
+<!--
+  guzva.ba/ — the homepage (D12, 16 Oct 2026: venues are browsable). Built
+  in memory by the pages job every 30 s from the same state the venue pages
+  use (stateOf), never per request (D5). Listed venues only; a closed venue
+  shows no picture here either (§5.6). No script.
+-->
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>guzva.ba · {{.Cat.Get "home.title"}}</title>
+<meta name="description" content="{{.Cat.Get "home.lead"}}">
+<meta name="theme-color" content="#f2ede2">
+<style>{{.CSS}}</style>
+</head>
+<body class="min-h-dvh bg-paper text-ink font-sans">
+<div class="mx-auto w-full max-w-[45rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
+  <header class="flex items-center gap-2">
+    <a class="flex items-center gap-2" href="/">{{template "logomark"}}<span class="font-bold text-lg tracking-tight">guzva</span></a>
+  </header>
+
+  <h1 class="text-[1.5rem] leading-tight font-extrabold tracking-tight break-words sm:text-[1.75rem]">{{.Cat.Get "home.title"}}</h1>
+  <p class="-mt-2 text-base">{{.Cat.Get "home.lead"}}</p>
+
+  <section class="flex flex-col gap-3 pt-2" aria-labelledby="list-h">
+    <h2 class="font-bold" id="list-h">{{.Cat.Get "home.list"}}</h2>
+    {{if .Cards}}
+    <ul class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {{range .Cards}}
+      <li>
+        <a class="flex flex-col border-2 border-ink bg-paper hover:bg-paper-2" href="/{{.Slug}}/">
+          <span class="block bg-s1 p-2">
+            <span class="relative block aspect-[4/3] bg-s3">
+              {{if .Still}}
+              <img src="/{{.Slug}}/{{.Still}}" alt="" width="320" height="240" loading="lazy" decoding="async"
+                   class="block h-full w-full object-contain{{if .Pixelated}} still-print{{end}}">
+              {{else}}
+              <span class="absolute inset-0 tx-shutter" aria-hidden="true"></span>
+              {{end}}
+            </span>
+          </span>
+          <span class="flex flex-col gap-1 p-3">
+            <span class="font-bold">{{.Name}}</span>
+            {{if .Location}}<span class="text-sm text-muted">{{.Location}}</span>{{end}}
+            <span class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <span class="inline-flex items-center gap-1.5 font-semibold"><span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}</span>
+              {{if .OpenText}}<span class="text-muted">{{.OpenText}}</span>{{end}}
+            </span>
+          </span>
+        </a>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="text-muted">{{.Cat.Get "home.empty"}}</p>
+    {{end}}
+  </section>
+
+  <section class="flex flex-col gap-2 border-t-2 border-ink pt-4" id="za-salone" aria-labelledby="biz-h">
+    <h2 class="font-bold" id="biz-h">{{.Cat.Get "home.biz"}}</h2>
+    <p>{{.Cat.Get "home.biz.p"}}</p>
+    {{if .Contact}}<p>{{.Cat.Get "home.biz.contact"}} <a class="underline font-semibold" href="{{.ContactHref}}">{{.Contact}}</a></p>{{end}}
+    <p class="text-sm text-muted">{{.Cat.Get "home.biz.owner"}} <a class="underline" href="/owner/">{{.Cat.Get "home.biz.login"}}</a></p>
+  </section>
+
+  <footer class="mt-auto pt-4 text-xs text-muted">
+    {{template "sitefooter" .Cat}}
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{{/* The footer every public page shares (D12): home, the venue list's
+     "for salons" section, the privacy policy. Takes the catalog. */}}
+{{define "sitefooter"}}
+    <nav class="flex flex-wrap gap-x-4 gap-y-1" aria-label="guzva.ba">
+      <a class="underline" href="/">{{.Get "footer.home"}}</a>
+      <a class="underline" href="/#za-salone">{{.Get "footer.biz"}}</a>
+      <a class="underline" href="/privatnost/">{{.Get "privacy.link"}}</a>
+    </nav>
+{{- end}}

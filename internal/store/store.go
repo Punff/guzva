@@ -241,6 +241,13 @@ const schemaV12 = `
 ALTER TABLE venues ADD COLUMN maps_url TEXT NOT NULL DEFAULT '';
 `
 
+// schemaV13 adds the homepage listing switch (D12: venues are browsable
+// from guzva.ba/). Existing venues default to listed; the admin unlists
+// bench/test venues.
+const schemaV13 = `
+ALTER TABLE venues ADD COLUMN listed INTEGER NOT NULL DEFAULT 1;
+`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []struct {
 	sql  string
@@ -253,6 +260,7 @@ var migrations = []struct {
 	{sql: schemaV10},
 	{sql: schemaV11},
 	{sql: schemaV12},
+	{sql: schemaV13},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -397,14 +405,14 @@ func (s *Store) CreateVenue(ctx context.Context, v Venue) (int64, error) {
 	return res.LastInsertId()
 }
 
-const venueCols = `id, slug, name, tz, style, description, phone, location, maps_url, owner_hash, lang, look_json, last_frame_at, created_at`
+const venueCols = `id, slug, name, tz, style, description, phone, location, maps_url, listed, owner_hash, lang, look_json, last_frame_at, created_at`
 
 func scanVenue(row interface{ Scan(...any) error }) (*Venue, error) {
 	var v Venue
 	var last, created int64
 	var look string
 	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &v.Description, &v.Phone,
-		&v.Location, &v.MapsURL, &v.OwnerHash, &v.Lang, &look, &last, &created)
+		&v.Location, &v.MapsURL, &v.Listed, &v.OwnerHash, &v.Lang, &look, &last, &created)
 	if look != "" {
 		_ = json.Unmarshal([]byte(look), &v.Look) // malformed → zero Look = defaults
 	}
@@ -514,6 +522,7 @@ type Venue struct {
 	Phone       string // optional public contact, digits/+/spaces
 	Location    string // optional public "where we are" line, free text
 	MapsURL     string // optional Google Maps link (validated by admin)
+	Listed      bool   // shown in the homepage list (D12); admin-only switch
 	OwnerHash   string
 	Lang        string      // page language, "hr" (default) or "en" (⚑9)
 	Look        render.Look // picture tuning presets (admin style panel)
@@ -535,6 +544,13 @@ func (s *Store) UpdateVenue(ctx context.Context, id int64, name, style, tz, desc
 // layer validates it; the store only persists.
 func (s *Store) SetMapsURL(ctx context.Context, id int64, url string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE venues SET maps_url = ? WHERE id = ?`, url, id)
+	return err
+}
+
+// SetListed shows or hides the venue in the homepage list (D12). The venue
+// page itself stays reachable by its link either way.
+func (s *Store) SetListed(ctx context.Context, id int64, listed bool) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE venues SET listed = ? WHERE id = ?`, listed, id)
 	return err
 }
 
