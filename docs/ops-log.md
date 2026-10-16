@@ -1397,3 +1397,24 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   "not configured" / send-failure lines → startup message sent.
 - The token was shared in the agent chat; rotate with BotFather /revoke if
   that is ever a concern (then update the env file). Not stored in the repo.
+
+### Phase 1 soak numbers (48 h, 2026-10-14 17:27 → 10-16 17:25 UTC, `make soak`)
+
+```
+fresh min   1555 / 2879 = 54.0 %   (pilot gate: <5 % missed)
+longest gap 13h39m45s between stored frames
+status      201×1375 422×89    rejects dark:87 bad_meta:2
+rssi        min -84 / median -74 / max -60 dBm (install gate ≥ −65)
+free heap   first 146368 / last 183592 / min 143580
+boots       11 reboots (user moves/flashes included)
+counters    +0 brownout, +179 post_fail, +173 tls_fail
+render ms   p50 30.0 / p95 40.5 (n=1446)
+```
+
+Reading: render latency and heap are fine (no leak); zero brownouts since
+the board left the laptop USB. The link is the problem — median −74 dBm
+fails the −65 install gate, and post/TLS failures track it. The fresh-
+minute % is pessimistic as measured: it counts nights, when the bench room
+is dark (87 dark rejects → 300 s backoff); `tools/soak` should judge only
+opening hours before this number gates a pilot. Connect/handshake ms is
+still not in the journal.
