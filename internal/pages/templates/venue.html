@@ -184,7 +184,7 @@
  * moved, the page reloads — flips are rare, so a full reload is simpler and
  * cheaper than DOM diffing.
  *
- * Polling runs only while the tab is visible, stops after 10 idle minutes
+ * Polling runs only while the tab is on screen, stops after 10 idle minutes
  * (tap to resume), and backs off 30→120 s on network errors.
  */
 (function () {
@@ -347,7 +347,7 @@
   // picture — hidden, closed, reloaded, or idle-paused — instead of
   // lingering for the server's 75 s window (stats.Leave). sendBeacon is
   // the one request browsers still deliver while a page is going away.
-  // The next visible poll counts the tab again.
+  // The next poll once the tab is back on screen counts it again.
   function leave() {
     if (!viewer || !navigator.sendBeacon) return;
     var slug = location.pathname.split('/')[1] || '';

@@ -148,7 +148,6 @@
   .btn--danger:hover { background: var(--accent); color: var(--paper); }
   /* Buttons size to their label by default. A full-width primary button on a
      short action ("Save details") reads as a layout accident. */
-  .btn--block { width: 100%; }
   .btn--quiet { box-shadow: none; }
 
   /* Status chip: shape + colour + sentence (§3.2). The sentence is what a
@@ -235,13 +234,6 @@
   }
 
   /* ---- motion: nearly none, and none under reduced-motion (§3.6) ---- */
-  .tap {
-    transition: transform 80ms steps(2), box-shadow 80ms steps(2);
-  }
-  .tap:active {
-    transform: translate(2px, 2px);
-    box-shadow: 0 0 0 0 var(--ink);
-  }
   /* A new frame gets a 3-step blink, not a crossfade: crisp, and gone in
      240ms. */
   .blink {
@@ -251,11 +243,6 @@
     50% {
       opacity: 0.35;
     }
-  }
-
-  /* Tabular numerals everywhere a time or a count appears. */
-  .tnum {
-    font-variant-numeric: tabular-nums;
   }
 
   /* The print at integer scale (print v4): 320 cells × k, pixelated.
@@ -271,7 +258,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tap,
   .blink {
     animation: none;
     transition: none;

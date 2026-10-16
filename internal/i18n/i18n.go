@@ -62,7 +62,6 @@ var hr = &Catalog{
 		"state.late":     "Slika kasni",
 		"state.nosignal": "Nema nove slike",
 		"state.closed":   "Zatvoreno",
-		"state.paused":   "Na pauzi",
 		"state.waiting":  "Čekamo prvu sliku…",
 
 		"open.until":    "Otvoreno do {time}",
@@ -120,7 +119,6 @@ var hr = &Catalog{
 		"footer.line":     "Slika iz salona, uživo.",
 		"footer.pages":    "Stranice",
 		"footer.owners":   "Za vlasnike",
-		"home.nopic":      "Slika se ne prikazuje",
 		"home.biz.owner":  "Već imaš kameru?",
 		"home.biz.login":  "Prijava za vlasnike",
 		"nf.title":        "Ova stranica ne postoji",
@@ -151,11 +149,8 @@ var hr = &Catalog{
 		"hours.closed": "Zatvoreno",
 
 		// Hours editor v2 (design-pass2 §2): every input labeled.
-		"hours.first":    "1. smjena",
-		"hours.second":   "2. smjena",
-		"hours.optional": "neobavezno",
-		"hours.open":     "Otvara",
-		"hours.close":    "Zatvara",
+		"hours.open":  "Otvara",
+		"hours.close": "Zatvara",
 
 		"when.yesterday": "jučer",
 		"live.newpic":    "Nova slika.",
@@ -182,15 +177,9 @@ var hr = &Catalog{
 		// Owner console chrome (§9.4). One catalog, so an English venue
 		// gets an English panel — never a mix.
 		"owner.public":               "Javna stranica",
-		"owner.details":              "Podaci o salonu",
 		"owner.name":                 "Naziv",
 		"owner.tz":                   "Vremenska zona",
 		"owner.style":                "Stil slike",
-		"owner.health":               "Zdravlje uređaja",
-		"owner.serial":               "Serijski broj",
-		"owner.state":                "Stanje",
-		"owner.last":                 "Zadnja slika",
-		"owner.signal":               "Signal",
 		"owner.no_devices":           "Još nema uređaja — administrator će dodati jedan.",
 		"owner.step1":                "Provjeri je li kamera uključena u struju.",
 		"owner.step2":                "Provjeri radi li WiFi u salonu.",
@@ -292,7 +281,6 @@ var en = &Catalog{
 		"state.late":     "Picture is late",
 		"state.nosignal": "No new picture",
 		"state.closed":   "Closed",
-		"state.paused":   "On a break",
 		"state.waiting":  "Waiting for the first picture…",
 
 		"open.until":    "Open until {time}",
@@ -346,7 +334,6 @@ var en = &Catalog{
 		"footer.line":     "A live picture from the salon.",
 		"footer.pages":    "Pages",
 		"footer.owners":   "For owners",
-		"home.nopic":      "No picture shown",
 		"home.biz.owner":  "Already have a camera?",
 		"home.biz.login":  "Owner login",
 		"nf.title":        "This page doesn't exist",
@@ -377,11 +364,8 @@ var en = &Catalog{
 		"hours.closed": "Closed",
 
 		// Hours editor v2 (design-pass2 §2): every input labeled.
-		"hours.first":    "First shift",
-		"hours.second":   "Second shift",
-		"hours.optional": "optional",
-		"hours.open":     "Opens",
-		"hours.close":    "Closes",
+		"hours.open":  "Opens",
+		"hours.close": "Closes",
 
 		"when.yesterday": "yesterday",
 		"live.newpic":    "New picture.",
@@ -404,15 +388,9 @@ var en = &Catalog{
 		"owner.stale":      "The picture is old — the last one was published at {time}. Check the camera and the internet.",
 
 		"owner.public":               "Public page",
-		"owner.details":              "Venue details",
 		"owner.name":                 "Name",
 		"owner.tz":                   "Time zone",
 		"owner.style":                "Picture style",
-		"owner.health":               "Device health",
-		"owner.serial":               "Serial",
-		"owner.state":                "State",
-		"owner.last":                 "Last picture",
-		"owner.signal":               "Signal",
 		"owner.no_devices":           "No device yet — the administrator will add one.",
 		"owner.step1":                "Check that the camera is plugged in.",
 		"owner.step2":                "Check that the venue WiFi works.",
