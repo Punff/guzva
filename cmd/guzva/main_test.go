@@ -51,7 +51,11 @@ func newTestMux(t *testing.T) *http.ServeMux {
 	if err != nil {
 		t.Fatalf("admin: %v", err)
 	}
-	return newMux(ing, adm, pub.Root(), nil, healthzHandler(dir, time.Now()))
+	privacy, err := pages.Privacy()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return newMux(ing, adm, pub.Root(), nil, healthzHandler(dir, time.Now()), privacy)
 }
 
 func TestMuxComposition(t *testing.T) {
@@ -74,6 +78,8 @@ func TestMuxComposition(t *testing.T) {
 		{"admin board redirects when logged out", http.MethodGet, "/admin/", http.StatusSeeOther, ""},
 		{"admin POST redirects when logged out", http.MethodPost, "/admin/venues", http.StatusSeeOther, ""},
 		{"admin static htmx", http.MethodGet, "/admin/static/htmx.min.js", http.StatusOK, ""},
+		{"privacy page", http.MethodGet, "/privatnost/", http.StatusOK, ""},
+		{"privacy page without slash", http.MethodGet, "/privatnost", http.StatusTemporaryRedirect, ""}, // ServeMux subtree redirect,
 	}
 	for _, c := range cases {
 		w := httptest.NewRecorder()

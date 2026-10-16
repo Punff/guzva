@@ -28,7 +28,7 @@ import (
 	_ "time/tzdata" // venue tz names resolve even without a system zone db (§2)
 )
 
-//go:embed templates/venue.html
+//go:embed templates/*.html
 var assets embed.FS
 
 // Writer owns data/public. One instance per process; OnFrame (ingest) and
@@ -157,7 +157,8 @@ type view struct {
 	StateDetail string        // one plain sentence, or ""
 	OpenText    string
 	PrivacyLine string
-	ShowStill   bool // §5.6: a closed venue shows no still at all
+	PrivacyLink string // footer link text to PrivacyPath
+	ShowStill   bool   // §5.6: a closed venue shows no still at all
 	Lang        string
 	CSS         template.CSS // embedded design-system stylesheet (inlined: D5)
 }
@@ -271,6 +272,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 		CSS:          template.CSS(webui.Public()),
 		Lang:         string(cat.Lang),
 		PrivacyLine:  cat.Get("privacy.line"),
+		PrivacyLink:  cat.Get("privacy.link"),
 		ShowStill:    true,
 		StillFile:    stillFile,
 		Tagline:      cat.Get("tagline"),

@@ -82,6 +82,21 @@ var hr = &Catalog{
 
 		"privacy.line": "Slika je namjerno grubo stilizirana radi privatnosti. Izvorne fotografije se ne pohranjuju.",
 
+		// The /privatnost/ page (PLAN §13): facts the code enforces, nothing more.
+		"privacy.link":     "O privatnosti",
+		"privacy.title":    "O privatnosti",
+		"privacy.intro":    "Guzva pokazuje koliko je ljudi u prostoru, bez prikazivanja tko su. Ovo je sve što sustav radi sa slikom i s vama.",
+		"privacy.cam.h":    "Kamera",
+		"privacy.cam.p":    "Kamera u prostoru šalje jednu sliku otprilike svake minute. Šalje se šifrirano (HTTPS) samo našem poslužitelju. Kamera nema mikrofon, ne snima video i ne može joj se pristupiti s interneta.",
+		"privacy.raw.h":    "Izvorna fotografija",
+		"privacy.raw.p":    "Izvorna fotografija postoji samo u radnoj memoriji poslužitelja, dok se ne pretvori u stiliziranu sliku — djelić sekunde. Nikad se ne zapisuje na disk, ne šalje dalje i ne može se naknadno dohvatiti.",
+		"privacy.style.h":  "Stilizirana slika",
+		"privacy.style.p":  "Objavljuje se samo mala slika (320 × 240) bez boja izvornika, namjerno zamućena i svedena na nekoliko tonova: vide se obrisi i gužva, a ne lica ni sitni detalji. Čuva se 48 sati, a zatim se trajno briše. Dok je objekt zatvoren, slika se ne prikazuje.",
+		"privacy.nobio.h":  "Nema prepoznavanja",
+		"privacy.nobio.p":  "Sustav ne prepoznaje lica, osobe ni registarske tablice i ne prati nikoga. To je trajna odluka, ne postavka.",
+		"privacy.visits.h": "Posjete ovoj stranici",
+		"privacy.visits.p": "Brojimo samo koliko puta je stranica otvorena. Da isti posjetitelj ne bi bio brojen dvaput, iz adrese i preglednika računa se sažetak s nasumičnim ključem koji se mijenja svake ponoći i nigdje se ne zapisuje — zato vas ni mi ne možemo prepoznati sutra. Nema kolačića, oglasa ni alata trećih strana. Zbirni brojevi čuvaju se do 400 dana.",
+
 		"hours.title":  "Radno vrijeme",
 		"hours.closed": "Zatvoreno",
 
@@ -241,6 +256,20 @@ var en = &Catalog{
 		"alt.nowframe": "Stylised view of {venue}",
 
 		"privacy.line": "The picture is deliberately coarsely stylised for privacy. The original photos are not stored.",
+
+		"privacy.link":     "About privacy",
+		"privacy.title":    "About privacy",
+		"privacy.intro":    "Guzva shows how busy a place is without showing who is there. This is everything the system does with the picture and with you.",
+		"privacy.cam.h":    "The camera",
+		"privacy.cam.p":    "The camera sends one picture roughly every minute, encrypted (HTTPS), to our server only. It has no microphone, records no video and cannot be reached from the internet.",
+		"privacy.raw.h":    "The original photo",
+		"privacy.raw.p":    "The original photo exists only in the server's memory until it is turned into the stylised picture — a fraction of a second. It is never written to disk, never passed on and cannot be retrieved later.",
+		"privacy.style.h":  "The stylised picture",
+		"privacy.style.p":  "Only a small picture (320 × 240) without the original colours is published, deliberately blurred and reduced to a few tones: you see shapes and crowding, not faces or fine detail. It is kept for 48 hours and then deleted for good. While the venue is closed, no picture is shown.",
+		"privacy.nobio.h":  "No recognition",
+		"privacy.nobio.p":  "The system does not recognise faces, people or number plates and tracks no one. That is a permanent decision, not a setting.",
+		"privacy.visits.h": "Visits to this page",
+		"privacy.visits.p": "We only count how often the page is opened. So one visitor is not counted twice, a digest of the address and browser is computed with a random key that changes every midnight and is never written down — so not even we can recognise you tomorrow. No cookies, ads or third-party tools. The totals are kept for up to 400 days.",
 
 		"hours.title":  "Opening hours",
 		"hours.closed": "Closed",

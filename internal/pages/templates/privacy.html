@@ -1,0 +1,53 @@
+<!doctype html>
+<!--
+  guzva /privatnost/ — the page the public footer links to (PLAN §13/§14).
+  Every sentence is a fact the code enforces; the copy lives in the catalog
+  (privacy.*). Rendered once at startup and served from memory, so the web
+  root keeps exactly two files per venue (D5). No script.
+-->
+<html lang="{{.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Cat.Get "privacy.title"}} · guzva.ba</title>
+<meta name="theme-color" content="#f2ede2">
+<meta name="robots" content="noindex, nofollow">
+<style>{{.CSS}}</style>
+</head>
+<body class="min-h-dvh bg-paper text-ink font-sans">
+<div class="mx-auto w-full max-w-[45rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
+  <header class="flex items-center gap-2">
+    {{template "logomark"}}
+    <span class="font-bold text-lg tracking-tight">guzva</span>
+  </header>
+
+  <h1 class="text-[1.5rem] leading-tight font-extrabold tracking-tight break-words sm:text-[1.75rem]">{{.Cat.Get "privacy.title"}}</h1>
+  <p class="-mt-2 text-base">{{.Cat.Get "privacy.intro"}}</p>
+
+  <section class="flex flex-col gap-1">
+    <h2 class="font-bold">{{.Cat.Get "privacy.cam.h"}}</h2>
+    <p>{{.Cat.Get "privacy.cam.p"}}</p>
+  </section>
+  <section class="flex flex-col gap-1">
+    <h2 class="font-bold">{{.Cat.Get "privacy.raw.h"}}</h2>
+    <p>{{.Cat.Get "privacy.raw.p"}}</p>
+  </section>
+  <section class="flex flex-col gap-1">
+    <h2 class="font-bold">{{.Cat.Get "privacy.style.h"}}</h2>
+    <p>{{.Cat.Get "privacy.style.p"}}</p>
+  </section>
+  <section class="flex flex-col gap-1">
+    <h2 class="font-bold">{{.Cat.Get "privacy.nobio.h"}}</h2>
+    <p>{{.Cat.Get "privacy.nobio.p"}}</p>
+  </section>
+  <section class="flex flex-col gap-1">
+    <h2 class="font-bold">{{.Cat.Get "privacy.visits.h"}}</h2>
+    <p>{{.Cat.Get "privacy.visits.p"}}</p>
+  </section>
+
+  <footer class="mt-auto pt-4 text-xs text-muted">
+    <p>{{.Cat.Get "privacy.line"}}</p>
+  </footer>
+</div>
+</body>
+</html>

@@ -42,22 +42,7 @@
 <div class="mx-auto w-full max-w-[45rem] px-4 py-6 sm:px-6 flex flex-col gap-4 min-h-dvh">
 
   <header class="flex items-center gap-2">
-    <!-- Logomark: "the tally label" — a thermal label (perforated tear
-         edge) printing three rising crowd bars, the peak in signal red
-         (Appendix C). 16-cell grid at 32 px = 2 px per cell, crisp. -->
-    <svg viewBox="0 0 16 16" width="32" height="32" shape-rendering="crispEdges" aria-hidden="true" class="shrink-0">
-      <rect width="16" height="16" fill="var(--ink)"/>
-      <rect x="2" y="2" width="12" height="11" fill="var(--paper)"/>
-      <rect x="2" y="13" width="1" height="1" fill="var(--paper)"/>
-      <rect x="4" y="13" width="1" height="1" fill="var(--paper)"/>
-      <rect x="6" y="13" width="1" height="1" fill="var(--paper)"/>
-      <rect x="8" y="13" width="1" height="1" fill="var(--paper)"/>
-      <rect x="10" y="13" width="1" height="1" fill="var(--paper)"/>
-      <rect x="12" y="13" width="1" height="1" fill="var(--paper)"/>
-      <rect x="3" y="9" width="2" height="3" fill="var(--s1)"/>
-      <rect x="7" y="7" width="2" height="5" fill="var(--s1)"/>
-      <rect x="11" y="5" width="2" height="7" fill="var(--accent)"/>
-    </svg>
+    {{template "logomark"}}
     <span class="font-bold text-lg tracking-tight">guzva</span>
     <!-- The tagline answers the only question the mark asks (mockup §header). -->
     <span class="ml-auto text-sm text-muted">{{.Tagline}}</span>
@@ -158,11 +143,10 @@
   {{end}}
 
   {{/* Footer (mockup ruling 8): a hatched divider, not a rule — the
-       print DNA again — then the privacy caption. No "learn more" link:
-       there is no privacy target to link to, and inventing one would be
-       a backend route, not a template. */}}
+       print DNA again — then the privacy caption and its "learn more"
+       link to the in-memory /privatnost/ page (pages.PrivacyPath). */}}
   <footer class="mt-auto pt-4 text-xs text-muted">
-    <p>{{.PrivacyLine}}</p>
+    <p>{{.PrivacyLine}} <a class="underline" href="/privatnost/">{{.PrivacyLink}}</a></p>
   </footer>
 </div>
 

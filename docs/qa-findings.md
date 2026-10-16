@@ -524,3 +524,31 @@ placeholder to `{t}` fails the parity test with
   the venue's last rejected frame (reason + age). Mean luma is still only in
   the journal (`mean_luma=`), not stored per frame.
 
+
+---
+
+## Solo pass — 2026-10-16 (pre-pilot)
+
+### Q-10 · P1 · firmware · the LAN `/jpg` hands a raw photo to anyone on the venue WiFi
+
+**Status:** OPEN — fix proposed below; needs a firmware build + bench flash.
+
+The LAN cage (`firmware/src/main.cpp`, `handleJpg`, port 80) serves the
+**unstylised sensor JPEG**, unauthenticated, 1 per 3 s, for as long as the
+board is up. It exists for focusing at install time (runbook, README "LAN
+cage"). At a real venue the camera usually joins the venue's WiFi; if that is
+also the guest network, any guest can poll `http://<camera-ip>/jpg` and get
+the raw room. That breaks the promise the public page now makes (the
+`/privatnost/` page says the original photo exists only in server RAM) and
+PLAN §1's privacy shape — the server-side contract holds, the device side
+does not.
+
+Not reachable from the internet (no inbound ports through NAT), which is
+what the privacy page claims — the page was worded to say exactly that.
+
+**Proposed fix:** open `/jpg` only in an install window — the first 15 min
+after boot (a power cycle reopens it) — and answer 403 afterwards.
+`/api/status` and `/ping` stay (no image). Alternative if the window is
+too tight for real installs: require a physical BOOT-button press to open it.
+Until it ships: install rule — the camera goes on a network guests cannot
+join (separate SSID/VLAN), checked at the install gate (§13).

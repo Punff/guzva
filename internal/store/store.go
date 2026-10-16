@@ -360,8 +360,12 @@ var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
 // ErrBadSlug is returned by CreateVenue for a slug the rule above rejects.
 var ErrBadSlug = errors.New("store: bad slug")
 
+// reservedSlugs are first path segments the server answers itself; a venue
+// with one of these slugs would be unreachable (pages.PrivacyPath).
+var reservedSlugs = map[string]bool{"privatnost": true}
+
 // ValidSlug reports whether s is a legal public slug.
-func ValidSlug(s string) bool { return slugRe.MatchString(s) }
+func ValidSlug(s string) bool { return slugRe.MatchString(s) && !reservedSlugs[s] }
 
 // CreateVenue inserts a venue and returns its id. Hours are set separately
 // via SetHours (hours live as JSON on the venue row, §6.2).

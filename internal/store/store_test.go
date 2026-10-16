@@ -60,7 +60,7 @@ func TestVenueSlugUnique(t *testing.T) {
 func TestCreateVenueEnforcesSlugRule(t *testing.T) {
 	s := openTest(t)
 	ctx := context.Background()
-	for _, bad := range []string{"", "../etc", "Jadro", "with space", "-leading", strings.Repeat("x", 41)} {
+	for _, bad := range []string{"", "../etc", "Jadro", "with space", "-leading", strings.Repeat("x", 41), "privatnost"} {
 		_, err := s.CreateVenue(ctx, Venue{Slug: bad, Name: "x", Style: "poster"})
 		if !errors.Is(err, ErrBadSlug) {
 			t.Errorf("CreateVenue(slug=%q): err = %v, want ErrBadSlug", bad, err)

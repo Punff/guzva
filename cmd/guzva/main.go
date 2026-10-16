@@ -69,12 +69,13 @@ func envOr(flagVal, envName string) string {
 // The ingest route is method-scoped (POST/GET) so the static GET "/" catch-
 // all cannot swallow its 405 (Go 1.22: method sets must be disjoint or
 // paths comparable).
-func newMux(ing *frames.Server, adm *admin.Server, publicDir string, rec *stats.Recorder, healthz http.Handler) *http.ServeMux {
+func newMux(ing *frames.Server, adm *admin.Server, publicDir string, rec *stats.Recorder, healthz, privacy http.Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST "+proto.PathIngest, ing.HandleIngest)
 	mux.HandleFunc("GET "+proto.PathIngest, methodNotPOST)
 	adm.Register(mux)
 	mux.Handle("GET "+proto.PathHealthz, healthz)     // method-scoped: a bare "/healthz" would conflict with GET "/"
+	mux.Handle("GET "+pages.PrivacyPath, privacy)     // in memory; the slug is reserved (store.ValidSlug)
 	mux.Handle("GET /", pages.Static(publicDir, rec)) // file bytes + in-memory visit counts, no DB (D5)
 	return mux
 }
@@ -184,7 +185,12 @@ func serveMain(args []string) int {
 		}
 		return os.RemoveAll(filepath.Join(*dataDir, "venues", strconv.FormatInt(v.ID, 10)))
 	}
-	mux := newMux(ing, adm, pub.Root(), rec, healthzHandler(*dataDir, started))
+	privacy, err := pages.Privacy()
+	if err != nil {
+		log.Error("privacy page", "err", err.Error())
+		os.Exit(1)
+	}
+	mux := newMux(ing, adm, pub.Root(), rec, healthzHandler(*dataDir, started), privacy)
 
 	srv := &http.Server{
 		Addr:    *listen,
