@@ -126,8 +126,13 @@ func (m *Monitor) snapshot(ctx context.Context, now time.Time) (Snapshot, error)
 		return snap, err
 	}
 	names := map[int64]string{}
+	quiet := map[int64]bool{} // paused / offboarded venues never alert
 	for _, v := range vs {
 		names[v.ID] = v.Name
+		if v.Status == "paused" || v.Status == "offboarded" {
+			quiet[v.ID] = true
+			continue
+		}
 		h, err := m.St.Hours(ctx, v.ID)
 		if err != nil {
 			return snap, err
@@ -145,7 +150,7 @@ func (m *Monitor) snapshot(ctx context.Context, now time.Time) (Snapshot, error)
 		return snap, err
 	}
 	for _, d := range ds {
-		if d.Status != "active" {
+		if d.Status != "active" || quiet[d.VenueID] {
 			continue
 		}
 		snap.Devices = append(snap.Devices, DeviceState{

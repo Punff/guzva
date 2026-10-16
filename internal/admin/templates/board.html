@@ -8,7 +8,7 @@
   <tbody>
   {{range .}}
   <tr>
-    <td><a class="font-semibold underline" href="/admin/venues/{{.ID}}">{{.Name}}</a></td>
+    <td><a class="font-semibold underline" href="/admin/venues/{{.ID}}">{{.Name}}</a>{{if ne .Status "active"}} <span class="ml-1 bg-paper-2 px-1.5 text-xs">{{.Status}}</span>{{end}}</td>
     <td>{{template "chip.html" .Fresh}}</td>
     <td class="tnum whitespace-nowrap">{{.LastAge}}</td>
     <td>{{range .Devices}}<a class="inline-flex items-center gap-2 underline" href="/admin/devices/{{.ID}}">{{if .Bars}}{{template "signal.html" dict "bars" .Bars "word" .SignalW "title" .RSSIText}}{{end}}{{.Serial}}</a>{{if ne .Status "active"}} <span class="text-muted">{{.Status}}</span>{{end}} {{else}}<span class="text-muted">none</span>{{end}}</td>

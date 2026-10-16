@@ -96,3 +96,9 @@
 </body>
 </html>
 {{- end}}
+
+{{define "owner-link"}}<div class="card card--inset text-sm" role="status">
+  <p class="mb-2 font-semibold">{{.Sent}}</p>
+  <p class="mb-1">Link (shown once):</p>
+  <p class="break-all tnum"><a class="underline" href="{{.Link}}">{{.Link}}</a></p>
+</div>{{end}}

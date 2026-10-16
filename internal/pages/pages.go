@@ -177,6 +177,14 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	if err != nil {
 		return err
 	}
+	// Offboarded: the public page is taken down (and stays down — the
+	// pages job would otherwise rewrite it every 30 s).
+	if v.Status == "offboarded" {
+		w.mu.Lock()
+		delete(w.last, v.Slug)
+		w.mu.Unlock()
+		return w.Remove(v.Slug)
+	}
 	latest, err := w.st.LatestFrame(ctx, venueID)
 	if err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
@@ -232,7 +240,7 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	}
 	stateKey := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%d", fresh, open, v.Name, v.Style,
 		v.TZ, v.Lang, hoursToday(cat0, hours, localNow), stillFile,
-		v.Description, v.Phone, v.Location+"|"+v.MapsURL, todayIdx)
+		v.Description, v.Phone, v.Location+"|"+v.MapsURL+"|"+v.Status, todayIdx)
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -342,6 +350,12 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	}
 	vw.OpenText = openText(cat, hours, localNow, open)
 	vw.HoursToday = hoursToday(cat, hours, localNow)
+	// Paused (holidays, unpaid): like closed, with its own words, and no
+	// opening-hours promise.
+	if v.Status == "paused" {
+		vw.StateClass, vw.StateText, vw.StateShape = "closed", cat.Get("state.paused"), shapeClosed
+		vw.ShowStill, vw.StateDetail, vw.OpenText = false, "", cat.Get("state.paused.detail")
+	}
 
 	if err := renderAtomic(filepath.Join(dir, "index.html"), w.tmpl, "venue.html", vw); err != nil {
 		return err

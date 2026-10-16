@@ -123,7 +123,32 @@
         <span class="inline-flex items-center gap-2 text-sm">{{if .Bars}}{{template "signal.html" dict "bars" .Bars "word" .SignalW "title" .RSSIText}} {{.SignalW}} signal{{else}}<span class="text-muted">no signal yet</span>{{end}}</span>
       </div>
       {{end}}
-      {{else}}<p class="text-sm text-muted">No camera yet. Add one from the fleet page.</p>{{end}}
+      {{else}}<p class="text-sm text-muted">No camera yet. Add one under <a class="underline" href="/admin/cameras">Cameras</a>.</p>{{end}}
+    </section>
+
+    <section class="card">
+      <h2 class="text-lg font-bold">Status</h2>
+      <p class="text-sm text-muted mb-3">Now: <b>{{.Venue.Status}}</b>. Paused shows "Privremeno zatvoreno", hides it from the homepage and silences alerts. Offboarded revokes the camera, disables the owner login and takes the page down.</p>
+      <form class="grid gap-3" method="post" action="/admin/venues/{{.Venue.ID}}/status" hx-post="/admin/venues/{{.Venue.ID}}/status" hx-target="#flash" hx-swap="innerHTML">
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="fieldset"><label class="lbl" for="st-s">Status</label>
+            <select class="inp" id="st-s" name="status">{{range .Statuses}}<option value="{{.}}"{{if eq . $.Venue.Status}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+          <div class="fieldset"><label class="lbl" for="st-c">Slug, only to offboard</label>
+            <input class="inp" id="st-c" name="confirm" placeholder="{{.Venue.Slug}}" autocomplete="off"></div>
+          <button class="btn" type="submit">Set status</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2 class="text-lg font-bold">Owner access</h2>
+      <p class="text-sm text-muted mb-3">Send the owner a link to set their own password (valid 72 h). With an email it is mailed and "forgot password" works for them.</p>
+      <form class="flex flex-wrap items-end gap-3" method="post" action="/admin/venues/{{.Venue.ID}}/owner" hx-post="/admin/venues/{{.Venue.ID}}/owner" hx-target="#owner-out" hx-swap="innerHTML">
+        <div class="fieldset grow"><label class="lbl" for="o-email">Owner email</label>
+          <input class="inp" id="o-email" name="email" type="email" value="{{.Venue.OwnerEmail}}" placeholder="vlasnik@salon.ba"></div>
+        <button class="btn btn--primary" type="submit">Create invite link</button>
+      </form>
+      <div id="owner-out" class="mt-3"></div>
     </section>
 
     <section class="card">
@@ -136,7 +161,7 @@
         </div>
         <button class="btn btn--primary" type="submit">Set password</button>
       </form>
-      <p class="text-xs text-muted mt-2">Hand it over in person or by phone. It is stored hashed and can't be shown again.</p>
+      <p class="text-xs text-muted mt-2">Or set it yourself and hand it over in person. Stored hashed, never shown again.</p>
     </section>
   </div>
 </div>

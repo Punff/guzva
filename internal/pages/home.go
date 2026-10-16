@@ -77,7 +77,7 @@ func (w *Writer) buildHome(ctx context.Context, vs []store.Venue) error {
 	var cards []homeCard
 	for i := range vs {
 		v := &vs[i]
-		if !v.Listed {
+		if !v.Listed || v.Status == "paused" || v.Status == "offboarded" {
 			continue
 		}
 		latest, err := w.st.LatestFrame(ctx, v.ID)

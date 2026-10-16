@@ -333,6 +333,24 @@ CREATE TABLE lead_invites (
 );
 `
 
+// schemaV18 adds the venue lifecycle and owner self-service (business plan
+// P2): status onboarding | active | paused | offboarded (existing venues are
+// active), the owner's email for invites/resets, and one-time owner tokens
+// (sha256 stored; purpose invite | reset; short-lived, single use).
+const schemaV18 = `
+ALTER TABLE venues ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE venues ADD COLUMN owner_email TEXT NOT NULL DEFAULT '';
+CREATE TABLE owner_tokens (
+  id         INTEGER PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  venue_id   INTEGER NOT NULL,
+  purpose    TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used_at    INTEGER NOT NULL DEFAULT 0
+);
+`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []struct {
 	sql  string
@@ -350,6 +368,7 @@ var migrations = []struct {
 	{sql: schemaV15},
 	{sql: schemaV16},
 	{sql: schemaV17},
+	{sql: schemaV18},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -494,14 +513,14 @@ func (s *Store) CreateVenue(ctx context.Context, v Venue) (int64, error) {
 	return res.LastInsertId()
 }
 
-const venueCols = `id, slug, name, tz, style, description, phone, location, maps_url, listed, owner_hash, lang, look_json, last_frame_at, created_at`
+const venueCols = `id, slug, name, tz, style, description, phone, location, maps_url, listed, status, owner_email, owner_hash, lang, look_json, last_frame_at, created_at`
 
 func scanVenue(row interface{ Scan(...any) error }) (*Venue, error) {
 	var v Venue
 	var last, created int64
 	var look string
 	err := row.Scan(&v.ID, &v.Slug, &v.Name, &v.TZ, &v.Style, &v.Description, &v.Phone,
-		&v.Location, &v.MapsURL, &v.Listed, &v.OwnerHash, &v.Lang, &look, &last, &created)
+		&v.Location, &v.MapsURL, &v.Listed, &v.Status, &v.OwnerEmail, &v.OwnerHash, &v.Lang, &look, &last, &created)
 	if look != "" {
 		_ = json.Unmarshal([]byte(look), &v.Look) // malformed → zero Look = defaults
 	}
@@ -603,6 +622,8 @@ type Venue struct {
 	Location    string // optional public "where we are" line, free text
 	MapsURL     string // optional Google Maps link (validated by admin)
 	Listed      bool   // shown in the homepage list (D12); admin-only switch
+	Status      string // onboarding | active | paused | offboarded
+	OwnerEmail  string // where owner invites and resets go
 	OwnerHash   string
 	Lang        string      // page language, "hr" (default) or "en" (⚑9)
 	Look        render.Look // picture tuning presets (admin style panel)
@@ -1576,4 +1597,74 @@ func (s *Store) ListInvites(ctx context.Context, limit int) ([]Invite, error) {
 		out = append(out, i)
 	}
 	return out, rows.Err()
+}
+
+// VenueStatuses in lifecycle order.
+var VenueStatuses = []string{"onboarding", "active", "paused", "offboarded"}
+
+// SetVenueStatus moves a venue through its lifecycle.
+func (s *Store) SetVenueStatus(ctx context.Context, id int64, status string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE venues SET status = ? WHERE id = ?`, status, id)
+	return err
+}
+
+// SetOwnerEmail stores the owner's email ("" clears it).
+func (s *Store) SetOwnerEmail(ctx context.Context, id int64, email string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE venues SET owner_email = ? WHERE id = ?`, email, id)
+	return err
+}
+
+// OwnerToken is a one-time owner link (invite or password reset).
+type OwnerToken struct {
+	ID, VenueID int64
+	Purpose     string
+	ExpiresAt   time.Time
+	UsedAt      time.Time
+}
+
+// CreateOwnerToken stores a new owner link's hash.
+func (s *Store) CreateOwnerToken(ctx context.Context, hash string, venueID int64, purpose string, now, expires time.Time) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO owner_tokens (token_hash, venue_id, purpose, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?)`, hash, venueID, purpose, ts(now), ts(expires))
+	return err
+}
+
+// OwnerTokenByHash resolves a token hash.
+func (s *Store) OwnerTokenByHash(ctx context.Context, hash string) (*OwnerToken, error) {
+	var t OwnerToken
+	var e, u int64
+	err := s.db.QueryRowContext(ctx, `SELECT id, venue_id, purpose, expires_at, used_at FROM owner_tokens WHERE token_hash = ?`,
+		hash).Scan(&t.ID, &t.VenueID, &t.Purpose, &e, &u)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	t.ExpiresAt = time.Unix(e, 0).UTC()
+	if u > 0 {
+		t.UsedAt = time.Unix(u, 0).UTC()
+	}
+	return &t, nil
+}
+
+// UseOwnerToken marks a token used; false if already used. Using one also
+// voids every other open token for the venue (a newer reset beats an old
+// invite still sitting in a mailbox).
+func (s *Store) UseOwnerToken(ctx context.Context, t *OwnerToken, now time.Time) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE owner_tokens SET used_at = ? WHERE id = ? AND used_at = 0`, ts(now), t.ID)
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return false, nil
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE owner_tokens SET used_at = ? WHERE venue_id = ? AND used_at = 0`, ts(now), t.VenueID)
+	return true, err
+}
+
+// RevokeVenueDevices revokes every camera of a venue (offboarding).
+func (s *Store) RevokeVenueDevices(ctx context.Context, venueID int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE devices SET status = 'revoked' WHERE venue_id = ?`, venueID)
+	return err
 }

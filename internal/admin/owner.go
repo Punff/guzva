@@ -30,6 +30,10 @@ func (s *Server) registerOwner(mux *http.ServeMux) {
 	mux.HandleFunc("GET /owner/{$}", s.requireOwner(s.ownerDash))
 	mux.HandleFunc("POST /owner/venue", s.requireOwner(s.ownerUpdateVenue))
 	mux.HandleFunc("GET /owner/poster", s.requireOwner(s.ownerPoster))
+	mux.HandleFunc("GET /owner/set/{token}", s.ownerSetPage)
+	mux.HandleFunc("POST /owner/set/{token}", s.ownerSetSubmit)
+	mux.HandleFunc("GET /owner/reset", s.ownerResetPage)
+	mux.HandleFunc("POST /owner/reset", s.ownerResetSubmit)
 }
 
 // requireOwner gates a handler on a valid owner session and loads the venue
@@ -66,6 +70,11 @@ func (s *Server) ownerLoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/owner/", http.StatusSeeOther)
 		return
 	}
+	if r.URL.Query().Get("set") != "" {
+		cat := i18n.For(i18n.HR)
+		s.render(w, "owner_login.html", ownerLoginModel{Cat: cat, Done: true})
+		return
+	}
 	s.renderOwnerLogin(w, http.StatusOK, "")
 }
 
@@ -74,8 +83,9 @@ func (s *Server) ownerLoginPage(w http.ResponseWriter, r *http.Request) {
 // venue, so no per-venue language applies (D7: Croatian is the product
 // default). The template renders the owner.login.* keys through it.
 type ownerLoginModel struct {
-	Err string // one sentence, already Croatian
-	Cat *i18n.Catalog
+	Err  string // one sentence, already Croatian
+	Cat  *i18n.Catalog
+	Done bool // just set a password from a link
 }
 
 // renderOwnerLogin renders the owner login page. errKey is a catalog KEY,

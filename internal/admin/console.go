@@ -74,7 +74,7 @@ func (s *Server) board(ctx context.Context) (*board, error) {
 			b.Free = append(b.Free, v)
 		}
 		fr := venue.Classify(v.LastFrameAt, now)
-		vv := venueView{ID: v.ID, Slug: v.Slug, Name: v.Name, LastAge: age(now, v.LastFrameAt),
+		vv := venueView{ID: v.ID, Status: v.Status, Slug: v.Slug, Name: v.Name, LastAge: age(now, v.LastFrameAt),
 			Devices: byVenue[v.ID], Views7: views[v.ID], attention: attention[fr]}
 		if s.Stats != nil {
 			vv.Live = s.Stats.Live(v.Slug)

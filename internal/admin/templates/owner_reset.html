@@ -1,0 +1,29 @@
+{{define "owner_reset.html"}}<!doctype html>
+<html lang="hr">
+<head>
+{{template "shell-head.html" .}}
+<title>guzva — {{.Cat.Get "owner.reset.title"}}</title>
+<meta name="robots" content="noindex">
+</head>
+<body class="bg-paper text-ink font-sans">
+<main class="min-h-dvh grid place-items-center p-4">
+  <div class="w-full max-w-sm">
+    <h1 class="text-2xl font-bold tracking-tight mb-1">guzva</h1>
+    <p class="text-sm text-muted mb-5">{{.Cat.Get "owner.reset.title"}}</p>
+    {{if .Sent}}
+    <div class="card card--inset text-sm" role="status">{{.Cat.Get "owner.reset.sent"}}</div>
+    {{else}}
+    <form method="post" action="/owner/reset" class="border-2 border-ink bg-paper shadow-step p-4 grid gap-3">
+      <p class="text-sm">{{.Cat.Get "owner.reset.p"}}</p>
+      <div class="fieldset"><label class="lbl" for="slug">{{.Cat.Get "owner.login.venue"}}</label>
+        <input class="inp" id="slug" name="slug" placeholder="jadro" autocomplete="username" required></div>
+      <div class="fieldset"><label class="lbl" for="email">{{.Cat.Get "owner.reset.email"}}</label>
+        <input class="inp" id="email" name="email" type="email" autocomplete="email" required></div>
+      <button class="btn btn--primary" type="submit">{{.Cat.Get "owner.reset.submit"}}</button>
+    </form>
+    {{end}}
+    <p class="text-sm mt-4"><a class="underline" href="/owner/login">{{.Cat.Get "owner.login.submit"}}</a></p>
+  </div>
+</main>
+</body>
+</html>{{end}}

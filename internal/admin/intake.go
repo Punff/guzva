@@ -520,6 +520,7 @@ func (s *Server) leadToVenue(w http.ResponseWriter, r *http.Request) {
 	// Listed only once it is installed and sending; a fresh venue would sit
 	// on the homepage with "no picture yet".
 	_ = s.st.SetListed(ctx, id, false)
+	_ = s.st.SetVenueStatus(ctx, id, "onboarding")
 	if err := s.st.MarkLeadWon(ctx, l.ID, id, s.now()); err != nil {
 		s.internal(w, "lead won", err)
 		return

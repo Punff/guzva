@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -130,5 +132,34 @@ func TestSharedFooterOnVenuePage(t *testing.T) {
 		if !strings.Contains(idx, want) {
 			t.Errorf("venue footer lacks %q", want)
 		}
+	}
+}
+
+// TestLifecycleOnPublicPages: paused → "Privremeno zatvoreno", no picture,
+// off the homepage; offboarded → the venue page is removed.
+func TestLifecycleOnPublicPages(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.st.SetVenueStatus(ctx, f.vid, "paused"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.w.OnFrame(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	idx := f.readIndex(t)
+	if !strings.Contains(idx, "Privremeno zatvoreno") || strings.Contains(idx, `id="still"`) {
+		t.Error("paused venue page shows a picture or lacks the paused state")
+	}
+	if _, body, _ := homeBody(t, f); strings.Contains(body, `href="/jadro/"`) {
+		t.Error("paused venue is on the homepage")
+	}
+	if err := f.st.SetVenueStatus(ctx, f.vid, "offboarded"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.w.Refresh(ctx, f.vid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(f.w.Root(), "jadro")); !os.IsNotExist(err) {
+		t.Errorf("offboarded venue page still on disk: %v", err)
 	}
 }

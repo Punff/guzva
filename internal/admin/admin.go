@@ -137,6 +137,8 @@ func (s *Server) Register(mux *http.ServeMux) {
 	sub.HandleFunc("GET /admin/venues/{id}", s.require(s.venuePage))
 	sub.HandleFunc("POST /admin/venues/{id}", s.require(s.updateVenue))
 	sub.HandleFunc("POST /admin/venues/{id}/ownerpw", s.require(s.setOwnerPassword))
+	sub.HandleFunc("POST /admin/venues/{id}/status", s.require(s.setVenueStatus))
+	sub.HandleFunc("POST /admin/venues/{id}/owner", s.require(s.ownerInvite))
 	sub.HandleFunc("POST /admin/venues/{id}/style", s.require(s.setStyle))
 	sub.HandleFunc("POST /admin/venues/{id}/delete", s.require(s.deleteVenue))
 	sub.HandleFunc("POST /admin/devices/{id}", s.require(s.updateDevice))
@@ -367,6 +369,7 @@ func newDeviceView(d store.Device, now time.Time) deviceView {
 
 type venueView struct {
 	ID      int64
+	Status  string // lifecycle; shown when not active
 	Slug    string
 	Name    string
 	Fresh   chip // shape + colour + sentence for the status chip
@@ -657,6 +660,7 @@ func (s *Server) internal(w http.ResponseWriter, op string, err error) {
 
 type venueEditModel struct {
 	Nav       navModel
+	Statuses  []string
 	Created   bool
 	Venue     store.Venue
 	Days      [7]venue.DayForm
@@ -710,6 +714,7 @@ func (s *Server) venuePage(w http.ResponseWriter, r *http.Request) {
 		m.Devices = append(m.Devices, newDeviceView(d, s.now().UTC()))
 	}
 	m.Nav = s.nav(r.Context())
+	m.Statuses = store.VenueStatuses
 	if err := s.tmpl.ExecuteTemplate(w, "venue.html", m); err != nil {
 		s.log.Error("admin: render venue", "err", err.Error())
 	}

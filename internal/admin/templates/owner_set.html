@@ -1,0 +1,30 @@
+{{define "owner_set.html"}}<!doctype html>
+<html lang="{{if .Cat}}{{.Cat.Lang}}{{else}}hr{{end}}">
+<head>
+{{template "shell-head.html" .}}
+<title>guzva — {{.Cat.Get "owner.set.title"}}</title>
+<meta name="robots" content="noindex">
+</head>
+<body class="bg-paper text-ink font-sans">
+<main class="min-h-dvh grid place-items-center p-4">
+  <div class="w-full max-w-sm">
+    <h1 class="text-2xl font-bold tracking-tight mb-1">guzva</h1>
+    <p class="text-sm text-muted mb-5">{{.Cat.Get "owner.set.title"}}</p>
+    {{if .Bad}}
+    <div class="card text-sm" role="alert">{{.Cat.Get "owner.set.err.link"}}</div>
+    <p class="text-sm mt-4"><a class="underline" href="/owner/reset">{{.Cat.Get "owner.reset.link"}}</a></p>
+    {{else}}
+    {{if .Err}}<div class="card text-sm mb-4" role="alert">{{.Err}}</div>{{end}}
+    <form method="post" action="/owner/set/{{.Token}}" class="border-2 border-ink bg-paper shadow-step p-4 grid gap-3">
+      <p class="text-sm">{{.Cat.F "owner.set.p" .Venue}}</p>
+      <div class="fieldset"><label class="lbl" for="pw">{{.Cat.Get "owner.set.pw"}}</label>
+        <input class="inp" type="password" id="pw" name="password" autocomplete="new-password" minlength="10" required></div>
+      <div class="fieldset"><label class="lbl" for="pw2">{{.Cat.Get "owner.set.pw2"}}</label>
+        <input class="inp" type="password" id="pw2" name="password2" autocomplete="new-password" minlength="10" required></div>
+      <button class="btn btn--primary" type="submit">{{.Cat.Get "owner.set.submit"}}</button>
+    </form>
+    {{end}}
+  </div>
+</main>
+</body>
+</html>{{end}}
