@@ -64,7 +64,6 @@ server" is not fully true on the bench board (LAN `/jpg`).
 - **Domain + autocert (Q-08)** — needs the user: is `guzva.ba` registered?
   The QR poster on a bare IP + self-signed cert is unusable for guests.
 - **Ingest host in NVS** (§14) — pair with the domain change.
-- **Q-10 flash + proof** — `/jpg` 200 after boot, 403 after 15 min.
 - **Venue site survey** — RSSI ≥ −65 at the mount, camera on a network
   guests can't join (Q-10 belt-and-braces); camera-notice sign; legal
   read of the `/privatnost/` policy + the controller's name and contact

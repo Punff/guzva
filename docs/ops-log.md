@@ -1418,3 +1418,13 @@ minute % is pessimistic as measured: it counts nights, when the bench room
 is dark (87 dark rejects → 300 s backoff); `tools/soak` should judge only
 opening hours before this number gates a pilot. Connect/handshake ms is
 still not in the journal.
+
+### Q-10 firmware flashed and proven (2026-10-16 17:27–17:45 UTC)
+
+- `pio run -t upload` → bench board bd2a58 (hash verified), boot 47,
+  fw `v0.10.1-3-gaeeec24`, LAN IP 192.168.1.6 (boot log via
+  tools/bootlog.py — the capture itself reboots the board, as documented).
+- `/jpg` 200 at uptime 44 s; **403 at uptime 1039 s** with the "install
+  window closed" body; `/api/status` 200 throughout. Prod journal: 14 × 201
+  from boot 47 in the next 20 min. Q-10 closed in docs/qa-findings.md. The
+  privacy policy's "sent only to the server" now holds on the bench board.

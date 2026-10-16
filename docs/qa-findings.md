@@ -531,11 +531,13 @@ placeholder to `{t}` fails the parity test with
 
 ### Q-10 · P1 · firmware · the LAN `/jpg` hands a raw photo to anyone on the venue WiFi
 
-**Status:** FIX IN TREE, NOT ON HARDWARE — the install window below is in
-`firmware/src/main.cpp` (`installWindowOpen`, esp_timer µs so no millis()
-wrap reopens it) and builds clean (`pio run`); it is NOT flashed — the bench
-board was mid-run. Close after a flash + `curl` proof: `/jpg` 200 right after
-boot, 403 after 15 min, `/api/status` still 200.
+**Status:** FIXED and proven on hardware (2026-10-16). Firmware
+`v0.10.1-3-gaeeec24` flashed to the bench board (bd2a58, boot 47) via
+`pio run -t upload`; LAN probes from the laptop: 17:27:54 UTC (uptime 44 s)
+`/jpg` → 200 image/jpeg 320×240; 17:44:36 UTC (uptime 1039 s) `/jpg` → 403
+"install window closed (15 min after boot); power-cycle to reopen",
+`/api/status` → 200. Uploads to prod continued: 14 × 201 from boot 47 in the
+following 20 min.
 
 The LAN cage (`firmware/src/main.cpp`, `handleJpg`, port 80) serves the
 **unstylised sensor JPEG**, unauthenticated, 1 per 3 s, for as long as the
