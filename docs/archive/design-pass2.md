@@ -1,5 +1,8 @@
 # design pass 2 — surfaces v2 (public page, hours editor, print & privacy setup, device setup)
 
+> **Archived 16 Oct 2026.** This design pass 2 spec is finished; it is kept for its reasoning and the references code comments make to it. Current state: PLAN.md, docs/design.md, AGENTS.md.
+
+
 Written 12 Oct 2026, after the maintenance pass. Base system: docs/design.md
 (Tisak, roles, shape+colour+sentence). This pass is about **composition and
 connection**: the surfaces have the right pieces, but the pieces sit next to

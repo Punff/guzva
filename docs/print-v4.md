@@ -1,5 +1,11 @@
 # Replacement plan — "Print v4": frozen device profile + band-pass privacy filter
 
+> **Historical plan, shipped (v0.7.0, 14 Oct 2026).** The pipeline it describes is
+> live in `internal/render/tisak.go`. Since then: privacy masks were retired from
+> the product and the code (D11, v11; cleanup 16 Oct 2026), and per-venue look
+> presets were added (D11). Where this file and the code disagree, the code and
+> `docs/design.md` §5 are current.
+
 Scope: **plan only.** Decisions in §8 were approved on 14 Oct 2026; nothing in your code changes until you approve each step in §6.
 Replaces: the remote device config (`desired_cfg` / `SensorCfg` / NVS `cam` / read-back),
 the per-venue render calibration (`calib.go`), and the 160×120 blur → threshold → mode

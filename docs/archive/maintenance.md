@@ -1,5 +1,8 @@
 # guzva — maintenance plan v1 (the remediation pass)
 
+> **Archived 16 Oct 2026.** This maintenance/remediation plan is finished; it is kept for its reasoning and the references code comments make to it. Current state: PLAN.md, docs/design.md, AGENTS.md.
+
+
 Written 11 Oct 2026, after a four-way specialist audit (firmware, Go server,
 UI/UX + docs, build/DevOps). This file is the working plan for cleaning the
 project up; PLAN.md stays the product plan (v3.2), and nothing here changes a

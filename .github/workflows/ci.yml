@@ -3,7 +3,7 @@
 # NOTE (maintenance W5): this repository currently has NO git remote, so
 # this workflow has never run. It is landed ready: the moment a remote
 # exists and the first push happens (after the W0 history scrub for the
-# old settings.h secrets — docs/maintenance.md §4), every push and PR runs
+# old settings.h secrets — docs/archive/maintenance.md §4), every push and PR runs
 # the full gate below.
 
 name: ci

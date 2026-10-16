@@ -1,5 +1,8 @@
 # guzva — DESIGN.md implementation status
 
+> **Archived 16 Oct 2026.** This DESIGN.md implementation checklist is finished; it is kept for its reasoning and the references code comments make to it. Current state: PLAN.md, docs/design.md, AGENTS.md.
+
+
 Source: docs/design.md v1.0 (companion to PLAN v3.2 §9).
 Permission: the user granted blanket approval for all of DESIGN.md plus my own
 evaluation (2026-10-10), so all ten ⚑ deltas were in scope.

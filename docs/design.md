@@ -1,7 +1,7 @@
 # guzva.ba — DESIGN.md (design system · UX · image style)  v1.0
 
 Companion to `PLAN.md` v3.2 (§9 "Product surfaces & UX"; decisions D1, D5–D7, D9).
-When approved it becomes `docs/ux.md` (the file §3/§9 of the plan reserve for it).
+It is the single design/UX spec (the old `docs/ux.md` pointer is in `docs/archive/`).
 
 **Status:** proposal. Everything marked **⚑** changes a PLAN decision or contract and
 needs your explicit approval before it is built or written into the plan (all
@@ -25,7 +25,7 @@ sizes. Phase-1 exit data on real frames replaces them (§5.11).
 | ~1 GB/month free egress, US region, 150–200 ms RTT to Bosnia | D4, §13 | Tiny still; conditional requests; poll only while the tab is visible; stop when idle. |
 | Web root = two files per venue, CSS inlined | D5 | Public CSS+JS inline, system fonts only, no extra files. The still changes format ⚑ (§5.5). |
 | Croatian, `dd.mm.yyyy.`, 24 h, `Europe/Sarajevo` | D7 | One message catalog; no hand-written strings in handlers. |
-| No biometrics, ever | D9 | No detection-based features. Privacy masks are **static geometry** only. |
+| No biometrics, ever | D9 | No detection-based features. (Static privacy masks existed until v11; retired, D11.) |
 | htmx + Tailwind, no SPA | D6 | htmx on consoles only. Public page = vanilla JS ≤ 1.5 KB. |
 | Solo builder | §16.13 | Few components, copy-paste class recipes, one kit page to eyeball them all. |
 
@@ -235,7 +235,7 @@ the stage comments in `internal/render/tisak.go`. In one table:
 | # | Stage | Constant (frozen in `render.Defaults`) |
 |---|---|---|
 | 1 | Luma only, area-average to **320×240** (4:3 inputs only; non-4:3 → `422 dims`) | sensor-native QVGA |
-| 2 | Static privacy masks: zero weight in every filter, forced to `S0` | ≤ 4 rects, 320×240 cells |
+| 2 | *(retired in v11, D11)* static privacy masks — removed from the code; numbering kept | — |
 | 3 | Privacy low-pass P (normalized Gaussian) | σp = 1.75 cells (v6; 2 in v4–v5) |
 | 4 | Lighting field B (×8 downsample, odd-reflection edges) | σb = 48 cells |
 | 5 | Weber contrast `C = (P − B) / (B + k)` | k = 24 |
@@ -258,7 +258,7 @@ a version bump, never a setting.
 | Fine detail | σp = 1.75 low-pass on the 320×240 grid (privacy rule: head ÷ 4.1 ≤ ~4 → heads ≤ ~16 cells, print-v4 §4) |
 | Tonal detail | 4 tones (2 bits) |
 | Metadata | EXIF dropped by construction, PNG has no ancillary chunks (asserted) |
-| Close-up regions | static privacy masks (stage 3) |
+| Close-up regions | camera placement (the install gate below); masks retired in v11 |
 
 What remains: silhouettes, posture-scale shapes, light/dark regions.
 
@@ -281,15 +281,15 @@ d_min = 1.28 / tan(θ/2)   metres
 | 120° | ≈ 0.7 m |
 
 The wizard (§8.4) overlays a 10-cell ruler on the stylised preview so the installer
-checks this by eye; where the nearest seat violates it, they draw a mask rectangle
-over that seat. This is a design target, not a legal guarantee (PLAN §13 stands:
+checks this by eye; where the nearest seat violates it, the camera is moved or
+re-aimed (privacy masks were retired in v11, D11). This is a design target, not a legal guarantee (PLAN §13 stands:
 re-check with a local adviser before the first paying venue).
 
 ### 5.4 Palette (fixed)
 
 | Level | Name | Hex | L* | Role |
 |---|---|---|---|---|
-| 0 | `s0` ink | `#12202D` | 11.6 | darkest: people, hair, furniture shadows, masked-out rectangles |
+| 0 | `s0` ink | `#12202D` | 11.6 | darkest: people, hair, furniture shadows |
 | 1 | `s1` | `#33607F` | 38.9 | dark mid |
 | 2 | `s2` | `#7EA5C0` | 65.9 | light mid |
 | 3 | `s3` paper | `#F2EDE2` | 93.9 | lightest: walls, windows |
@@ -373,9 +373,10 @@ in `render.styles` + one golden test.
 ### 5.9 Per-venue calibration — removed in print v4
 
 Thresholds, bias, invert and the calibration candidate sheets are gone: v4
-normalises the room's lighting itself, so the only per-venue render state is
-`style` and `venues.masks_json` (≤ 4 rects). See `docs/print-v4.md` §2 and
-decision 3. Offline tuning lives in `tools/styleproof` against a local corpus.
+normalises the room's lighting itself, so the per-venue render state is `style`
+plus the named look presets (`venues.look_json`, D11: outlines, blur ≥ σp,
+contrast). Masks are retired (`masks_json` stays in the schema, unread). See
+`docs/print-v4.md` §2. Offline tuning lives in `tools/styleproof` against a local corpus.
 
 ### 5.10 Considered and rejected
 
@@ -396,7 +397,7 @@ Automated (additions to PLAN §7's list):
 - **Golden PNGs** byte-for-byte, from **procedurally generated** fixtures. Never commit
   real venue frames.
 - **Invariants:** exactly 160×120; ≤ 4 palette entries in fixed order; no ancillary
-  chunks (`tEXt/eXIf/iCCP`); mask cells are level 0 whatever the input.
+  chunks (`tEXt/eXIf/iCCP`).
 - **Size bound:** a render > 6 KB fails the test (guards accidental dither/noise).
 - **Determinism ×100**, race hammer, corrupt-corpus — as planned.
 
@@ -629,7 +630,7 @@ failed since boot", "Uploads that failed", "TLS connects that failed", "Power di
 detected". Token **mint** shows the secret once in a card with a Copy button;
 **revoke** is a two-step danger action.
 
-### 8.4 Install wizard (⚑ calibration + masks, the rest is PLAN §10)
+### 8.4 Install wizard (not built; calibration and masks since retired — print v4, D11)
 
 A vertical stepper; each step has a **gate** and shows live data refreshed every 5 s
 (`hx-trigger="every 5s"`); a step turns green only when its gate passes.
@@ -640,15 +641,15 @@ Install — Salon Kadrić                        step 3 of 7
 ✔ 1  Power      brownouts since boot: 0          gate: 0
 ✔ 2  Signal     −61 dBm  ▂▃▄▅   ping 38 ms       gate: ≥ −65 dBm
 ▶ 3  First picture  waiting… last image 21:46
-○ 4  Framing & privacy   [preview + 10-cell ruler + mask rectangles]
-○ 5  Calibrate           [candidate sheet: tap the best]
+○ 4  Framing & privacy   [preview + 10-cell ruler]
+○ 5  (retired: calibration — print v4 normalises lighting itself)
 ○ 6  Owner sign-off      ☐ owner has seen this picture   [name] [Sign]
 ○ 7  Handover            [owner link] [QR poster] [camera notice]
 ```
 
 Step 4 renders the live stylised preview at k=3 with an overlay: a **10-cell-wide
-bracket** to hold against the nearest head, and tap-and-drag **mask rectangles**
-(grid coordinates, max 4, snapped to cells). Step 6 stores the **reference-frame
+bracket** to hold against the nearest head; a violation means moving the camera
+(the mask rectangles once planned here were retired, D11). Step 6 stores the **reference-frame
 hash** and a timestamped sign-off (PLAN §14 "reference-frame hash" trigger). Failing
 a gate shows the next action in a sentence: "−74 dBm is too weak. Move the camera or
 add an access point; below −65 dBm the picture will often be late."
@@ -844,8 +845,8 @@ Nothing here is written into `PLAN.md` until you say so.
 | ⚑2 | **Burned-in `HH:MM` stamp** — ✅ **resolved.** History: image stamp removed v0.4.0 → DOM badge added v0.6.0 → DOM badge removed v0.6.1 (user: double clock) → no clock in the picture, ever; the page below the print is the only time. `index.html` is still rewritten only on state flips. | §6.4, §7 | While it lived: screenshots self-dated. Today: one clock, zero pixels drawn on the picture | ~~1.7 % of the picture is covered~~ none |
 | ⚑3 | Two stale tiers (3–15 min "late", >15 min "no signal") | §6.6 | Page and alert agree; gentler wording first | One more state in tests |
 | ⚑4 | **Closed / paused ⇒ no still, no polling** | §6.4 | Privacy after hours; bytes; honesty | Visitors can't peek at a closed venue |
-| ⚑5 | `venues.calib_json` (thresholds, bias, invert, masks, preset) + calibration candidates under `data/ref/` | §6.2, §7, §10 | Legible pictures on awkward rooms without storing raw frames | One migration (guard: reopen test) |
-| ⚑6 | **Static privacy masks** (≤ 4 rects) | §7, §10 | Fixes "head too close" at the camera, D9-safe | Installer effort at setup |
+| ⚑5 | *(superseded by print v4)* `venues.calib_json` (thresholds, bias, invert, masks, preset) + calibration candidates under `data/ref/` | §6.2, §7, §10 | Legible pictures on awkward rooms without storing raw frames | One migration (guard: reopen test) |
+| ⚑6 | **Static privacy masks** (≤ 4 rects) — *retired in v11 (D11)* | §7, §10 | Fixes "head too close" at the camera, D9-safe | Installer effort at setup |
 | ⚑7 | Public pages **`noindex`** by default | §6.4 | Interiors don't surface in search | Owner opt-in needed later |
 | ⚑8 | **System fonts only** on all surfaces | §9.1 | D5-compatible, zero bytes, perfect diacritics | Less typographic character |
 | ⚑9 | Per-venue page language (`venues.lang`) | §9.4, D7 | English for tourist venues, no toggle | One column |
@@ -871,7 +872,7 @@ Each step has an acceptance check before the next begins (PLAN §16.13).
    `curl -I`/devtools; Lighthouse-style a11y pass by hand.
 4. **Admin fleet + venue pages.** *Accept:* "needs attention" sort is right on
    fakecam states; works one-handed at 360 px.
-5. **Install wizard + calibration + masks.** *Accept:* a full install of the bench
+5. **Install wizard** (calibration + masks retired since). *Accept:* a full install of the bench
    unit end to end on a phone; sign-off stored.
 6. **Owner console (Croatian).** Hours editor, details, health. *Accept:* a person
    outside the project edits hours unaided on a phone.

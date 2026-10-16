@@ -11,7 +11,7 @@ proven setup. History of the team mode lives in docs/ops-log.md.)
 
 1. **Read the code first.** The contract you're changing is in the
    source, PLAN.md §1, and the doc that owns the surface
-   (docs/proto-v1.md for the wire, docs/design.md + docs/ux.md for
+   (docs/proto-v1.md for the wire, docs/design.md for
    pages, docs/cli.md for the CLI).
 2. **One item at a time.** Small commit per item, explicit paths
    (`git add <paths>`, never `-A`), `make test` green BEFORE each

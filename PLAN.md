@@ -159,7 +159,7 @@ web/                  tailwind input.css + tokens.css (source of truth)    [new]
 firmware/             PlatformIO project
 tools/fakecam/        one small Go client: fast / slow / flappy / dup
 deploy/               Makefile, units, backup + provision.sh
-docs/                 proto-v1.md, runbook.md, ops-log.md, ux.md (new)
+docs/                 proto-v1.md, design.md, runbook.md, ops-log.md, qa-findings.md (archive/: finished plans)
 ```
 
 Interface rule: an interface exists only when a second implementation exists
@@ -374,7 +374,7 @@ on any few-euro VPS if the free tier changes.
 
 ## 9. Product surfaces & UX  *(new in v3.2)*
 
-Three surfaces, one design system. Full spec in `docs/ux.md`.
+Three surfaces, one design system. Full spec in `docs/design.md`.
 
 ### 9.1 Design system (D6)
 - **TailwindCSS compiled to embedded CSS.** `web/input.css` + a Tailwind CLI
@@ -727,7 +727,7 @@ below is the honest split)*
   remediation pass: a four-way audit (firmware, server, UI/docs, DevOps)
   found the architecture sound but the hygiene, a set of live surface bugs,
   the missing CI substrate, and doc drift bad enough to mislead.
-- **`docs/maintenance.md` is the working plan** for that pass (workstreams
+- **`docs/maintenance.md` (now `docs/archive/`) was the working plan** for that pass (workstreams
   W0–W8, each item with evidence and an acceptance check). It defers to this
   file everywhere the two touch. Notable verdicts it records: the spec's
   "hourly-max reboot" is dropped (the task watchdog is the mechanism that
