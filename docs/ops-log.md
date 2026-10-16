@@ -1477,3 +1477,10 @@ still not in the journal.
   the bench link remains the reliability problem.
 - Reboot command still to prove on hardware: needs one more press after
   v0.12.1 (operator password).
+
+### P4 reboot command proven on hardware (2026-10-16 20:06–20:08 UTC)
+
+- User pressed "Restart camera" on v0.12.1. Timeline: 20:06:56 "cmd sent:
+  reboot" → 20:07:45 "boot 49, reason sw"; device row boot 49,
+  reset_reason sw, uptime 28 s, queue empty. All three P4 parts (self-
+  report, timeline, both remote commands) are now proven on the bench board.

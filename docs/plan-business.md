@@ -1,6 +1,6 @@
 # Business operations plan — intake, billing, fleet control
 
-Status: **approved 16 Oct 2026** (decisions in §5). P1 and P2 shipped in v0.10.x–v0.11.0; P3 (billing) waits on the accountant (decision 3); P4 (device events) next without blockers. Triggers:
+Status: **approved 16 Oct 2026** (decisions in §5). P1 and P2 shipped in v0.10.x–v0.11.0; P3 (billing) waits on the accountant (decision 3); P4 (device self-report, timeline, remote commands) shipped in v0.12.x and proven on the bench board. Triggers:
 the user set a price (20–30 KM/venue/month, PLAN D8's "first venue that must
 pay"), and asked for (1) a form to send to clients that becomes a venue,
 (2) a communication system for bills and camera logs, (3) any other additions.
