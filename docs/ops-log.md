@@ -1332,3 +1332,10 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   is configured — the guzva.ba mailbox doesn't exist yet. Privatnost
   section redone as a framed panel with three pixel-icon promises.
 - No schema change. `make check` OK, healthz `v0.9.9`. Live probe owed.
+
+### Deploy — `v0.9.10` (2026-10-16 ~12:12 UTC)
+
+- Homepage phone pass: fixed the `still-print` overflow (hero + cards
+  pinned to 320 px broke out on a 320 px phone), hero print desktop-only,
+  compact salon rows on phones, bigger nav tap targets, two-column footer.
+  No schema change. Public CSS 4021/4096 B gz.
