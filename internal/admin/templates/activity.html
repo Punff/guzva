@@ -1,0 +1,17 @@
+{{define "activity.html"}}<!doctype html>
+<html lang="en">
+<head>
+{{template "shell-head.html" .}}
+<title>guzva admin — activity</title>
+</head>
+{{template "admin-open" dict "nav" .Nav "active" "activity" "title" "Activity"}}
+<p class="text-sm text-muted mb-4">Every change by you or a venue owner — field names only, never passwords or values. Kept two years.</p>
+{{if .Audit}}
+<div class="overflow-x-auto">
+<table class="tbl">
+  <thead><tr><th>When (UTC)</th><th>Who</th><th>What</th><th>Venue</th><th>Detail</th></tr></thead>
+  <tbody>{{range .Audit}}<tr><td class="tnum whitespace-nowrap">{{.At.Format "02.01. 15:04"}}</td><td>{{.Actor}}</td><td>{{.Action}}</td><td>{{.Venue}}</td><td class="text-muted">{{.Detail}}</td></tr>{{end}}</tbody>
+</table>
+</div>
+{{else}}<p class="text-sm text-muted">Nothing recorded yet.</p>{{end}}
+{{template "admin-close" .}}{{end}}

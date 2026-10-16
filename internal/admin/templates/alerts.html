@@ -1,0 +1,35 @@
+{{define "alerts.html"}}<!doctype html>
+<html lang="en">
+<head>
+{{template "shell-head.html" .}}
+<title>guzva admin — alerts &amp; email</title>
+<script src="/admin/static/htmx.min.js" defer></script>
+</head>
+{{template "admin-open" dict "nav" .Nav "active" "alerts" "title" "Alerts & email"}}
+<div id="flash"></div>
+<section class="mb-8" aria-labelledby="al-h">
+  <h2 class="text-lg font-bold mb-3" id="al-h">Open alerts{{if .Alerts}} ({{len .Alerts}}){{end}}</h2>
+  {{if .Alerts}}
+  <ul class="grid gap-2">{{range .Alerts}}<li class="flex items-start gap-3 border-2 border-ink px-3 py-2"><span class="mt-1 inline-flex text-stale" aria-hidden="true">{{shape "stale"}}</span><span>{{.Message}} <span class="text-sm text-muted">since {{.RaisedAt.Format "02.01. 15:04"}} UTC</span></span></li>{{end}}</ul>
+  {{else}}<p class="border-l-4 border-fresh pl-3">None open. Telegram gets a message when one opens and when it is resolved.</p>{{end}}
+</section>
+<section aria-labelledby="mail-h">
+  <h2 class="text-lg font-bold mb-2" id="mail-h">Email</h2>
+  <p class="text-sm mb-3">{{if .MailOn}}SMTP configured — the outbox sends every 30 s.{{else}}<span class="text-muted">SMTP not configured (GUZVA_SMTP_HOST, GUZVA_MAIL_FROM). Messages wait in the queue.</span>{{end}}</p>
+  <form class="mb-4 flex flex-wrap items-end gap-3" method="post" action="/admin/mail/test" hx-post="/admin/mail/test" hx-target="#flash" hx-swap="innerHTML">
+    <div class="fieldset">
+      <label class="lbl" for="m-to">Send a test email to</label>
+      <input class="inp" id="m-to" name="to" type="email" required placeholder="you@example.com">
+    </div>
+    <button class="btn" type="submit">Send test</button>
+  </form>
+  {{if .Mail}}
+  <div class="overflow-x-auto">
+  <table class="tbl">
+    <thead><tr><th>Queued</th><th>Type</th><th>To</th><th>Status</th></tr></thead>
+    <tbody>{{range .Mail}}<tr><td class="tnum whitespace-nowrap">{{.CreatedAt.Format "02.01. 15:04"}}</td><td>{{.Template}}</td><td class="break-all">{{.To}}</td><td>{{.Status}}{{if .LastError}} <span class="text-muted">({{.Attempts}}× — {{.LastError}})</span>{{end}}</td></tr>{{end}}</tbody>
+  </table>
+  </div>
+  {{end}}
+</section>
+{{template "admin-close" .}}{{end}}

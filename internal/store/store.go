@@ -292,6 +292,47 @@ CREATE TABLE audit_log (
 CREATE INDEX audit_venue ON audit_log (venue_id, at);
 `
 
+// schemaV17 adds client intake (business plan P2): applications from the
+// public form or a personal invite link, and the invite links themselves
+// (token stored hashed, single use, expiring). Personal data: lost leads are
+// deleted 12 months after their last update (prune job).
+const schemaV17 = `
+CREATE TABLE leads (
+  id             INTEGER PRIMARY KEY,
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'new',
+  source         TEXT NOT NULL DEFAULT 'public',
+  invite_id      INTEGER NOT NULL DEFAULT 0,
+  salon_name     TEXT NOT NULL,
+  salon_type     TEXT NOT NULL DEFAULT '',
+  address        TEXT NOT NULL DEFAULT '',
+  maps_url       TEXT NOT NULL DEFAULT '',
+  contact_name   TEXT NOT NULL DEFAULT '',
+  phone          TEXT NOT NULL DEFAULT '',
+  email          TEXT NOT NULL DEFAULT '',
+  hours_json     TEXT NOT NULL DEFAULT '',
+  chairs         INTEGER NOT NULL DEFAULT 0,
+  has_wifi       INTEGER NOT NULL DEFAULT 0,
+  install_window TEXT NOT NULL DEFAULT '',
+  heard_from     TEXT NOT NULL DEFAULT '',
+  message        TEXT NOT NULL DEFAULT '',
+  notes          TEXT NOT NULL DEFAULT '',
+  checklist_json TEXT NOT NULL DEFAULT '',
+  venue_id       INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX leads_status ON leads (status, created_at);
+CREATE TABLE lead_invites (
+  id          INTEGER PRIMARY KEY,
+  token_hash  TEXT NOT NULL UNIQUE,
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  used_at     INTEGER NOT NULL DEFAULT 0,
+  label       TEXT NOT NULL DEFAULT '',
+  prefill_json TEXT NOT NULL DEFAULT ''
+);
+`
+
 // migrations[i] takes the schema from version i to i+1. Append only.
 var migrations = []struct {
 	sql  string
@@ -308,6 +349,7 @@ var migrations = []struct {
 	{sql: schemaV14},
 	{sql: schemaV15},
 	{sql: schemaV16},
+	{sql: schemaV17},
 }
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -1327,4 +1369,16 @@ func (s *Store) RecentAudit(ctx context.Context, venueID int64, limit int) ([]Au
 func (s *Store) PruneAudit(ctx context.Context, cutoff time.Time) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM audit_log WHERE at < ?`, ts(cutoff))
 	return err
+}
+
+// CountLeads counts leads in one status ("" = all).
+func (s *Store) CountLeads(ctx context.Context, status string) (int, error) {
+	var n int
+	q, args := `SELECT COUNT(*) FROM leads`, []any{}
+	if status != "" {
+		q += ` WHERE status = ?`
+		args = append(args, status)
+	}
+	err := s.db.QueryRowContext(ctx, q, args...).Scan(&n)
+	return n, err
 }

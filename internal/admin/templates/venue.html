@@ -5,11 +5,10 @@
 <title>{{.Venue.Name}} — guzva admin</title>
 <script src="/admin/static/htmx.min.js" defer></script>
 </head>
-<body class="bg-paper text-ink font-sans">
-<div class="mx-auto w-full max-w-[72rem] px-4 py-6 sm:px-6">
-{{template "page-head.html" dict "title" .Venue.Name "trailHref" "/admin/" "trailText" "Fleet" "signOut" "/admin/logout"}}
+{{template "admin-open" dict "nav" .Nav "active" "venues" "title" .Venue.Name "trailHref" "/admin/venues" "trailText" "Venues"}}
 
 <div id="flash">
+  {{if .Created}}<p class="card card--inset text-sm mb-5" role="status">Venue created. Add its camera under <a class="underline" href="/admin/cameras">Cameras</a>.</p>{{end}}
   {{if .Saved}}<p class="card card--inset text-sm mb-5" role="status">Details saved. The public page updates within 30 seconds.</p>{{end}}
   {{if .OwnerSet}}<p class="card card--inset text-sm mb-5" role="status">Owner password set.</p>{{end}}
   {{if .StyleSet}}<p class="card card--inset text-sm mb-5" role="status">Picture style saved. It applies from the next picture.</p>{{end}}
@@ -156,7 +155,4 @@
   </form>
 </section>
 
-{{template "shell-foot.html" .}}
-</div>
-</body>
-</html>{{end}}
+{{template "admin-close" .}}{{end}}

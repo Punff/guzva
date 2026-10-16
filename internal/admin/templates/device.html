@@ -5,9 +5,7 @@
 <title>{{.Device.Serial}} — guzva admin</title>
 <script src="/admin/static/htmx.min.js" defer></script>
 </head>
-<body class="bg-paper text-ink font-sans">
-<div class="mx-auto w-full max-w-[52rem] px-4 py-6 sm:px-6">
-{{template "page-head.html" dict "title" .Device.Serial "trailHref" (printf "/admin/venues/%d" .Device.VenueID) "trailText" .Venue "signOut" "/admin/logout"}}
+{{template "admin-open" dict "nav" .Nav "active" "cameras" "title" .Device.Serial "trailHref" (printf "/admin/venues/%d" .Device.VenueID) "trailText" .Venue}}
 
 <div id="flash">{{if .Saved}}<p class="card card--inset text-sm mb-5" role="status">Camera saved.</p>{{end}}</div>
 
@@ -68,7 +66,4 @@
   </div>
 </section>
 
-{{template "shell-foot.html" .}}
-</div>
-</body>
-</html>{{end}}
+{{template "admin-close" .}}{{end}}

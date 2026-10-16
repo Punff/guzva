@@ -1,0 +1,51 @@
+{{define "cameras.html"}}<!doctype html>
+<html lang="en">
+<head>
+{{template "shell-head.html" .}}
+<title>guzva admin — cameras</title>
+<script src="/admin/static/htmx.min.js" defer></script>
+</head>
+{{template "admin-open" dict "nav" .Nav "active" "cameras" "title" "Cameras"}}
+<div id="flash"></div>
+{{if .Rows}}
+<div class="overflow-x-auto mb-8">
+<table class="tbl">
+  <thead><tr><th>Camera</th><th>Venue</th><th>Signal</th><th>Last seen</th><th>Firmware</th><th class="text-right">Boots</th><th class="text-right">Brownouts</th><th>Failures</th></tr></thead>
+  <tbody>
+  {{range .Rows}}
+  <tr>
+    <td><a class="font-semibold underline" href="/admin/devices/{{.ID}}">{{.Serial}}</a>{{if ne .Status "active"}} <span class="text-muted">{{.Status}}</span>{{end}}</td>
+    <td><a class="underline" href="/admin/venues/{{.VenueID}}">{{.Venue}}</a></td>
+    <td class="whitespace-nowrap">{{if .Bars}}<span class="inline-flex items-center gap-2">{{template "signal.html" dict "bars" .Bars "word" .SignalW "title" .RSSIText}} <span class="tnum">{{.RSSIText}}</span></span>{{else}}<span class="text-muted">—</span>{{end}}</td>
+    <td class="tnum whitespace-nowrap">{{.SeenAge}}</td>
+    <td class="tnum">{{if .FW}}{{.FW}}{{else}}<span class="text-muted">—</span>{{end}}</td>
+    <td class="tnum text-right">{{.Counters.Boot}}</td>
+    <td class="tnum text-right">{{.Counters.Brownout}}</td>
+    <td class="{{if eq .Failures "none"}}text-muted{{end}}">{{.Failures}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+<section class="max-w-2xl" aria-labelledby="new-cam-h">
+  <h2 class="text-lg font-bold mb-3" id="new-cam-h">New camera</h2>
+  {{if .Free}}
+  <form class="card card--inset grid gap-3" method="post" action="/admin/devices"
+        hx-post="/admin/devices" hx-target="#token-out" hx-swap="innerHTML">
+    <div class="fieldset">
+      <label class="lbl" for="d-venue">Venue (one camera per venue)</label>
+      <select class="inp" id="d-venue" name="venue_id">
+        {{range .Free}}<option value="{{.ID}}">{{.Name}} (/{{.Slug}}/)</option>{{end}}
+      </select>
+    </div>
+    <div class="fieldset">
+      <label class="lbl" for="d-serial">Serial</label>
+      <input class="inp" id="d-serial" name="serial" placeholder="esp32-… (empty = random)">
+    </div>
+    <button class="btn btn--primary justify-self-start" type="submit">Mint device token</button>
+  </form>
+  {{else}}<p class="text-sm text-muted">Every venue has a camera. <a class="underline" href="/admin/venues/new">Create a venue</a> first.</p>{{end}}
+  <div id="token-out" class="mt-3"></div>
+</section>
+{{template "admin-close" .}}{{end}}

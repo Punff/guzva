@@ -1,0 +1,40 @@
+{{define "venue_new.html"}}<!doctype html>
+<html lang="en">
+<head>
+{{template "shell-head.html" .}}
+<title>guzva admin — new venue</title>
+<script src="/admin/static/htmx.min.js" defer></script>
+</head>
+{{template "admin-open" dict "nav" .Nav "active" "venues" "title" "New venue" "trailHref" "/admin/venues" "trailText" "Venues"}}
+<div id="flash"></div>
+<form class="card grid gap-3 max-w-2xl" method="post" action="/admin/venues"
+      hx-post="/admin/venues" hx-target="#flash" hx-swap="innerHTML">
+  <div class="fieldset">
+    <label class="lbl" for="v-slug">Slug (the page address: guzva.ba/<b>slug</b>/)</label>
+    <input class="inp" id="v-slug" name="slug" placeholder="jadro" required pattern="[a-z0-9][a-z0-9-]{0,39}">
+  </div>
+  <div class="fieldset">
+    <label class="lbl" for="v-name">Name</label>
+    <input class="inp" id="v-name" name="name" placeholder="Jadro" required>
+  </div>
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div class="fieldset">
+      <label class="lbl" for="v-tz">Timezone</label>
+      <input class="inp" id="v-tz" name="tz" value="Europe/Sarajevo">
+    </div>
+    <div class="fieldset">
+      <label class="lbl" for="v-style">Style</label>
+      <select class="inp" id="v-style" name="style">
+        <option value="poster">Tisak (print, 4 tones)</option>
+        <option value="mono">Šablon (stencil, 2 tones)</option>
+      </select>
+    </div>
+  </div>
+  <div class="fieldset">
+    <span class="lbl mb-2">Hours</span>
+    {{template "hours-editor.html" dict "days" .Days "closed" "closed" "copy" "Copy Monday to weekdays"
+      "openL" "Opens" "closeL" "Closes" "split" "Second interval kept on the page (%s) — saving here keeps only the first."}}
+  </div>
+  <button class="btn btn--primary justify-self-start" type="submit">Create venue</button>
+</form>
+{{template "admin-close" .}}{{end}}

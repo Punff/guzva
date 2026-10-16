@@ -137,7 +137,7 @@ func TestLoginFlowAndFleetGuard(t *testing.T) {
 	// Right password: 303 → /admin/, cookie present, board reachable.
 	ck := f.login(t)
 	w = f.do(t, http.MethodGet, "/admin/", nil, ck, false)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "guzva — fleet") {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "guzva admin — overview") {
 		t.Fatalf("board = %d %q", w.Code, w.Body.String())
 	}
 	// Login page redirects away when already signed in.
@@ -648,8 +648,8 @@ func TestDeviceAndVenueDelete(t *testing.T) {
 	if _, err := f.st.DeviceByID(t.Context(), 1); err == nil {
 		t.Fatal("deleted device still exists")
 	}
-	// The fleet's "new device" list offers only venues without a camera.
-	fleet := f.do(t, http.MethodGet, "/admin/", nil, ck, false).Body.String()
+	// The Cameras page's "new camera" list offers only venues without one.
+	fleet := f.do(t, http.MethodGet, "/admin/cameras", nil, ck, false).Body.String()
 	if strings.Contains(fleet, `<option value="2">`) || !strings.Contains(fleet, `<option value="1">`) {
 		t.Errorf("new-device venue list should offer jadro (free) and not other (has cam2)")
 	}
@@ -777,9 +777,9 @@ func TestOwnerDashSummaryFromCatalog(t *testing.T) {
 func TestFormsWorkWithoutJS(t *testing.T) {
 	f := newFixture(t, mustHash(t, "sekret"))
 	ck := f.login(t)
-	body := f.do(t, http.MethodGet, "/admin/", nil, ck, false).Body.String()
+	body := f.do(t, http.MethodGet, "/admin/venues/new", nil, ck, false).Body.String()
 	if !strings.Contains(body, `method="post" action="/admin/venues"`) {
-		t.Error("fleet page missing no-JS fragment for the create form")
+		t.Error("new-venue page missing no-JS fragment for the create form")
 	}
 	// (The mint form only renders once a venue exists — checked below.)
 	// A real no-JS POST (no HX-Request header) must create the venue.
@@ -793,9 +793,9 @@ func TestFormsWorkWithoutJS(t *testing.T) {
 		t.Fatalf("venue not created: %v", err)
 	}
 	// With a venue existing, the mint form ships too.
-	body = f.do(t, http.MethodGet, "/admin/", nil, ck, false).Body.String()
+	body = f.do(t, http.MethodGet, "/admin/cameras", nil, ck, false).Body.String()
 	if !strings.Contains(body, `method="post" action="/admin/devices"`) {
-		t.Error("fleet page missing no-JS fragment for the mint form")
+		t.Error("cameras page missing no-JS fragment for the mint form")
 	}
 }
 

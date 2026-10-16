@@ -47,3 +47,52 @@
 {{define "signal.html"}}<span class="inline-flex items-end gap-[2px] h-4 align-[-2px]" role="img" aria-label="{{.word}}" title="{{.title}}">
 {{- range $i, $h := list "h-1" "h-2" "h-3" "h-4"}}<span class="w-[5px] {{$h}} {{if lt $i $.bars}}{{if le $.bars 2}}bg-accent{{else}}bg-ink{{end}}{{else}}bg-paper-2{{end}}"></span>{{end -}}
 </span>{{end}}
+
+{{/* The console shell (admin redesign, 16 Oct 2026). One ink rail — the
+     only bold element — with the active page as a paper tab and small
+     counts where something waits (alerts, leads). On phones the rail is a
+     top bar whose links scroll sideways. Call:
+       {{template "admin-open" dict "nav" .Nav "active" "venues" "title" "Venues"
+                                    "trailHref" "/admin/venues" "trailText" "Venues"}}
+     … page …  {{template "admin-close" .}} */}}
+{{define "admin-open"}}
+<body class="bg-paper text-ink font-sans">
+<div class="min-h-dvh md:grid md:grid-cols-[13rem_minmax(0,1fr)]">
+  <aside class="bg-ink text-paper md:sticky md:top-0 md:flex md:h-dvh md:flex-col">
+    <a class="flex items-center gap-2 px-4 pt-4 pb-3 md:pt-6" href="/admin/">
+      <svg viewBox="0 0 16 16" width="28" height="28" shape-rendering="crispEdges" aria-hidden="true" class="shrink-0"><rect width="16" height="16" fill="var(--paper)"/><rect x="2" y="2" width="12" height="11" fill="var(--ink)"/><rect x="3" y="9" width="2" height="3" fill="var(--s2)"/><rect x="7" y="7" width="2" height="5" fill="var(--s2)"/><rect x="11" y="5" width="2" height="7" fill="var(--accent)"/></svg>
+      <span class="font-bold text-lg tracking-tight">guzva</span><span class="text-xs text-s2">admin</span>
+    </a>
+    <nav class="flex gap-1 overflow-x-auto px-2 pb-3 text-sm font-semibold md:flex-col md:overflow-visible md:pb-0" aria-label="Console">
+      {{template "rail-link" dict "href" "/admin/" "label" "Overview" "key" "overview" "active" .active}}
+      {{template "rail-link" dict "href" "/admin/venues" "label" "Venues" "key" "venues" "active" .active}}
+      {{template "rail-link" dict "href" "/admin/leads" "label" "Leads" "key" "leads" "active" .active "count" .nav.Leads}}
+      {{template "rail-link" dict "href" "/admin/cameras" "label" "Cameras" "key" "cameras" "active" .active}}
+      {{template "rail-link" dict "href" "/admin/alerts" "label" "Alerts & email" "key" "alerts" "active" .active "count" .nav.Alerts "hot" true}}
+      {{template "rail-link" dict "href" "/admin/activity" "label" "Activity" "key" "activity" "active" .active}}
+    </nav>
+    <form method="post" action="/admin/logout" class="hidden px-4 pb-6 md:mt-auto md:block">
+      <button class="text-sm text-s2 underline" type="submit">Sign out</button>
+      {{if .nav.Version}}<p class="mt-2 text-xs text-s2 tnum">{{.nav.Version}}</p>{{end}}
+    </form>
+  </aside>
+  <main class="min-w-0 px-4 py-6 sm:px-8 md:py-8">
+  <div class="max-w-[64rem]">
+  <header class="mb-6 flex flex-wrap items-center gap-x-3 gap-y-2">
+    <h1 class="text-2xl font-bold tracking-tight">
+      {{if .trailHref}}<a href="{{.trailHref}}" class="text-muted hover:underline">{{.trailText}}</a><span class="text-muted"> / </span>{{end}}{{.title}}
+    </h1>
+    <form method="post" action="/admin/logout" class="push md:hidden"><button class="btn btn--quiet" type="submit">Sign out</button></form>
+  </header>
+{{- end}}
+
+{{define "rail-link"}}<a href="{{.href}}" class="flex shrink-0 items-center justify-between gap-3 px-3 py-2 {{if eq .key .active}}bg-paper text-ink{{else}}hover:bg-s1{{end}}"{{if eq .key .active}} aria-current="page"{{end}}><span>{{.label}}</span>{{if .count}}<span class="tnum px-1.5 text-xs {{if .hot}}bg-accent text-paper{{else}}bg-s1 text-paper{{end}}">{{.count}}</span>{{end}}</a>{{end}}
+
+{{define "admin-close"}}
+  {{template "shell-foot.html" .}}
+  </div>
+  </main>
+</div>
+</body>
+</html>
+{{- end}}

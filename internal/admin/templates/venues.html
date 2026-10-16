@@ -1,0 +1,11 @@
+{{define "venues.html"}}<!doctype html>
+<html lang="en">
+<head>
+{{template "shell-head.html" .}}
+<title>guzva admin — venues</title>
+</head>
+{{template "admin-open" dict "nav" .Nav "active" "venues" "title" "Venues"}}
+<div id="flash">{{if .Deleted}}<p class="card card--inset text-sm mb-5" role="status">Venue /{{.Deleted}}/ deleted, with its cameras, pictures and public page.</p>{{end}}</div>
+<p class="mb-4"><a class="btn btn--primary" href="/admin/venues/new">New venue</a></p>
+{{template "venue-table" .Venues}}
+{{template "admin-close" .}}{{end}}

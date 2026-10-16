@@ -33,13 +33,18 @@ func TestMailTestAndAlertsPanel(t *testing.T) {
 			t.Errorf("to=%q accepted: %q", bad, w.Body.String())
 		}
 	}
+	// The Overview lists the open alert; the rail counts it.
+	home := f.do(t, http.MethodGet, "/admin/", nil, c, false).Body.String()
+	if !strings.Contains(home, "Jadro: no picture for 20 min") || !strings.Contains(home, `bg-accent text-paper">1</span>`) {
+		t.Error("overview does not surface the open alert / rail count")
+	}
 	rows, _ := f.st.RecentMail(ctx, 10)
 	if len(rows) != 1 || rows[0].To != "me@example.com" || rows[0].Status != "queued" {
 		t.Fatalf("outbox = %+v", rows)
 	}
 
-	page := f.do(t, http.MethodGet, "/admin/", nil, c, false).Body.String()
-	for _, want := range []string{"Alerts &amp; email — 1 open", "Jadro: no picture for 20 min", "me@example.com", "queued"} {
+	page := f.do(t, http.MethodGet, "/admin/alerts", nil, c, false).Body.String()
+	for _, want := range []string{"Open alerts (1)", "Jadro: no picture for 20 min", "me@example.com", "queued"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("fleet lacks %q", want)
 		}
@@ -78,8 +83,9 @@ func TestAuditLog(t *testing.T) {
 			t.Errorf("audit lacks %q in %q", want, joined)
 		}
 	}
-	page := f.do(t, http.MethodGet, "/admin/", nil, c, false).Body.String()
+	page := f.do(t, http.MethodGet, "/admin/activity", nil, c, false).Body.String()
 	if !strings.Contains(page, "venue.update") || !strings.Contains(page, "Jadro 2") {
-		t.Error("fleet page does not list the audit entries")
+		t.Error("activity page does not list the audit entries")
 	}
+
 }

@@ -16,8 +16,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -117,7 +115,12 @@ func (s *Server) Register(mux *http.ServeMux) {
 	sub.HandleFunc("GET /admin/login", s.loginPage)
 	sub.HandleFunc("POST /admin/login", s.loginSubmit)
 	sub.HandleFunc("POST /admin/logout", s.require(s.logout))
-	sub.HandleFunc("GET /admin/{$}", s.require(s.fleet))
+	sub.HandleFunc("GET /admin/{$}", s.require(s.overview))
+	sub.HandleFunc("GET /admin/venues", s.require(s.venuesList))
+	sub.HandleFunc("GET /admin/venues/new", s.require(s.venueNew))
+	sub.HandleFunc("GET /admin/cameras", s.require(s.cameras))
+	sub.HandleFunc("GET /admin/alerts", s.require(s.alertsPage))
+	sub.HandleFunc("GET /admin/activity", s.require(s.activity))
 	sub.HandleFunc("POST /admin/venues", s.require(s.createVenue))
 	sub.HandleFunc("GET /admin/venues/{id}", s.require(s.venuePage))
 	sub.HandleFunc("POST /admin/venues/{id}", s.require(s.updateVenue))
@@ -361,105 +364,6 @@ type chip struct {
 	Text string
 }
 
-type fleetModel struct {
-	Venues      []venueView
-	DeviceOpts  []store.Venue // venues without a camera, for the create-device <select>
-	ShowCreated bool
-	Deleted     string           // slug of a venue just deleted, for the confirmation line
-	Devices     int              // fleet-wide count: opens "New device" when 0
-	Days        [7]venue.DayForm // create-form hours, Mo-Fr 09-17 prefilled
-	Alerts      []store.Alert    // open operator alerts (alert package ledger)
-	Mail        []store.OutMail  // latest outbox rows, no bodies
-	Audit       []auditView      // latest audit-log entries
-	MailOn      bool
-}
-
-func (s *Server) fleet(w http.ResponseWriter, r *http.Request) {
-	venues, err := s.st.ListVenues(r.Context())
-	if err != nil {
-		s.internal(w, "list venues", err)
-		return
-	}
-	devices, err := s.st.ListDevices(r.Context())
-	if err != nil {
-		s.internal(w, "list devices", err)
-		return
-	}
-	now := s.now().UTC()
-	views, err := s.st.VisitViewsSince(r.Context(), now.AddDate(0, 0, -7))
-	if err != nil {
-		s.internal(w, "visit totals", err)
-		return
-	}
-	byVenue := map[int64][]deviceView{}
-	for _, d := range devices {
-		byVenue[d.VenueID] = append(byVenue[d.VenueID], newDeviceView(d, now))
-	}
-	defHours, _ := venue.ParseSpec("Mo-Fr 09:00-17:00")
-	var free []store.Venue
-	for _, v := range venues {
-		if len(byVenue[v.ID]) == 0 {
-			free = append(free, v)
-		}
-	}
-	model := fleetModel{DeviceOpts: free, Devices: len(devices), Deleted: r.URL.Query().Get("deleted"), ShowCreated: r.URL.Query().Get("created") != "",
-		Days: venue.EditModel(defHours, i18n.For(i18n.EN).DayNames()), MailOn: s.MailOn}
-	if open, err := s.st.OpenAlerts(r.Context()); err == nil {
-		for _, a := range open {
-			model.Alerts = append(model.Alerts, a)
-		}
-		sort.Slice(model.Alerts, func(i, j int) bool { return model.Alerts[i].RaisedAt.Before(model.Alerts[j].RaisedAt) })
-	}
-	if mail, err := s.st.RecentMail(r.Context(), 8); err == nil {
-		model.Mail = mail
-	}
-	if entries, err := s.st.RecentAudit(r.Context(), 0, 20); err == nil {
-		names := map[int64]string{}
-		for _, v := range venues {
-			names[v.ID] = v.Name
-		}
-		for _, e := range entries {
-			model.Audit = append(model.Audit, auditView{e, names[e.VenueID]})
-		}
-	}
-	// Needs attention first (design-pass2 §6): the board is the "is
-	// everything OK" screen, so it must read top-down — no signal beats
-	// late, late beats fresh; a venue with no frame yet is last (it is
-	// usually a setup in progress, not an incident). The rank is computed
-	// once per venue and the sort is stable, so nothing jumps around while
-	// you look at it.
-	attention := map[venue.Freshness]int{venue.Stale: 0, venue.Late: 1, venue.Fresh: 2, venue.Unknown: 3}
-	for _, v := range venues {
-		vv := venueView{
-			ID: v.ID, Slug: v.Slug, Name: v.Name,
-			LastAge: age(now, v.LastFrameAt), Devices: byVenue[v.ID], Views7: views[v.ID],
-			attention: attention[venue.Classify(v.LastFrameAt, now)],
-		}
-		if s.Stats != nil {
-			vv.Live = s.Stats.Live(v.Slug)
-		}
-		switch venue.Classify(v.LastFrameAt, now) {
-		case venue.Fresh:
-			vv.Fresh = chip{"fresh", "Fresh"}
-		case venue.Late:
-			vv.Fresh = chip{"late", "Late"}
-		case venue.Stale:
-			vv.Fresh = chip{"stale", "No signal"}
-		default:
-			vv.Fresh = chip{"unknown", "No frame yet"}
-		}
-		model.Venues = append(model.Venues, vv)
-	}
-	slices.SortStableFunc(model.Venues, func(a, b venueView) int {
-		return a.attention - b.attention
-	})
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	if err := s.tmpl.ExecuteTemplate(w, "fleet.html", model); err != nil {
-		s.log.Error("admin: render fleet", "err", err.Error())
-	}
-}
-
 // age renders a relative age for the live board. The public page never does
 // this (a static file can't keep it correct) — the admin page can.
 func age(now, then time.Time) string {
@@ -656,7 +560,7 @@ func (s *Server) createVenue(w http.ResponseWriter, r *http.Request) {
 		"name", strings.TrimSpace(r.FormValue("name")),
 		"tz", tz, "style", r.FormValue("style"), "actor", "admin")
 	s.audit(r, "admin", "venue.create", id, "slug "+slug)
-	redirect(w, r, "/admin/?created=1")
+	redirect(w, r, fmt.Sprintf("/admin/venues/%d?created=1", id))
 }
 
 func (s *Server) createDevice(w http.ResponseWriter, r *http.Request) {
@@ -729,6 +633,8 @@ func (s *Server) internal(w http.ResponseWriter, op string, err error) {
 // --- venue + device editing (super-admin) -----------------------------------
 
 type venueEditModel struct {
+	Nav       navModel
+	Created   bool
 	Venue     store.Venue
 	Days      [7]venue.DayForm
 	HoursSpec string
@@ -769,7 +675,7 @@ func (s *Server) venuePage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	m := venueEditModel{Venue: *v, HoursSpec: h.Spec(), Days: venue.EditModel(h, i18n.For(i18n.EN).DayNames()), HasOwner: v.OwnerHash != "",
-		Saved: r.URL.Query().Get("saved") != "", OwnerSet: r.URL.Query().Get("owner") != "",
+		Saved: r.URL.Query().Get("saved") != "", OwnerSet: r.URL.Query().Get("owner") != "", Created: r.URL.Query().Get("created") != "",
 		StyleSet: r.URL.Query().Get("style") != "", HasFrame: !v.LastFrameAt.IsZero(),
 		Outlines: render.OutlineOptions, Blurs: render.BlurOptions, Contrasts: render.ContrastOptions}
 	devs, err := s.st.DevicesByVenue(r.Context(), v.ID)
@@ -780,6 +686,7 @@ func (s *Server) venuePage(w http.ResponseWriter, r *http.Request) {
 	for _, d := range devs {
 		m.Devices = append(m.Devices, newDeviceView(d, s.now().UTC()))
 	}
+	m.Nav = s.nav(r.Context())
 	if err := s.tmpl.ExecuteTemplate(w, "venue.html", m); err != nil {
 		s.log.Error("admin: render venue", "err", err.Error())
 	}
@@ -876,6 +783,7 @@ func (s *Server) setOwnerPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 type deviceModel struct {
+	Nav       navModel
 	Device    store.Device
 	Weak      bool // signal below the −65 dBm install gate (§10)
 	Seen      bool // the board has ever checked in
@@ -915,6 +823,7 @@ func (s *Server) devicePage(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	m.Nav = s.nav(r.Context())
 	if err := s.tmpl.ExecuteTemplate(w, "device.html", m); err != nil {
 		s.log.Error("admin: render device", "err", err.Error())
 	}
@@ -1049,7 +958,7 @@ func (s *Server) deleteVenue(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("admin: venue deleted", "venue_id", v.ID, "slug", v.Slug, "actor", "admin")
 	s.audit(r, "admin", "venue.delete", v.ID, "slug "+v.Slug)
-	redirect(w, r, "/admin/?deleted="+v.Slug)
+	redirect(w, r, "/admin/venues?deleted="+v.Slug)
 }
 
 // venueHasCamera reports whether the venue has a camera other than
