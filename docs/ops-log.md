@@ -1362,3 +1362,9 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
 
 - Homepage phone cards: picture is half the card (150–185 px wide by
   phone) instead of a fixed 116 px. `make check` OK, healthz `v0.9.12`.
+
+### Deploy — `v0.9.13` (2026-10-16 ~13:48 UTC)
+
+- Phone salon card: picture edge to edge (no print band + border double
+  frame), smooth scaling for card pictures (pixelated stair-stepped at
+  the ~1.5x non-integer scale). `make check` OK, healthz `v0.9.13`.
