@@ -113,6 +113,7 @@ static const uint32_t POST_RETRY_GAP_MS   = 6000;    // decorrelate bursts
 static const uint32_t KEEPALIVE_IDLE_MS   = 45000;   // reuse well under 60 s idle
 static const uint32_t JPG_RATE_MS         = 3000;    // /jpg: 1 per 3 s
 static const int64_t  INSTALL_WINDOW_US   = 15LL * 60 * 1000000; // Q-10
+static int64_t installWindowUntilUs = INSTALL_WINDOW_US; // reopened by cmd install_window
 static const size_t   UPLOAD_CHUNK        = 6144;    // 6 KiB chunks (spec 4-8 KiB)
 static const uint32_t CAPTURE_INTERVAL_S  = 60;      // proto IntervalS
 static const uint32_t DARK_BACKOFF_S      = 300;     // after 4 dark rejects in a row
@@ -182,6 +183,37 @@ char     serialNo[8]     = {0};
 char     mdnsName[40]    = {0};
 char     captureId[40]   = {0};
 char     metaBuf[1024]   = {0};
+
+// Self-report (business plan P4, meta reset_reason/uptime_s/wifi_reconnects/
+// last_err). RAM only: they describe this boot.
+static const char *resetReasonStr = "unknown";
+static uint32_t    wifiReconnects = 0;
+static char        lastErr[40]    = {0};
+static bool        rebootRequested = false; // server cmd "reboot", executed after the tick
+
+// setErr records the most recent error code (JSON-safe by construction:
+// callers pass short ASCII codes and integers, never free text).
+static void setErr(const char *fmt, int v) {
+  snprintf(lastErr, sizeof lastErr, fmt, v);
+}
+static void setErrS(const char *code) {
+  snprintf(lastErr, sizeof lastErr, "%s", code);
+}
+
+static const char *resetReasonName(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:   return "power_on";
+    case ESP_RST_EXT:       return "ext";
+    case ESP_RST_SW:        return "sw";
+    case ESP_RST_PANIC:     return "panic";
+    case ESP_RST_INT_WDT:   return "int_wdt";
+    case ESP_RST_TASK_WDT:  return "task_wdt";
+    case ESP_RST_WDT:       return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    default:                return "unknown";
+  }
+}
 char     reqHead[640]    = {0};
 char     respHdr[1024]   = {0};
 char     respBody[1024]  = {0};   // next_s/server_time/reason; room for an old server's desired_cfg
@@ -307,6 +339,7 @@ static void loadNvs() {
   provPrefs.putULong("boot", bootCount);
 
   brownoutCount = provPrefs.getULong("brownout", 0);
+  resetReasonStr = resetReasonName(esp_reset_reason());
   if (esp_reset_reason() == ESP_RST_BROWNOUT) {
     brownoutCount++;
     provPrefs.putULong("brownout", brownoutCount);
@@ -451,7 +484,10 @@ static void serviceWiFi() {
     wifiWasDown = true;
     wifiLastAttempt = millis();
     tlsClient.stop();               // stale TLS session is useless
-    if (wifiEverUp) Serial.println("[WiFi] link lost, retry with backoff");
+    if (wifiEverUp) {
+      wifiReconnects++;
+      Serial.println("[WiFi] link lost, retry with backoff");
+    }
     return;
   }
   if (millis() - wifiLastAttempt < wifiRetryMs) return;
@@ -731,14 +767,17 @@ static void buildMeta() {
            "\"free_heap\":%u,\"profile\":\"" PROFILE_ID "\","
            "\"counters\":{\"boot\":%lu,\"brownout\":%lu,\"join_fail\":%lu,"
            "\"post_fail\":%lu,\"tls_fail\":%lu,\"capture_fail\":%lu},"
-           "\"reason\":\"%s\"}",
+           "\"reason\":\"%s\",\"reset_reason\":\"%s\",\"uptime_s\":%lu,"
+           "\"wifi_reconnects\":%lu,\"last_err\":\"%s\"}",
            captureId, FW_VERSION,
            WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : -127,
            (unsigned)ESP.getFreeHeap(),
            (unsigned long)bootCount, (unsigned long)brownoutCount,
            (unsigned long)joinFail, (unsigned long)postFail,
            (unsigned long)tlsFail, (unsigned long)captureFail,
-           metaReason());
+           metaReason(), resetReasonStr,
+           (unsigned long)(esp_timer_get_time() / 1000000LL),
+           (unsigned long)wifiReconnects, lastErr);
 }
 
 // One multipart POST: head + meta [+ frame in 6 KiB chunks] + tail, then the
@@ -764,6 +803,7 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
                    (unsigned long)contentLen);
   if (n < 0 || (size_t)n >= sizeof reqHead) {
     Serial.println("[POST] request head overflow");
+    setErrS("post:head");
     postFail++;
     return 0;
   }
@@ -773,6 +813,8 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   if (!tlsEnsureConnected(&reused, &connectMs)) {
     tlsFail++;
     postFail++;
+    if (!diagTcpOk) setErrS("tcp:noack");
+    else            setErr("tls:%d", diagSslErr);
     if (!diagTcpOk) {
       Serial.printf("[TLS ] connect %lu ms FAILED | tcp probe %lu ms FAILED "
                     "(no SYN-ACK: route/PATH) heap %u\n",
@@ -810,6 +852,7 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   uint32_t writeMs = millis() - tw;
   if (!ok) {
     postFail++;
+    setErrS("post:write");
     tlsClient.stop();
     Serial.printf("[TLS ] connect %lu ms (reuse=%d) | write FAILED after %lu ms "
                   "(heap %u)\n",
@@ -824,6 +867,7 @@ static int ingestPost(bool haveFrame, const uint8_t *jpeg, size_t jpegLen) {
   uint32_t respMs = millis() - tr;
   if (status == 0) {
     postFail++;
+    setErrS("post:timeout");
     tlsClient.stop();
     Serial.printf("[TLS ] connect %lu ms (reuse=%d) | write %lu ms | response "
                   "FAILED after %lu ms (heap %u)\n",
@@ -897,7 +941,7 @@ static void runTick() {
       esp_camera_deinit();           // safe when not inited; covers hung sensor
       camInited = initCamera();
       if (camInited) attempt = true;
-      else { captureFail++; camFailStreak++; camEnterDegraded(); }
+      else { captureFail++; camFailStreak++; setErrS("cam:init"); camEnterDegraded(); }
     }
 
     if (attempt) {
@@ -944,6 +988,7 @@ static void runTick() {
       } else {
         captureFail++;
         camFailStreak++;
+        setErrS("cam:capture");
         Serial.printf("[CAP ] failed (capture_fail=%lu, streak %u)\n",
                       (unsigned long)captureFail, camFailStreak);
         if (camFailStreak >= CAM_FAIL_LIMIT) camEnterDegraded();
@@ -1059,6 +1104,7 @@ static void runTick() {
                     status, why[0] ? why : "?", (unsigned long)sleepS);
     } else {                           // 507 / 5xx: retry next tick
       postFail++;
+      setErr("post:%d", status);
       // Honor Retry-After when the server sends one (a full disk wants us
       // slow, not hammering); otherwise the configured cadence.
       sleepS = strstr(respHdr, "Retry-After:") ? retryAfterS() : CAPTURE_INTERVAL_S;
@@ -1066,6 +1112,27 @@ static void runTick() {
                     "(post_fail=%lu)\n", status, (unsigned long)sleepS,
                     (unsigned long)postFail);
     }
+  }
+
+  // Operator command riding the reply (business plan P4; proto-v1 `cmd`).
+  // Only accepted on statuses that carry the canonical body; unknown values
+  // are ignored. Executed once: the server clears it when it sends it.
+  if (status == 201 || status == 409 || status == 422) {
+    char cmd[24] = {0};
+    if (jsonStr(respBody, "\"cmd\":\"", cmd, sizeof cmd)) {
+      if (strcmp(cmd, "reboot") == 0) {
+        rebootRequested = true;
+        Serial.println("[CMD ] reboot requested by the server");
+      } else if (strcmp(cmd, "install_window") == 0) {
+        installWindowUntilUs = esp_timer_get_time() + INSTALL_WINDOW_US;
+        Serial.println("[CMD ] LAN /jpg window reopened for 15 min");
+      }
+    }
+  }
+  if (rebootRequested) {
+    Serial.println("[CMD ] restarting now");
+    delay(200);
+    ESP.restart();
   }
 
   nextTickAt = millis() + sleepS * 1000UL;
@@ -1119,7 +1186,7 @@ static void handleStatus() {
 // frame must not be one GET away for them. Power-cycle to reopen; serial
 // "reset" stays available. esp_timer is 64-bit µs, so no 49-day millis()
 // wrap can reopen it.
-static bool installWindowOpen() { return esp_timer_get_time() < INSTALL_WINDOW_US; }
+static bool installWindowOpen() { return esp_timer_get_time() < installWindowUntilUs; }
 
 // One still per 3 s max; 503 while the camera is not inited.
 static void handleJpg() {
