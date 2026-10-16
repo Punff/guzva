@@ -211,12 +211,11 @@ func (w *Writer) write(ctx context.Context, venueID int64, force bool) error {
 	// without TodayIdx a cached page would keep pointing "· danas" at
 	// yesterday's row (see the midnight test).
 	//
-	// Known limit (12 Oct 2026, stamp removal 25bce48, ⚑2): the burned-in
-	// HH:MM stamp used to be the per-frame time carrier for the no-JS
-	// <meta refresh> fallback. That path revalidates index.html, which is
-	// only rewritten on a state flip, so without JS the rendered clock
-	// advances at the next flip rather than per frame. The still itself
-	// always updates.
+	// No-JS (12 Oct 2026 stamp removal 25bce48, ⚑2; closed 16 Oct): the
+	// <meta refresh> fallback revalidates index.html, which is only
+	// rewritten on a state flip, so a rendered clock would age under a
+	// fresh still. The template hides #hl inside <noscript>; the state
+	// chip carries freshness. The still itself always updates.
 	cat0 := i18n.For(i18n.Normalize(v.Lang))
 	stillFile := "latest.png"
 	if latest != nil && latest.Status == "ok" && latest.Path != "" && !strings.HasSuffix(latest.Path, ".png") {

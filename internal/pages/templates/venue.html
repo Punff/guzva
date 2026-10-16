@@ -20,8 +20,12 @@
 <!-- No-JS fallback (DESIGN.md §7.3). Inside <noscript> it is parsed only when
      scripting is off; Chrome arms the refresh timer at PARSE time, so a plain
      meta tag here would reload the document every 30s even with the in-place
-     swap running (measured: 3 full navigations in 95s). -->
-<noscript><meta http-equiv="refresh" content="60"></noscript>
+     swap running (measured: 3 full navigations in 95s).
+     Without JS the clock is hidden: index.html is rewritten only on state
+     flips, so a rendered HH:MM would age under a fresh picture; the state
+     chip (rewritten on every flip) carries freshness instead. The style is
+     CSP-hashed like the main one (buildCSP scans every <style>). -->
+<noscript><meta http-equiv="refresh" content="60"><style>#hl{display:none}</style></noscript>
 <title>{{.Name}} — {{.Tagline}} · guzva.ba</title>
 <meta name="description" content="{{.StateText}} — {{.Name}}.">
 <meta name="theme-color" content="#f2ede2">

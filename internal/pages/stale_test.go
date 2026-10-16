@@ -153,6 +153,12 @@ func TestPageSecurityHeadersAndCSP(t *testing.T) {
 			t.Errorf("CSP hash for <%s> does not match the served page", tag)
 		}
 	}
+	// The no-JS <noscript><style> that hides the clock is a second inline
+	// style block; a CSP without its hash would silently drop it.
+	noJS := sha256.Sum256([]byte("#hl{display:none}"))
+	if !strings.Contains(csp, base64.StdEncoding.EncodeToString(noJS[:])) {
+		t.Error("CSP does not authorise the no-JS clock-hiding style")
+	}
 	// The inline style ATTRIBUTE needs 'unsafe-hashes' AND its own hash; the
 	// frame box's aspect-ratio is the one style attribute on the page.
 	if !strings.Contains(csp, "'unsafe-hashes'") {

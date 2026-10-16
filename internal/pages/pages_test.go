@@ -140,7 +140,7 @@ func TestOnFrameWritesOnlyPublicFiles(t *testing.T) {
 		// The no-JS fallback lives INSIDE <noscript>: a plain meta refresh is
 		// armed at parse time and reloaded the document every 30s even with
 		// the swap running (measured: 3 full navigations in 95s).
-		`<noscript><meta http-equiv="refresh" content="60">`,
+		`<noscript><meta http-equiv="refresh" content="60"><style>#hl{display:none}</style></noscript>`,
 		"16:00",                           // venue-local, absolute (§6.4)
 		`src="latest.jpg?v=`,              // cache-busted by frame id (collision-proof)
 		"09:00–17:00",                     // today (Friday) hours, in the info card
