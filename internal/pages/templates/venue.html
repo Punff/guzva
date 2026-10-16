@@ -82,14 +82,6 @@
         <!-- Closed: no still at all. Privacy after hours, honesty, bytes. -->
         <div class="absolute inset-0 tx-shutter" aria-hidden="true"></div>
       {{end}}
-      {{/* Others watching right now (the poller fills it from the still's
-           X-Watching header, minus the guest), pinned to the picture's
-           corner like a "live" tag: paper on ink border reads on the still,
-           the hatches and the shutter alike, and it never pushes the caption
-           row around. Not announced (aria-live off). */}}
-      <span id="watch" class="absolute left-2 top-2 hidden items-center gap-1.5 border-2 border-ink bg-paper px-2 py-1 text-sm font-semibold text-ink" aria-live="off">
-        <span class="inline-block h-2 w-2 bg-fresh" aria-hidden="true"></span><span id="watchtext"></span>
-      </span>
     </div>
     {{/* The caption: the page's ONE clock (the poller rewrites #hl from the
          still's Last-Modified) and the state it describes, as a live region. */}}
@@ -102,6 +94,15 @@
         <span class="inline-flex text-{{.StateClass}}" aria-hidden="true">{{.StateShape}}</span>{{.StateText}}
       </span>
     </figcaption>
+    {{/* Others watching right now (the poller fills it from the still's
+         X-Watching header, minus the guest): its own line in the band,
+         under the caption — never over the picture (it hid part of the
+         room) and never in the caption row (it pushed the chip onto a
+         second line on phones). Paper on s1, like the clock. Not
+         announced (aria-live off). */}}
+    <p id="watch" class="mx-auto max-w-full w-[320px] md:w-[640px] mt-2 hidden items-center gap-1.5 text-sm font-semibold text-paper" aria-live="off">
+      <span class="inline-block h-2 w-2 bg-fresh" aria-hidden="true"></span><span id="watchtext"></span>
+    </p>
   </figure>
 
   <p id="banner" class="hidden text-sm border-2 border-ink bg-paper-2 px-3 py-2" role="alert"></p>
@@ -204,15 +205,23 @@
     newpic: d.newpic
   };
   var watchEl = $('watch'), watchText = $('watchtext');
-  // This tab's watcher id (stats.Watch): random per page load, sent as
-  // X-Viewer on the still poll so two guests behind one IP with the same
-  // phone count as two. Memory only — no cookie, no storage.
+  // This tab's watcher id (stats.Watch), sent as X-Viewer on the still
+  // poll so two guests behind one IP with the same phone count as two.
+  // Kept in sessionStorage so a reload — the guest's or the page's own
+  // flip reload — keeps the same id: a fresh id per load counted every
+  // reload as a new watcher for 75 s. sessionStorage is per tab, never
+  // sent anywhere by itself, and gone when the tab closes. No cookie.
   var viewer = '';
-  try {
-    var vb = new Uint8Array(8);
-    crypto.getRandomValues(vb);
-    for (var vi = 0; vi < 8; vi++) viewer += (vb[vi] < 16 ? '0' : '') + vb[vi].toString(16);
-  } catch (e) { viewer = ''; }
+  try { viewer = sessionStorage.getItem('guzva.viewer') || ''; } catch (e) {}
+  if (!/^[0-9a-f]{16}$/.test(viewer)) {
+    viewer = '';
+    try {
+      var vb = new Uint8Array(8);
+      crypto.getRandomValues(vb);
+      for (var vi = 0; vi < 8; vi++) viewer += (vb[vi] < 16 ? '0' : '') + vb[vi].toString(16);
+      try { sessionStorage.setItem('guzva.viewer', viewer); } catch (e) {}
+    } catch (e) { viewer = ''; }
+  }
 
   // Others watching besides this guest: X-Watching counts everyone with
   // the page open (including us), so show n − 1, with Croatian plural
@@ -221,7 +230,7 @@
   function showWatching(total) {
     if (!watchEl) return;
     var n = total - 1;
-    if (!(n >= 1)) { watchEl.classList.add('hidden'); watchEl.classList.remove('inline-flex'); return; }
+    if (!(n >= 1)) { watchEl.classList.add('hidden'); watchEl.classList.remove('flex'); return; }
     var m10 = n % 10, m100 = n % 100, t;
     if (lang === 'en-GB') t = n === 1 ? d.watchOne : d.watchMany;
     else if (m10 === 1 && m100 !== 11) t = d.watchOne;
@@ -229,7 +238,7 @@
     else t = d.watchMany;
     watchText.textContent = (t || '').replace('{n}', n);
     watchEl.classList.remove('hidden');
-    watchEl.classList.add('inline-flex');
+    watchEl.classList.add('flex');
   }
   var ALT_PREFIX = d.altprefix || '';
   $('idletext').textContent = STR.idle;

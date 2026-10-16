@@ -95,7 +95,7 @@ var hr = &Catalog{
 		"privacy.nobio.h":  "Nema prepoznavanja",
 		"privacy.nobio.p":  "Sustav ne prepoznaje lica, osobe ni registarske tablice i ne prati nikoga. To je trajna odluka, ne postavka.",
 		"privacy.visits.h": "Posjete ovoj stranici",
-		"privacy.visits.p": "Brojimo samo koliko puta je stranica otvorena. Da isti posjetitelj ne bi bio brojen dvaput, iz adrese i preglednika računa se sažetak s nasumičnim ključem koji se mijenja svake ponoći i nigdje se ne zapisuje — zato vas ni mi ne možemo prepoznati sutra. Nema kolačića, oglasa ni alata trećih strana. Zbirni brojevi čuvaju se do 400 dana.",
+		"privacy.visits.p": "Brojimo samo koliko puta je stranica otvorena. Da isti posjetitelj ne bi bio brojen dvaput, iz adrese i preglednika računa se sažetak s nasumičnim ključem koji se mijenja svake ponoći i nigdje se ne zapisuje — zato vas ni mi ne možemo prepoznati sutra. Da bismo pokazali koliko ljudi upravo gleda, otvorena stranica izmisli nasumičan broj koji se čuva samo u toj kartici preglednika i nestaje kad je zatvorite. Nema kolačića, oglasa ni alata trećih strana. Zbirni brojevi čuvaju se do 400 dana.",
 
 		"hours.title":  "Radno vrijeme",
 		"hours.closed": "Zatvoreno",
@@ -269,7 +269,7 @@ var en = &Catalog{
 		"privacy.nobio.h":  "No recognition",
 		"privacy.nobio.p":  "The system does not recognise faces, people or number plates and tracks no one. That is a permanent decision, not a setting.",
 		"privacy.visits.h": "Visits to this page",
-		"privacy.visits.p": "We only count how often the page is opened. So one visitor is not counted twice, a digest of the address and browser is computed with a random key that changes every midnight and is never written down — so not even we can recognise you tomorrow. No cookies, ads or third-party tools. The totals are kept for up to 400 days.",
+		"privacy.visits.p": "We only count how often the page is opened. So one visitor is not counted twice, a digest of the address and browser is computed with a random key that changes every midnight and is never written down — so not even we can recognise you tomorrow. To show how many people are watching right now, the open page makes up a random number that stays in that browser tab only and is gone when you close it. No cookies, ads or third-party tools. The totals are kept for up to 400 days.",
 
 		"hours.title":  "Opening hours",
 		"hours.closed": "Closed",
