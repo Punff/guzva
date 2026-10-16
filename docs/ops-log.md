@@ -1263,3 +1263,14 @@ Prod stays on `v0.7.0` while the user soak-tests the board on Profile v1
   by IP+UA until they reload (the page reloads itself on the deploy's
   Last-Modified change within 60 s, so this is brief).
 - Live probe of the public page still owed (permission guard, see v0.9.2).
+
+### Deploy — `v0.9.4` (2026-10-16 ~10:02 UTC)
+
+- v0.9.3's badge fix was itself wrong (user report): the per-tab id was
+  regenerated on every load, so each reload added a watcher for 75 s —
+  my v0.9.3 proof only polled one page load, never reloaded. Now the id
+  lives in sessionStorage; badge moved off the picture (it could hide part
+  of the room) to its own line under the clock row.
+- Proof (local, Playwright): 4 reloads hold X-Watching at 1; a second
+  same-IP same-UA guest makes 2. qa/run_all.sh green before the tag.
+  `make check` OK, healthz `v0.9.4`. Live probe still owed (guard).
